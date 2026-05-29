@@ -7,7 +7,7 @@ function App() {
     <>
       <section>
         <div>
-          <p>test push code 1</p>
+          <p>test tạo branch</p>
         </div>
         <button
           type="button"
