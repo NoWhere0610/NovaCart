@@ -1,6 +1,6 @@
 @echo off
 
-start "Backend - Spring Boot" cmd /k "cd backend && title Backend Server && mvnw spring-boot:run"
+start "Backend - Spring Boot" cmd /k "cd backend && title Backend Server && ./mvnw spring-boot:run"
 
 timeout /t 3 /nobreak >nul
 
