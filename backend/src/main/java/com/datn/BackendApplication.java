@@ -1,9 +1,9 @@
-package com.datn.backend;
+package com.datn;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.datn")
 public class BackendApplication {
 
 	public static void main(String[] args) {
