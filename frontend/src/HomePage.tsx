@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "./contexts/AuthContext";
 
 const API_BASE = "http://localhost:8080/api/home";
 
@@ -28,7 +30,12 @@ interface PageResponse<T> {
 }
 
 const formatVND = (n: number | null | undefined): string =>
-  n == null ? "" : new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(n);
+  n == null
+    ? ""
+    : new Intl.NumberFormat("vi-VN", {
+        style: "currency",
+        currency: "VND",
+      }).format(n);
 
 const DEMO_CATEGORIES: Category[] = [
   { categoryId: 1, categoryName: "Áo thun", slug: "ao-thun" },
@@ -42,7 +49,7 @@ const demoProduct = (
   id: number,
   name: string,
   price: number,
-  sale: number | null
+  sale: number | null,
 ): ProductDto => ({
   productId: id,
   productName: name,
@@ -92,7 +99,8 @@ function useHomeData(): HomeData {
           fetch(`${API_BASE}/products/newest?page=0&size=8`),
           fetch(`${API_BASE}/products/sale?page=0&size=4`),
         ]);
-        if (!catRes.ok || !newRes.ok || !saleRes.ok) throw new Error("API error");
+        if (!catRes.ok || !newRes.ok || !saleRes.ok)
+          throw new Error("API error");
 
         const cat: Category[] = await catRes.json();
         const newP: PageResponse<ProductDto> = await newRes.json();
@@ -119,7 +127,6 @@ function useHomeData(): HomeData {
 
   return { categories, newest, sale, loading, usingDemo };
 }
-
 
 function TapeNumber({ n }: { n: number }) {
   return (
@@ -161,11 +168,17 @@ function ProductCard({ product }: { product: ProductDto }) {
         <div className="mt-1.5 flex items-baseline gap-2">
           {onSale ? (
             <>
-              <span className="text-sm font-semibold text-orange-700">{formatVND(product.salePrice)}</span>
-              <span className="text-xs text-stone-400 line-through">{formatVND(product.price)}</span>
+              <span className="text-sm font-semibold text-orange-700">
+                {formatVND(product.salePrice)}
+              </span>
+              <span className="text-xs text-stone-400 line-through">
+                {formatVND(product.price)}
+              </span>
             </>
           ) : (
-            <span className="text-sm font-semibold text-stone-900">{formatVND(product.price)}</span>
+            <span className="text-sm font-semibold text-stone-900">
+              {formatVND(product.price)}
+            </span>
           )}
         </div>
       </div>
@@ -186,14 +199,17 @@ function SectionHeading({
     <div className="flex items-center gap-4 mb-8">
       <TapeNumber n={index} />
       <div>
-        <p className="text-[11px] uppercase tracking-[0.25em] text-stone-500">{eyebrow}</p>
-        <h2 className="text-2xl md:text-3xl font-semibold text-stone-900 tracking-tight">{title}</h2>
+        <p className="text-[11px] uppercase tracking-[0.25em] text-stone-500">
+          {eyebrow}
+        </p>
+        <h2 className="text-2xl md:text-3xl font-semibold text-stone-900 tracking-tight">
+          {title}
+        </h2>
       </div>
       <div className="flex-1 h-px bg-stone-300 ml-2" />
     </div>
   );
 }
-
 
 function TopBar() {
   return (
@@ -214,12 +230,16 @@ function Header({
   onSearch: (keyword: string) => void;
 }) {
   const [keyword, setKeyword] = useState<string>("");
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   return (
     <header className="bg-stone-50 border-b border-stone-200 sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-center justify-between h-20">
           <a href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold tracking-tight text-stone-900">MENSWEAR</span>
+            <span className="text-2xl font-bold tracking-tight text-stone-900">
+              MENSWEAR
+            </span>
             <span className="hidden sm:block text-[10px] tracking-[0.3em] text-stone-500 self-end pb-1">
               FOR HIM
             </span>
@@ -227,7 +247,11 @@ function Header({
 
           <nav className="hidden lg:flex items-center gap-7 text-sm font-medium text-stone-700">
             {categories.slice(0, 6).map((c) => (
-              <a key={c.categoryId} href={`/category/${c.slug}`} className="hover:text-orange-700 transition-colors">
+              <a
+                key={c.categoryId}
+                href={`/category/${c.slug}`}
+                className="hover:text-orange-700 transition-colors"
+              >
                 {c.categoryName}
               </a>
             ))}
@@ -247,22 +271,54 @@ function Header({
                 placeholder="Tìm sản phẩm..."
                 className="w-full bg-transparent outline-none text-sm text-stone-800 placeholder-stone-400"
               />
-              <button type="submit" aria-label="Tìm kiếm" className="text-stone-500 hover:text-stone-900">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <button
+                type="submit"
+                aria-label="Tìm kiếm"
+                className="text-stone-500 hover:text-stone-900"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <circle cx="11" cy="11" r="7" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
               </button>
             </form>
 
-            <button aria-label="Tài khoản" className="text-stone-700 hover:text-stone-900">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <button
+              aria-label="Tài khoản"
+              onClick={() => navigate(isAuthenticated ? "/account" : "/login")}
+              className="text-stone-700 hover:text-stone-900"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+              >
                 <circle cx="12" cy="8" r="4" />
                 <path d="M4 21c0-4 4-7 8-7s8 3 8 7" />
               </svg>
             </button>
-            <button aria-label="Giỏ hàng" className="text-stone-700 hover:text-stone-900">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <button
+              aria-label="Giỏ hàng"
+              className="text-stone-700 hover:text-stone-900"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+              >
                 <path d="M6 7h12l-1 13H7L6 7z" />
                 <path d="M9 7a3 3 0 0 1 6 0" />
               </svg>
@@ -279,7 +335,9 @@ function Hero() {
     <section className="bg-stone-900 text-stone-50">
       <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-2 gap-10 items-center py-16 md:py-24">
         <div>
-          <p className="text-[11px] tracking-[0.3em] text-orange-400 mb-4">BỘ SƯU TẬP MỚI</p>
+          <p className="text-[11px] tracking-[0.3em] text-orange-400 mb-4">
+            BỘ SƯU TẬP MỚI
+          </p>
           <h1 className="text-4xl md:text-6xl font-bold leading-[1.05] tracking-tight mb-6">
             May đo
             <br />
@@ -288,14 +346,20 @@ function Hero() {
             của riêng bạn.
           </h1>
           <p className="text-stone-400 text-sm md:text-base max-w-md mb-8">
-            Trang phục nam tối giản, chất liệu bền và form dáng chuẩn — từ áo sơ mi công sở đến
-            streetwear hằng ngày.
+            Trang phục nam tối giản, chất liệu bền và form dáng chuẩn — từ áo sơ
+            mi công sở đến streetwear hằng ngày.
           </p>
           <div className="flex gap-3">
-            <a href="#newest" className="bg-orange-700 hover:bg-orange-600 transition-colors text-stone-50 text-sm font-semibold px-6 py-3">
+            <a
+              href="#newest"
+              className="bg-orange-700 hover:bg-orange-600 transition-colors text-stone-50 text-sm font-semibold px-6 py-3"
+            >
               Mua ngay
             </a>
-            <a href="#categories" className="border border-stone-600 hover:border-stone-400 transition-colors text-sm font-semibold px-6 py-3">
+            <a
+              href="#categories"
+              className="border border-stone-600 hover:border-stone-400 transition-colors text-sm font-semibold px-6 py-3"
+            >
               Xem danh mục
             </a>
           </div>
@@ -308,7 +372,9 @@ function Hero() {
             <span>L</span>
             <span>XL</span>
           </div>
-          <span className="text-stone-600 text-sm">[ Ảnh sản phẩm nổi bật ]</span>
+          <span className="text-stone-600 text-sm">
+            [ Ảnh sản phẩm nổi bật ]
+          </span>
         </div>
       </div>
     </section>
@@ -325,7 +391,11 @@ function CategoryStrip({
   return (
     <section id="categories" className="bg-stone-50 py-16">
       <div className="max-w-7xl mx-auto px-6">
-        <SectionHeading index={1} eyebrow="Bắt đầu từ đây" title="Loại quần áo" />
+        <SectionHeading
+          index={1}
+          eyebrow="Bắt đầu từ đây"
+          title="Loại quần áo"
+        />
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {categories.map((c) => (
             <button
@@ -333,10 +403,19 @@ function CategoryStrip({
               onClick={() => onSelect(c)}
               className="group border border-stone-300 hover:border-stone-900 transition-colors px-4 py-8 text-left"
             >
-              <p className="text-sm font-semibold text-stone-900 mb-1">{c.categoryName}</p>
+              <p className="text-sm font-semibold text-stone-900 mb-1">
+                {c.categoryName}
+              </p>
               <span className="text-xs text-stone-500 group-hover:text-orange-700 inline-flex items-center gap-1">
                 Xem ngay
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="5" y1="12" x2="19" y2="12" />
                   <polyline points="12 5 19 12 12 19" />
                 </svg>
@@ -353,7 +432,11 @@ function NewestProducts({ products }: { products: ProductDto[] }) {
   return (
     <section id="newest" className="py-16 border-t border-stone-200">
       <div className="max-w-7xl mx-auto px-6">
-        <SectionHeading index={2} eyebrow="Vừa lên kệ" title="Sản phẩm mới nhất" />
+        <SectionHeading
+          index={2}
+          eyebrow="Vừa lên kệ"
+          title="Sản phẩm mới nhất"
+        />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-10">
           {products.map((p) => (
             <ProductCard key={p.productId} product={p} />
@@ -372,14 +455,21 @@ function SaleBanner({ products }: { products: ProductDto[] }) {
         <div className="flex items-center gap-4 mb-8">
           <TapeNumber n={3} />
           <div>
-            <p className="text-[11px] uppercase tracking-[0.25em] text-orange-400">Số lượng có hạn</p>
-            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">Đang giảm giá</h2>
+            <p className="text-[11px] uppercase tracking-[0.25em] text-orange-400">
+              Số lượng có hạn
+            </p>
+            <h2 className="text-2xl md:text-3xl font-semibold tracking-tight">
+              Đang giảm giá
+            </h2>
           </div>
           <div className="flex-1 h-px bg-stone-700 ml-2" />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-10">
           {products.map((p) => (
-            <div key={p.productId} className="[&_h3]:text-stone-50 [&_p]:text-stone-400">
+            <div
+              key={p.productId}
+              className="[&_h3]:text-stone-50 [&_p]:text-stone-400"
+            >
               <ProductCard product={p} />
             </div>
           ))}
@@ -393,7 +483,9 @@ function Newsletter() {
   return (
     <section className="py-16 bg-stone-50 border-t border-stone-200">
       <div className="max-w-7xl mx-auto px-6 text-center max-w-xl">
-        <h2 className="text-2xl font-semibold text-stone-900 mb-2">Nhận ưu đãi sớm nhất</h2>
+        <h2 className="text-2xl font-semibold text-stone-900 mb-2">
+          Nhận ưu đãi sớm nhất
+        </h2>
         <p className="text-sm text-stone-500 mb-6">
           Đăng ký email để nhận thông tin bộ sưu tập mới và mã giảm giá.
         </p>
@@ -403,7 +495,10 @@ function Newsletter() {
             placeholder="email@cuaban.com"
             className="flex-1 px-4 py-3 text-sm outline-none bg-transparent text-stone-800 placeholder-stone-400"
           />
-          <button type="submit" className="bg-stone-900 text-stone-50 text-sm font-semibold px-6">
+          <button
+            type="submit"
+            className="bg-stone-900 text-stone-50 text-sm font-semibold px-6"
+          >
             Đăng ký
           </button>
         </form>

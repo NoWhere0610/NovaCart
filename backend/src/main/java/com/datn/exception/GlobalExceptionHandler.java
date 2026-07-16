@@ -1,0 +1,61 @@
+package com.datn.exception;
+
+import com.datn.dto.ApiError;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * "Bắt" toàn bộ exception ném ra từ Controller/Service ở MỘT nơi duy nhất,
+ * thay vì mỗi Controller phải tự try-catch -> code Controller sạch hơn nhiều
+ * và response lỗi luôn đồng nhất format cho frontend.
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    // Lỗi nghiệp vụ tự định nghĩa (username trùng, not found...)
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ApiError> handleApiException(ApiException ex) {
+        return ResponseEntity.status(ex.getStatus()).body(buildError(ex.getStatus(), ex.getMessage(), null));
+    }
+
+    // Sai username/password khi login (Spring Security ném exception này)
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiError> handleBadCredentials(BadCredentialsException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(buildError(HttpStatus.UNAUTHORIZED, "Tên đăng nhập hoặc mật khẩu không đúng", null));
+    }
+
+    // Lỗi @Valid ở request DTO (vd: @NotBlank, @Email...) -> trả kèm chi tiết lỗi từng field
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex) {
+        Map<String, String> fieldErrors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors()
+                .forEach(err -> fieldErrors.put(err.getField(), err.getDefaultMessage()));
+        return ResponseEntity.badRequest()
+                .body(buildError(HttpStatus.BAD_REQUEST, "Dữ liệu không hợp lệ", fieldErrors));
+    }
+
+    // Lưới an toàn cuối cùng: bắt mọi lỗi không lường trước, tránh lộ stack trace ra client
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> handleUnknown(Exception ex) {
+        return ResponseEntity.internalServerError()
+                .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, "Đã có lỗi xảy ra ở hệ thống", null));
+    }
+
+    private ApiError buildError(HttpStatus status, String message, Map<String, String> fieldErrors) {
+        return ApiError.builder()
+                .timestamp(LocalDateTime.now())
+                .status(status.value())
+                .message(message)
+                .fieldErrors(fieldErrors)
+                .build();
+    }
+}
