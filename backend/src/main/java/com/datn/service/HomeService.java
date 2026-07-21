@@ -14,6 +14,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.datn.dto.ProductDetailResponse;
+import com.datn.dto.ProductVariantResponse;
+import com.datn.entity.ProductVariant;
+import com.datn.exception.ApiException;
+import java.util.Comparator;
 
 import java.util.List;
 
@@ -55,6 +60,42 @@ public class HomeService {
                 Product.Status.ACTIVE, keyword, pageable);
         return PageResponse.from(page.map(this::toProductResponse));
     }
+
+    // Thêm method mới (đặt sau searchProducts(), trước toProductResponse()):
+/** Trang chi tiết sản phẩm — trả đầy đủ ảnh + danh sách variant (size/màu/tồn kho) để user chọn trước khi thêm giỏ. */
+public ProductDetailResponse getProductDetail(Long productId) {
+    Product p = productRepository.findById(productId)
+            .orElseThrow(() -> ApiException.notFound("Sản phẩm không tồn tại"));
+
+    List<String> imageUrls = p.getImages() == null ? List.of() : p.getImages().stream()
+            .sorted(Comparator.comparing(ProductImage::getDisplayOrder,
+                    Comparator.nullsLast(Comparator.naturalOrder())))
+            .map(ProductImage::getImageUrl)
+            .toList();
+
+    List<ProductVariantResponse> variants = p.getVariants() == null ? List.of() : p.getVariants().stream()
+            .map(v -> ProductVariantResponse.builder()
+                    .variantId(v.getVariantId())
+                    .size(v.getSize())
+                    .color(v.getColor())
+                    .stockQuantity(v.getStockQuantity())
+                    .build())
+            .toList();
+
+    return ProductDetailResponse.builder()
+            .productId(p.getProductId())
+            .productName(p.getProductName())
+            .slug(p.getSlug())
+            .description(p.getDescription())
+            .price(p.getPrice())
+            .salePrice(p.getSalePrice())
+            .material(p.getMaterial())
+            .categoryName(p.getCategory() != null ? p.getCategory().getCategoryName() : null)
+            .brandName(p.getBrand() != null ? p.getBrand().getBrandName() : null)
+            .imageUrls(imageUrls)
+            .variants(variants)
+            .build();
+}
 
 
     private ProductResponse toProductResponse(Product p) {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import { getMyCartApi } from "./api/cartApi";
 import { useAuth } from "./contexts/AuthContext";
 
 const API_BASE = "http://localhost:8080/api/home";
@@ -230,8 +231,21 @@ function Header({
   onSearch: (keyword: string) => void;
 }) {
   const [keyword, setKeyword] = useState<string>("");
+  const [cartCount, setCartCount] = useState(0);
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setCartCount(0);
+      return;
+    }
+
+    getMyCartApi()
+      .then((cart) => setCartCount(cart.totalQuantity))
+      .catch(() => setCartCount(0));
+  }, [isAuthenticated]);
+
   return (
     <header className="bg-stone-50 border-b border-stone-200 sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-6">
@@ -309,7 +323,8 @@ function Header({
             </button>
             <button
               aria-label="Giỏ hàng"
-              className="text-stone-700 hover:text-stone-900"
+              onClick={() => navigate(isAuthenticated ? "/cart" : "/login")}
+              className="relative text-stone-700 hover:text-stone-900"
             >
               <svg
                 width="20"
@@ -322,6 +337,11 @@ function Header({
                 <path d="M6 7h12l-1 13H7L6 7z" />
                 <path d="M9 7a3 3 0 0 1 6 0" />
               </svg>
+              {isAuthenticated && cartCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-orange-700 text-white text-[10px] leading-none rounded-full w-4 h-4 flex items-center justify-center">
+                  {cartCount > 9 ? "9+" : cartCount}
+                </span>
+              )}
             </button>
           </div>
         </div>

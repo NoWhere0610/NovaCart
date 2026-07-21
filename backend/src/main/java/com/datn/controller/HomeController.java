@@ -2,6 +2,7 @@ package com.datn.controller;
 
 import com.datn.dto.CategoryResponse;
 import com.datn.dto.PageResponse;
+import com.datn.dto.ProductDetailResponse;
 import com.datn.dto.ProductResponse;
 import com.datn.service.HomeService;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,11 @@ public class HomeController {
         Pageable pageable = PageRequest.of(page, size);
         return homeService.getOnSaleProducts(pageable);
     }
+
+    @GetMapping("/products/{productId}")
+    public ProductDetailResponse getProductDetail(@PathVariable Long productId) {
+    return homeService.getProductDetail(productId);
+}
 
     @GetMapping("/products/search")
     public PageResponse<ProductResponse> searchProducts(
