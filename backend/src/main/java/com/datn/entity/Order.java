@@ -36,14 +36,31 @@ public class Order {
     }
 
     public enum PaymentMethod {
-        COD,           // thanh toán khi nhận hàng
-        BANK_TRANSFER  // chuyển khoản (đồ án: đánh dấu thủ công / demo, chưa nối cổng thanh toán thật)
+        COD,            // thanh toán khi nhận hàng
+        BANK_TRANSFER,  // chuyển khoản (đồ án: đánh dấu thủ công / demo, chưa nối cổng thanh toán thật)
+        VNPAY,          // DB đã có sẵn CHECK constraint cho phép giá trị này (chưa nối cổng thanh toán thật)
+        MOMO
+    }
+
+    // DB có sẵn cột payment_status (CHECK: UNPAID/PAID/REFUNDED) — thêm enum
+    // tương ứng để entity khớp đầy đủ với DB, dù đồ án hiện chưa có luồng
+    // tự động chuyển PAID (chưa nối cổng thanh toán thật, admin có thể tự cập nhật thủ công)
+    public enum PaymentStatus {
+        UNPAID, PAID, REFUNDED
     }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "order_id")
     private Long orderId;
+
+    // QUAN TRỌNG: cột order_code trong DB có UNIQUE constraint, và SQL Server
+    // chỉ cho phép ĐÚNG 1 dòng NULL trong 1 UNIQUE constraint (khác Postgres/MySQL
+    // cho phép nhiều NULL) — nếu để trống, đơn hàng thứ 2 trở đi sẽ INSERT lỗi
+    // vi phạm unique constraint. BẮT BUỘC phải luôn set giá trị duy nhất khi tạo
+    // đơn (xem OrderService.checkout() -> generateOrderCode()).
+    @Column(name = "order_code", unique = true, length = 50)
+    private String orderCode;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -63,6 +80,22 @@ public class Order {
     @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;
 
+    // ----- Sprint 4: áp mã giảm giá -----
+    // Tổng tiền hàng TRƯỚC khi áp voucher (= tổng subtotal của các OrderItem)
+    @Column(name = "subtotal_amount", precision = 12, scale = 2)
+    private BigDecimal subtotalAmount;
+
+    // Số tiền được giảm nhờ voucher — 0 nếu không dùng mã nào
+    @Column(name = "discount_amount", precision = 12, scale = 2)
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    // SNAPSHOT mã đã dùng (không lưu voucher_id tham chiếu động) — cùng lý do
+    // với việc snapshot địa chỉ/tên sản phẩm: voucher có thể bị admin xoá/sửa
+    // sau này nhưng hoá đơn cũ phải giữ nguyên đã dùng mã gì
+    @Column(name = "voucher_code", length = 50)
+    private String voucherCode;
+    // ----- hết phần voucher -----
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private Status status = Status.PENDING;
@@ -70,6 +103,10 @@ public class Order {
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_method", nullable = false, length = 20)
     private PaymentMethod paymentMethod;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", length = 20)
+    private PaymentStatus paymentStatus = PaymentStatus.UNPAID;
 
     @Column(name = "note", length = 500)
     private String note;

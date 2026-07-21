@@ -12,10 +12,15 @@ import java.util.List;
 @Builder
 public class OrderResponse {
     private Long orderId;
+    private String orderCode;
     private String receiverName;
     private String phone;
     private String shippingAddress;
     private BigDecimal totalAmount;
+    // Sprint 4: chi tiết áp mã giảm giá
+    private BigDecimal subtotalAmount;
+    private BigDecimal discountAmount;
+    private String voucherCode;
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
     private String note;

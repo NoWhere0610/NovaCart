@@ -28,6 +28,7 @@ public class OrderService {
     private final AddressRepository addressRepository;
     private final ProductVariantRepository variantRepository;
     private final OrderRepository orderRepository;
+    private final VoucherService voucherService;
 
     /**
      * Checkout: chuyển TOÀN BỘ giỏ hàng hiện tại thành 1 đơn hàng.
@@ -57,6 +58,11 @@ public class OrderService {
         User userRef = new User();
         userRef.setUserId(userId);
         order.setUser(userRef);
+        // BẮT BUỘC set orderCode ngay từ đầu — cột order_code UNIQUE trong DB
+        // chỉ cho phép 1 dòng NULL (đặc thù SQL Server), để trống sẽ lỗi insert
+        // từ đơn hàng thứ 2 trở đi. Đồng thời đây cũng là mã đơn "thân thiện"
+        // hiển thị cho khách (thay vì chỉ có orderId dạng số).
+        order.setOrderCode(generateOrderCode());
         order.setReceiverName(address.getReceiverName());
         order.setPhone(address.getPhone());
         order.setShippingAddress(buildFullAddress(address));
@@ -100,7 +106,19 @@ public class OrderService {
             order.getItems().add(orderItem);
         }
 
-        order.setTotalAmount(total);
+        // ----- Sprint 4: áp mã giảm giá (nếu người dùng có nhập) -----
+        order.setSubtotalAmount(total);
+        BigDecimal discount = BigDecimal.ZERO;
+        if (request.getVoucherCode() != null && !request.getVoucherCode().isBlank()) {
+            // applyVoucher() tự validate (hạn dùng, tối thiểu đơn hàng, số lượt còn lại...)
+            // và TỰ TĂNG usedCount ngay trong transaction hiện tại — nếu checkout thất bại
+            // ở bước sau, toàn bộ (kể cả usedCount vừa tăng) sẽ rollback cùng nhau
+            discount = voucherService.applyVoucher(request.getVoucherCode(), total);
+            order.setVoucherCode(request.getVoucherCode().trim().toUpperCase());
+        }
+        order.setDiscountAmount(discount);
+        order.setTotalAmount(total.subtract(discount));
+        // ----- hết phần voucher -----
         Order saved = orderRepository.save(order);
 
         // Đặt hàng xong -> dọn sạch giỏ hàng (orphanRemoval=true trên Cart.items
@@ -151,6 +169,18 @@ public class OrderService {
 
     // ----- helper nội bộ -----
 
+    /**
+     * Sinh mã đơn hàng dạng "DH" + timestamp (mili-giây) + 4 số ngẫu nhiên.
+     * Không dùng UUID (quá dài, khó đọc cho khách) — timestamp mili-giây đã
+     * gần như không trùng, cộng thêm số ngẫu nhiên để an toàn hơn nếu 2 đơn
+     * được tạo trong cùng 1 mili-giây (hiếm nhưng vẫn có thể xảy ra khi tải cao).
+     */
+    private String generateOrderCode() {
+        long timestamp = System.currentTimeMillis();
+        int random = new java.util.Random().nextInt(9000) + 1000;
+        return "DH" + timestamp + random;
+    }
+
     private String buildFullAddress(Address a) {
         return String.join(", ",
                 nonBlankOrEmpty(a.getDetailAddress()),
@@ -178,10 +208,14 @@ public class OrderService {
 
         return OrderResponse.builder()
                 .orderId(order.getOrderId())
+                .orderCode(order.getOrderCode())
                 .receiverName(order.getReceiverName())
                 .phone(order.getPhone())
                 .shippingAddress(order.getShippingAddress())
                 .totalAmount(order.getTotalAmount())
+                .subtotalAmount(order.getSubtotalAmount())
+                .discountAmount(order.getDiscountAmount())
+                .voucherCode(order.getVoucherCode())
                 .status(order.getStatus())
                 .paymentMethod(order.getPaymentMethod())
                 .note(order.getNote())
