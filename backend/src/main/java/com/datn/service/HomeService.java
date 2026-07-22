@@ -2,19 +2,25 @@ package com.datn.service;
 
 import com.datn.dto.CategoryResponse;
 import com.datn.dto.PageResponse;
+import com.datn.dto.ProductDetailResponse;
 import com.datn.dto.ProductResponse;
+import com.datn.dto.ProductVariantResponse;
 import com.datn.entity.Category;
 import com.datn.entity.Product;
 import com.datn.entity.ProductImage;
+import com.datn.entity.ProductVariant;
+import com.datn.exception.ApiException;
 import com.datn.repository.BrandRepository;
 import com.datn.repository.CategoryRepository;
 import com.datn.repository.ProductRepository;
+import com.datn.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -25,6 +31,7 @@ public class HomeService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
+    private final ReviewRepository reviewRepository;
 
     public List<CategoryResponse> getRootCategories() {
         return categoryRepository.findByParentIsNullAndIsActiveTrue()
@@ -56,6 +63,45 @@ public class HomeService {
         return PageResponse.from(page.map(this::toProductResponse));
     }
 
+    /** Trang chi tiết sản phẩm — trả đầy đủ ảnh + danh sách variant (size/màu/tồn kho) để user chọn trước khi thêm giỏ. */
+    public ProductDetailResponse getProductDetail(Long productId) {
+        Product p = productRepository.findById(productId)
+                .orElseThrow(() -> ApiException.notFound("Sản phẩm không tồn tại"));
+
+        List<String> imageUrls = p.getImages() == null ? List.of() : p.getImages().stream()
+                .sorted(Comparator.comparing(ProductImage::getDisplayOrder,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(ProductImage::getImageUrl)
+                .toList();
+
+        List<ProductVariantResponse> variants = p.getVariants() == null ? List.of() : p.getVariants().stream()
+                .map(v -> ProductVariantResponse.builder()
+                        .variantId(v.getVariantId())
+                        .size(v.getSize())
+                        .color(v.getColor())
+                        .stockQuantity(v.getStockQuantity())
+                        .build())
+                .toList();
+
+        Double avgRating = reviewRepository.findAverageRatingByProductId(productId);
+        long reviewCount = reviewRepository.countByProduct_ProductId(productId);
+
+        return ProductDetailResponse.builder()
+                .productId(p.getProductId())
+                .productName(p.getProductName())
+                .slug(p.getSlug())
+                .description(p.getDescription())
+                .price(p.getPrice())
+                .salePrice(p.getSalePrice())
+                .material(p.getMaterial())
+                .categoryName(p.getCategory() != null ? p.getCategory().getCategoryName() : null)
+                .brandName(p.getBrand() != null ? p.getBrand().getBrandName() : null)
+                .imageUrls(imageUrls)
+                .variants(variants)
+                .averageRating(avgRating == null ? 0.0 : Math.round(avgRating * 10) / 10.0)
+                .reviewCount(reviewCount)
+                .build();
+    }
 
     private ProductResponse toProductResponse(Product p) {
         String thumbnail = p.getImages() == null ? null : p.getImages().stream()
