@@ -140,8 +140,8 @@ function TapeNumber({ n }: { n: number }) {
 function ProductCard({ product }: { product: ProductDto }) {
   const onSale = product.salePrice != null;
   return (
-    <a href={`/products/${product.slug}`} className="group block">
-      <div className="relative aspect-[3/4] bg-stone-200 overflow-hidden">
+    <Link to={`/products/${product.productId}`} className="group block">
+      <div className="relative aspect-3/4 bg-stone-200 overflow-hidden">
         {product.thumbnailUrl ? (
           <img
             src={product.thumbnailUrl}
@@ -183,7 +183,7 @@ function ProductCard({ product }: { product: ProductDto }) {
           )}
         </div>
       </div>
-    </a>
+    </Link>
   );
 }
 
@@ -385,7 +385,7 @@ function Hero() {
           </div>
         </div>
 
-        <div className="relative aspect-[4/5] bg-stone-800 flex items-center justify-center overflow-hidden">
+        <div className="relative aspect-4/5 bg-stone-800 flex items-center justify-center overflow-hidden">
           <div className="absolute inset-0 flex flex-col justify-between p-6 text-stone-500 text-[10px] tracking-widest">
             <span>S</span>
             <span>M</span>
@@ -502,7 +502,7 @@ function SaleBanner({ products }: { products: ProductDto[] }) {
 function Newsletter() {
   return (
     <section className="py-16 bg-stone-50 border-t border-stone-200">
-      <div className="max-w-7xl mx-auto px-6 text-center max-w-xl">
+      <div className="mx-auto px-6 text-center max-w-xl">
         <h2 className="text-2xl font-semibold text-stone-900 mb-2">
           Nhận ưu đãi sớm nhất
         </h2>

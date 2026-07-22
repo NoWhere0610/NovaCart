@@ -22,4 +22,8 @@ public class ProductDetailResponse {
     private List<String> imageUrls;
     /** Danh sách phân loại size/màu để user chọn trước khi thêm vào giỏ. */
     private List<ProductVariantResponse> variants;
+    // Sprint 4: rating tổng hợp, tính sẵn ở BE để FE khỏi phải gọi thêm API riêng
+    // ngay lúc load trang chi tiết (chỉ cần gọi thêm khi xem DANH SÁCH review đầy đủ)
+    private Double averageRating;
+    private Long reviewCount;
 }

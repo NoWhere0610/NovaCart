@@ -18,4 +18,6 @@ public class CheckoutRequest {
     private Order.PaymentMethod paymentMethod;
 
     private String note;
+
+    private String voucherCode;
 }
