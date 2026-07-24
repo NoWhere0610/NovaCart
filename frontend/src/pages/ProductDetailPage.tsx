@@ -8,6 +8,7 @@ import {
 import { addToCartApi } from "../api/cartApi";
 import { useAuth } from "../contexts/AuthContext";
 import ProductReviews from "../components/ProductReviews";
+import BackButton from "../components/BackButton";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
@@ -109,6 +110,9 @@ export default function ProductDetailPage() {
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
+      <div className="max-w-5xl mx-auto mb-2">
+        <BackButton />
+      </div>
       <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10">
         {/* Gallery ảnh */}
         <div>
