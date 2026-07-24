@@ -1,6 +1,8 @@
 -- =====================================================
 -- DATABASE: Website bán quần áo nam (JavaWeb + SQL + React)
 -- DBMS: Microsoft SQL Server (T-SQL)
+-- Bản đầy đủ cho TOÀN BỘ dự án (Sprint 1: Auth/Address,
+-- Sprint 2: Cart/Order, Sprint 3: Admin, Sprint 4: Review/Voucher)
 -- =====================================================
 
 IF DB_ID('menswear_shop') IS NOT NULL
@@ -144,7 +146,7 @@ CREATE TABLE product_variants (
 GO
 
 -- =====================================================
--- 5. GIỎ HÀNG (CART) - gợi ý thêm
+-- 5. GIỎ HÀNG (CART)
 -- =====================================================
 
 CREATE TABLE carts (
@@ -166,24 +168,28 @@ CREATE TABLE cart_items (
 GO
 
 -- =====================================================
--- 6. ĐƠN HÀNG (ORDER) - gợi ý thêm
+-- 6. ĐƠN HÀNG (ORDER)
 -- =====================================================
 
 CREATE TABLE orders (
-    order_id        BIGINT IDENTITY(1,1) PRIMARY KEY,
-    user_id         BIGINT NOT NULL,
-    address_id      BIGINT NULL,
-    order_code      NVARCHAR(50) UNIQUE,
-    total_amount    DECIMAL(14,2) NOT NULL,
-    status          NVARCHAR(20) DEFAULT 'PENDING'
-                        CHECK (status IN ('PENDING','CONFIRMED','SHIPPING','COMPLETED','CANCELLED')),
-    payment_method  NVARCHAR(20) DEFAULT 'COD'
-                        CHECK (payment_method IN ('COD','BANK_TRANSFER','MOMO','VNPAY')),
-    payment_status  NVARCHAR(20) DEFAULT 'UNPAID'
-                        CHECK (payment_status IN ('UNPAID','PAID','REFUNDED')),
-    note            NVARCHAR(255),
-    created_at      DATETIME2 DEFAULT SYSDATETIME(),
-    updated_at      DATETIME2 DEFAULT SYSDATETIME(),
+    order_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+    user_id             BIGINT NOT NULL,
+    address_id          BIGINT NULL,
+    order_code          NVARCHAR(50) UNIQUE,
+    total_amount        DECIMAL(14,2) NOT NULL,
+    -- Sprint 4: chi tiết áp mã giảm giá (mới thêm so với bản gốc)
+    subtotal_amount     DECIMAL(14,2) NULL,                  -- tổng tiền hàng TRƯỚC khi giảm giá
+    discount_amount     DECIMAL(14,2) NOT NULL DEFAULT 0,    -- số tiền đã giảm nhờ voucher
+    voucher_code        NVARCHAR(50) NULL,                   -- snapshot mã đã dùng
+    status              NVARCHAR(20) DEFAULT 'PENDING'
+                            CHECK (status IN ('PENDING','CONFIRMED','SHIPPING','COMPLETED','CANCELLED')),
+    payment_method      NVARCHAR(20) DEFAULT 'COD'
+                            CHECK (payment_method IN ('COD','BANK_TRANSFER','MOMO','VNPAY')),
+    payment_status      NVARCHAR(20) DEFAULT 'UNPAID'
+                            CHECK (payment_status IN ('UNPAID','PAID','REFUNDED')),
+    note                NVARCHAR(255),
+    created_at          DATETIME2 DEFAULT SYSDATETIME(),
+    updated_at          DATETIME2 DEFAULT SYSDATETIME(),
     FOREIGN KEY (user_id) REFERENCES users(user_id),
     FOREIGN KEY (address_id) REFERENCES addresses(address_id)
 );
@@ -198,13 +204,16 @@ CREATE TABLE order_items (
     color           NVARCHAR(50),
     unit_price      DECIMAL(12,2) NOT NULL,  -- giá tại thời điểm mua
     quantity        INT NOT NULL,
+    -- Mới thêm: OrderItem.java (Sprint 2) tính subtotal = unit_price * quantity
+    -- ngay lúc đặt hàng rồi lưu lại (không tính động mỗi lần xem), nên bảng cần cột này
+    subtotal        DECIMAL(12,2) NOT NULL DEFAULT 0,
     FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
     FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id)
 );
 GO
 
 -- =====================================================
--- 7. ĐÁNH GIÁ SẢN PHẨM (REVIEW) - gợi ý thêm
+-- 7. ĐÁNH GIÁ SẢN PHẨM (REVIEW)
 -- =====================================================
 
 CREATE TABLE reviews (
@@ -215,24 +224,30 @@ CREATE TABLE reviews (
     comment     NVARCHAR(MAX),
     created_at  DATETIME2 DEFAULT SYSDATETIME(),
     FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    -- Mới thêm: chặn 1 user đánh giá trùng 1 sản phẩm ngay ở tầng DB
+    -- (trước đó chỉ được chặn ở tầng code, không an toàn tuyệt đối)
+    CONSTRAINT uq_review_user_product UNIQUE (user_id, product_id)
 );
 GO
 
 -- =====================================================
--- 8. MÃ GIẢM GIÁ (VOUCHER) - gợi ý thêm
+-- 8. MÃ GIẢM GIÁ (VOUCHER)
 -- =====================================================
 
 CREATE TABLE vouchers (
-    voucher_id      INT IDENTITY(1,1) PRIMARY KEY,
-    code            NVARCHAR(50) UNIQUE NOT NULL,
-    discount_type   NVARCHAR(10) NOT NULL CHECK (discount_type IN ('PERCENT','AMOUNT')),
-    discount_value  DECIMAL(12,2) NOT NULL,
-    min_order_value DECIMAL(12,2) DEFAULT 0,
-    start_date      DATE,
-    end_date        DATE,
-    usage_limit     INT DEFAULT 0,
-    is_active       BIT DEFAULT 1
+    voucher_id          INT IDENTITY(1,1) PRIMARY KEY,
+    code                NVARCHAR(50) UNIQUE NOT NULL,
+    discount_type       NVARCHAR(10) NOT NULL CHECK (discount_type IN ('PERCENT','AMOUNT')),
+    discount_value      DECIMAL(12,2) NOT NULL,
+    min_order_value     DECIMAL(12,2) DEFAULT 0,
+    -- Sprint 4: 2 cột dưới đây mới thêm so với bản gốc
+    max_discount_amount DECIMAL(12,2) NULL,          -- chỉ dùng cho loại PERCENT, chặn giảm quá nhiều
+    used_count          INT NOT NULL DEFAULT 0,      -- đếm số lượt đã dùng, so sánh với usage_limit
+    start_date          DATE,
+    end_date            DATE,
+    usage_limit         INT DEFAULT 0,
+    is_active           BIT DEFAULT 1
 );
 GO
 
@@ -251,9 +266,12 @@ GO
 -- DỮ LIỆU MẪU (SEED DATA)
 -- =====================================================
 
--- Admin mặc định (password nên hash bằng BCrypt khi insert thật, đây chỉ là placeholder)
+-- Admin mặc định — mật khẩu: Admin@123
+-- (hash BCrypt THẬT tạo bằng bcrypt rounds=10, KHÔNG còn là chuỗi placeholder
+-- giả '$2a$10$hashedpasswordplaceholder' như bản gốc — chuỗi đó không đăng
+-- nhập được vì không phải hash hợp lệ)
 INSERT INTO users (username, password, email, full_name, is_active)
-VALUES (N'admin', N'$2a$10$hashedpasswordplaceholder', N'admin@menswear.com', N'Quản trị viên', 1);
+VALUES (N'admin', N'$2b$10$PhCqGHhTMbwMYDVpp3AegO48UpBVOo8u69UdfhCaVnR/0kTKxXkIK', N'admin@menswear.com', N'Quản trị viên', 1);
 GO
 
 INSERT INTO user_roles (user_id, role_id)
@@ -271,4 +289,37 @@ GO
 
 -- Thương hiệu mẫu
 INSERT INTO brands (brand_name) VALUES (N'Local Brand'), (N'No Brand');
+GO
+
+-- Sản phẩm mẫu để trang chủ/giỏ hàng có dữ liệu test ngay (bản gốc không có
+-- sản phẩm nào cả nên trang chủ sẽ trống trơn nếu không thêm phần này)
+DECLARE @catAoThun INT = (SELECT category_id FROM categories WHERE slug = N'ao-thun');
+DECLARE @catAoSoMi INT = (SELECT category_id FROM categories WHERE slug = N'ao-so-mi');
+DECLARE @catQuanJean INT = (SELECT category_id FROM categories WHERE slug = N'quan-jean');
+DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
+
+INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
+VALUES
+(N'Áo thun basic cotton', N'ao-thun-basic-cotton-001', N'Áo thun cotton 100%, form regular fit, thoáng mát.', @catAoThun, @brandLocal, 199000, 149000, N'Cotton 100%', N'ACTIVE'),
+(N'Áo sơ mi trắng công sở', N'ao-so-mi-trang-cong-so-002', N'Sơ mi trắng vải Oxford, phù hợp đi làm/đi học.', @catAoSoMi, @brandLocal, 350000, NULL, N'Oxford', N'ACTIVE'),
+(N'Quần jean slim fit', N'quan-jean-slim-fit-003', N'Quần jean xanh đậm, form slim fit trẻ trung.', @catQuanJean, @brandLocal, 450000, 399000, N'Denim', N'ACTIVE');
+GO
+
+INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
+SELECT product_id, N'https://picsum.photos/seed/' + CAST(product_id AS NVARCHAR) + N'/600/800', 1, 0
+FROM products WHERE slug IN (N'ao-thun-basic-cotton-001', N'ao-so-mi-trang-cong-so-002', N'quan-jean-slim-fit-003');
+GO
+
+INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
+SELECT product_id, size, color, CONCAT('SKU-', product_id, '-', size, '-', color), 50
+FROM products
+CROSS APPLY (VALUES ('S', N'Đen'), ('M', N'Đen'), ('L', N'Trắng')) AS v(size, color)
+WHERE slug IN (N'ao-thun-basic-cotton-001', N'ao-so-mi-trang-cong-so-002', N'quan-jean-slim-fit-003');
+GO
+
+-- Voucher mẫu để test checkout ngay (khớp 2 mã đã cấu hình sẵn trong AdminVouchersPage demo)
+INSERT INTO vouchers (code, discount_type, discount_value, min_order_value, max_discount_amount, usage_limit, is_active)
+VALUES
+(N'GIAM10', N'PERCENT', 10, 200000, 50000, 100, 1),
+(N'GIAM50K', N'AMOUNT', 50000, 300000, NULL, 50, 1);
 GO
