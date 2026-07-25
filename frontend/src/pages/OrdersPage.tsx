@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getMyOrdersApi, type OrderDto, type OrderStatus } from '../api/orderApi'
+import BackButton from '../components/BackButton'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -33,6 +34,7 @@ export default function OrdersPage() {
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
       <div className="max-w-3xl mx-auto">
+        <BackButton />
         <h1 className="text-2xl font-semibold text-stone-900 mb-6">Đơn hàng của tôi</h1>
 
         {loading ? (

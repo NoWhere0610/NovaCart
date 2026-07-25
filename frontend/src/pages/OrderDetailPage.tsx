@@ -5,6 +5,7 @@ import {
   getMyOrderDetailApi,
   type OrderDto,
 } from "../api/orderApi";
+import BackButton from "../components/BackButton";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
@@ -59,7 +60,9 @@ export default function OrderDetailPage() {
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
-      <div className="max-w-2xl mx-auto bg-white border border-stone-200 p-8">
+      <div className="max-w-2xl mx-auto">
+        <BackButton />
+        <div className="bg-white border border-stone-200 p-8">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-stone-900">
             Đơn hàng #{order.orderId}
@@ -139,6 +142,7 @@ export default function OrderDetailPage() {
             {cancelling ? "Đang huỷ..." : "Huỷ đơn hàng"}
           </button>
         )}
+      </div>
       </div>
     </div>
   );

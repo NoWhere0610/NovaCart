@@ -7,6 +7,7 @@ import {
   getMyAddressesApi,
   type AddressDto,
 } from '../api/addressApi'
+import BackButton from '../components/BackButton'
 
 export default function AccountPage() {
   const { user, logout } = useAuth()
@@ -17,7 +18,7 @@ export default function AccountPage() {
   const [form, setForm] = useState({ receiverName: '', phone: '', detailAddress: '' })
   const [submitting, setSubmitting] = useState(false)
 
-  // Được bảo vệ bởi <ProtectedRoute/> nên chắc chắn có user khi tới đây,
+    // Được bảo vệ bởi <ProtectedRoute/> nên chắc chắn có user khi tới đây,
   // nhưng vẫn load địa chỉ ngay khi mount trang
   useEffect(() => {
     loadAddresses()
@@ -44,7 +45,7 @@ export default function AccountPage() {
         province: null,
         district: null,
         ward: null,
-        isDefault: addresses.length === 0, // địa chỉ đầu tiên tự làm mặc định
+        isDefault: addresses.length === 0,// địa chỉ đầu tiên tự làm mặc định
       })
       setForm({ receiverName: '', phone: '', detailAddress: '' })
       await loadAddresses()
@@ -65,7 +66,9 @@ export default function AccountPage() {
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
-      <div className="max-w-2xl mx-auto bg-white border border-stone-200 p-8">
+      <div className="max-w-2xl mx-auto">
+        <BackButton />
+        <div className="bg-white border border-stone-200 p-8">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold text-stone-900">Tài khoản của tôi</h1>
@@ -146,6 +149,7 @@ export default function AccountPage() {
             {submitting ? 'Đang lưu...' : 'Thêm địa chỉ'}
           </button>
         </form>
+      </div>
       </div>
     </div>
   )
