@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
-const NAV_CATEGORIES = [
+const CATEGORIES = [
   { slug: 'ao-thun', label: 'Áo thun' },
   { slug: 'ao-so-mi', label: 'Áo sơ mi' },
   { slug: 'quan-jean', label: 'Quần jean' },
@@ -17,30 +18,60 @@ const HERO_IMAGE = 'https://picsum.photos/seed/menswear-hero/900/1100'
 export default function LandingPage() {
   const navigate = useNavigate()
   const { logout } = useAuth()
+  const [showCategories, setShowCategories] = useState(false)
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
       <header className="bg-stone-50 border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex items-center justify-between h-20">
-            <Link to="/" className="flex items-center gap-2">
-              <span className="text-2xl font-bold tracking-tight text-stone-900">MENSWEAR</span>
-              <span className="text-[10px] uppercase tracking-widest text-stone-400 border-l border-stone-300 pl-2">
-                For Him
-              </span>
-            </Link>
-
-            <nav className="hidden md:flex items-center gap-8">
-              {NAV_CATEGORIES.map((c) => (
-                <Link
-                  key={c.slug}
-                  to={`/shop?category=${c.slug}`}
-                  className="text-sm text-stone-700 hover:text-stone-900"
+            <div className="flex items-center gap-6">
+              {/* Nút Danh mục — dropdown xổ xuống khi bấm, thay cho dàn ngang cũ */}
+              <div
+                className="relative"
+                onBlur={(e) => {
+                  // Đóng dropdown khi click ra ngoài toàn bộ khối này (không phải
+                  // đang click vào 1 item bên trong nó)
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setShowCategories(false)
+                  }
+                }}
+              >
+                <button
+                  onClick={() => setShowCategories((v) => !v)}
+                  className="flex items-center gap-2 text-sm text-stone-700 hover:text-stone-900 border border-stone-300 px-3 py-2"
                 >
-                  {c.label}
-                </Link>
-              ))}
-            </nav>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  Danh mục sản phẩm
+                </button>
+
+                {showCategories && (
+                  <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-stone-200 shadow-lg z-50">
+                    {CATEGORIES.map((c) => (
+                      <button
+                        key={c.slug}
+                        onClick={() => {
+                          setShowCategories(false)
+                          navigate(`/shop?category=${c.slug}`)
+                        }}
+                        className="block w-full text-left px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50"
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Link to="/" className="flex items-center gap-2">
+                <span className="text-2xl font-bold tracking-tight text-stone-900">MENSWEAR</span>
+                <span className="text-[10px] uppercase tracking-widest text-stone-400 border-l border-stone-300 pl-2">
+                  For Him
+                </span>
+              </Link>
+            </div>
 
             <div className="flex items-center gap-4">
               <input
