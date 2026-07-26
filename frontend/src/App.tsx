@@ -18,12 +18,14 @@ import AdminOrdersPage from './pages/AdminOrdersPage'
 import AdminUsersPage from './pages/AdminUsersPage'
 import RequireAuth from './components/RequireAuth'
 import RequireAdminRoute from './components/RequireAdminRoute'
+import FloatingSocialButtons from './components/FloatingSocialButtons'
 import { AuthProvider } from './contexts/AuthContext'
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <FloatingSocialButtons />
         <Routes>
           {/* Chỉ 2 route này KHÔNG cần đăng nhập */}
           <Route path="/login" element={<LoginPage />} />

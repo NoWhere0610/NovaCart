@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { getMyCartApi, type CartDto } from "../api/cartApi";
 import { getMyAddressesApi, type AddressDto } from "../api/addressApi";
 import { checkoutApi, type PaymentMethod } from "../api/orderApi";
+import BackButton from "../components/BackButton";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
@@ -92,6 +93,9 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
+      <div className="max-w-2xl mx-auto mb-2">
+        <BackButton />
+      </div>
       <div className="max-w-2xl mx-auto bg-white border border-stone-200 p-8">
         <h1 className="text-2xl font-semibold text-stone-900 mb-6">
           Xác nhận đặt hàng
