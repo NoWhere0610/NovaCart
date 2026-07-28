@@ -48,19 +48,32 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length());
-        String username = jwtService.extractUsername(token);
 
-        // Chỉ xử lý nếu: đọc được username từ token VÀ request này chưa được xác thực trước đó
-        // (tránh ghi đè lên context nếu đã có filter khác xử lý)
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+        // QUAN TRỌNG: mọi lỗi khi giải mã token (hết hạn, sai chữ ký, hoặc user
+        // trong token không còn tồn tại trong DB — ví dụ sau khi reset DB nhưng
+        // trình duyệt vẫn còn giữ token cũ) chỉ được coi là "chưa đăng nhập",
+        // TUYỆT ĐỐI không được để lỗi này làm sập cả filter chain — nếu không,
+        // nó sẽ vô tình chặn luôn cả những API PUBLIC (permitAll) không liên
+        // quan gì tới token, vì lỗi xảy ra TRƯỚC khi request kịp tới bước kiểm
+        // tra permitAll/authenticated() của SecurityConfig.
+        try {
+            String username = jwtService.extractUsername(token);
 
-            if (jwtService.isTokenValid(token, userDetails.getUsername())) {
-                var authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authToken);
+            // Chỉ xử lý nếu: đọc được username từ token VÀ request này chưa được xác thực trước đó
+            // (tránh ghi đè lên context nếu đã có filter khác xử lý)
+            if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+                if (jwtService.isTokenValid(token, userDetails.getUsername())) {
+                    var authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
             }
+        } catch (Exception ex) {
+            // Token hỏng / user không còn tồn tại -> bỏ qua, để request đi tiếp
+            // như 1 người dùng ẩn danh. KHÔNG set Authentication, KHÔNG throw lại.
         }
 
         filterChain.doFilter(request, response);

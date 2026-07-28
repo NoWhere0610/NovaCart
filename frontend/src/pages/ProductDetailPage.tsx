@@ -12,6 +12,18 @@ import BackButton from "../components/BackButton";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
+// Bộ SIZE chuẩn đầy đủ của ngành may mặc nam — hiển thị TẤT CẢ, không chỉ
+// những size sản phẩm đang có sẵn. Size nào sản phẩm không có/hết hàng sẽ
+// tự động bị disable (xem isSizeAvailable), không phải xoá khỏi danh sách.
+const FULL_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"];
+
+// Bộ MÀU đầy đủ thường dùng trong thời trang nam — tương tự, hiển thị hết,
+// màu nào sản phẩm không có sẽ bị disable chứ không ẩn đi.
+const FULL_COLORS = [
+  "Đen", "Trắng", "Xám", "Xanh Navy", "Xanh Dương", "Xanh Lá", "Xanh Rêu",
+  "Be", "Nâu", "Kem", "Đỏ", "Cam", "Vàng", "Hồng", "Tím", "Bạc",
+];
+
 export default function ProductDetailPage() {
   const { productId } = useParams<{ productId: string }>();
   const navigate = useNavigate();
@@ -22,6 +34,7 @@ export default function ProductDetailPage() {
   const [selectedVariant, setSelectedVariant] =
     useState<ProductVariantDto | null>(null);
   const [quantity, setQuantity] = useState(1);
+  const [mainImageIndex, setMainImageIndex] = useState(0);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -34,7 +47,6 @@ export default function ProductDetailPage() {
     getProductDetailApi(Number(productId))
       .then((data) => {
         setProduct(data);
-        // Tự chọn sẵn variant đầu tiên còn hàng để user đỡ phải bấm thêm 1 bước
         setSelectedVariant(
           data.variants.find((v) => v.stockQuantity > 0) ??
             data.variants[0] ??
@@ -46,7 +58,6 @@ export default function ProductDetailPage() {
 
   async function handleAddToCart() {
     if (!isAuthenticated) {
-      // Chưa đăng nhập -> đá sang /login, sau khi login xong quay lại đúng trang sản phẩm
       navigate("/login", {
         state: { from: { pathname: `/products/${productId}` } },
       });
@@ -95,17 +106,38 @@ export default function ProductDetailPage() {
   }
 
   const onSale = product.salePrice != null;
-  // Danh sách size/màu duy nhất để hiển thị 2 nhóm nút bấm riêng biệt
-  const uniqueSizes = Array.from(new Set(product.variants.map((v) => v.size)));
-  const uniqueColors = Array.from(
-    new Set(product.variants.map((v) => v.color)),
-  );
+  // Hiển thị TOÀN BỘ size/màu chuẩn (FULL_SIZES/FULL_COLORS), không chỉ những
+  // gì sản phẩm đang có sẵn — size/màu nào sản phẩm không bán hoặc hết hàng
+  // sẽ tự bị disable ở dưới (isSizeAvailable/isColorAvailable), không ẩn đi.
+  const uniqueSizes = FULL_SIZES;
+  const uniqueColors = FULL_COLORS;
+
+  function getVariant(size: string, color: string) {
+    return product!.variants.find((v) => v.size === size && v.color === color);
+  }
+
+  // Size chỉ bị disable khi TẤT CẢ màu của size đó đều hết hàng/không tồn tại
+  function isSizeAvailable(size: string) {
+    return product!.variants.some((v) => v.size === size && v.stockQuantity > 0);
+  }
+
+  // Màu bị disable nếu tổ hợp (size đang chọn + màu này) hết hàng/không tồn tại
+  function isColorAvailable(color: string) {
+    const size = selectedVariant?.size ?? uniqueSizes[0];
+    const v = getVariant(size, color);
+    return v != null && v.stockQuantity > 0;
+  }
 
   function pickVariant(size: string, color: string) {
-    const found = product!.variants.find(
-      (v) => v.size === size && v.color === color,
-    );
-    if (found) setSelectedVariant(found);
+    const found = getVariant(size, color);
+    if (!found || found.stockQuantity === 0) return; // hết hàng -> không cho chọn
+    setSelectedVariant(found);
+    // Đổi ảnh chính theo màu đã chọn (best-effort: ánh xạ theo thứ tự màu ->
+    // thứ tự ảnh, vì hệ thống hiện chưa gắn ảnh riêng cho từng màu ở backend)
+    const colorIndex = uniqueColors.indexOf(color);
+    if (product!.imageUrls.length > 0) {
+      setMainImageIndex(colorIndex % product!.imageUrls.length);
+    }
   }
 
   return (
@@ -117,9 +149,9 @@ export default function ProductDetailPage() {
         {/* Gallery ảnh */}
         <div>
           <div className="aspect-[3/4] bg-stone-200 overflow-hidden mb-3">
-            {product.imageUrls[0] ? (
+            {product.imageUrls[mainImageIndex] ?? product.imageUrls[0] ? (
               <img
-                src={product.imageUrls[0]}
+                src={product.imageUrls[mainImageIndex] ?? product.imageUrls[0]}
                 alt={product.productName}
                 className="w-full h-full object-cover"
               />
@@ -131,12 +163,16 @@ export default function ProductDetailPage() {
           </div>
           {product.imageUrls.length > 1 && (
             <div className="grid grid-cols-4 gap-2">
-              {product.imageUrls.slice(1, 5).map((url, i) => (
-                <img
+              {product.imageUrls.map((url, i) => (
+                <button
                   key={i}
-                  src={url}
-                  className="aspect-square object-cover bg-stone-200"
-                />
+                  onClick={() => setMainImageIndex(i)}
+                  className={`aspect-square overflow-hidden bg-stone-200 border-2 ${
+                    mainImageIndex === i ? "border-stone-900" : "border-transparent"
+                  }`}
+                >
+                  <img src={url} className="w-full h-full object-cover" />
+                </button>
               ))}
             </div>
           )}
@@ -186,24 +222,30 @@ export default function ProductDetailPage() {
                 Kích thước
               </p>
               <div className="flex gap-2 flex-wrap">
-                {uniqueSizes.map((size) => (
-                  <button
-                    key={size}
-                    onClick={() =>
-                      pickVariant(
-                        size,
-                        selectedVariant?.color ?? uniqueColors[0],
-                      )
-                    }
-                    className={`px-3 py-1.5 text-sm border ${
-                      selectedVariant?.size === size
-                        ? "border-stone-900 bg-stone-900 text-white"
-                        : "border-stone-300"
-                    }`}
-                  >
-                    {size}
-                  </button>
-                ))}
+                {uniqueSizes.map((size) => {
+                  const available = isSizeAvailable(size);
+                  return (
+                    <button
+                      key={size}
+                      disabled={!available}
+                      onClick={() =>
+                        pickVariant(
+                          size,
+                          selectedVariant?.color ?? uniqueColors[0],
+                        )
+                      }
+                      className={`px-3 py-1.5 text-sm border relative ${
+                        !available
+                          ? "border-stone-200 text-stone-300 cursor-not-allowed line-through"
+                          : selectedVariant?.size === size
+                            ? "border-stone-900 bg-stone-900 text-white"
+                            : "border-stone-300 hover:border-stone-500"
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -212,24 +254,30 @@ export default function ProductDetailPage() {
             <div className="mb-6">
               <p className="text-xs font-medium text-stone-600 mb-2">Màu sắc</p>
               <div className="flex gap-2 flex-wrap">
-                {uniqueColors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() =>
-                      pickVariant(
-                        selectedVariant?.size ?? uniqueSizes[0],
-                        color,
-                      )
-                    }
-                    className={`px-3 py-1.5 text-sm border ${
-                      selectedVariant?.color === color
-                        ? "border-stone-900 bg-stone-900 text-white"
-                        : "border-stone-300"
-                    }`}
-                  >
-                    {color}
-                  </button>
-                ))}
+                {uniqueColors.map((color) => {
+                  const available = isColorAvailable(color);
+                  return (
+                    <button
+                      key={color}
+                      disabled={!available}
+                      onClick={() =>
+                        pickVariant(
+                          selectedVariant?.size ?? uniqueSizes[0],
+                          color,
+                        )
+                      }
+                      className={`px-3 py-1.5 text-sm border ${
+                        !available
+                          ? "border-stone-200 text-stone-300 cursor-not-allowed line-through"
+                          : selectedVariant?.color === color
+                            ? "border-stone-900 bg-stone-900 text-white"
+                            : "border-stone-300 hover:border-stone-500"
+                      }`}
+                    >
+                      {color}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
