@@ -129,8 +129,16 @@ export default function ProductDetailPage() {
   }
 
   function pickVariant(size: string, color: string) {
-    const found = getVariant(size, color);
-    if (!found || found.stockQuantity === 0) return; // hết hàng -> không cho chọn
+    let found = getVariant(size, color);
+    // Nếu tổ hợp (size, màu đang chọn) không tồn tại/hết hàng nhưng size này
+    // vẫn còn hàng ở màu khác (isSizeAvailable === true), tự động chuyển sang
+    // màu đầu tiên còn hàng của size đó thay vì bỏ qua thao tác bấm.
+    if (!found || found.stockQuantity === 0) {
+      found = product!.variants.find(
+        (v) => v.size === size && v.stockQuantity > 0,
+      );
+    }
+    if (!found) return; // size này không còn hàng ở bất kỳ màu nào
     setSelectedVariant(found);
     // Đổi ảnh chính theo màu đã chọn (best-effort: ánh xạ theo thứ tự màu ->
     // thứ tự ảnh, vì hệ thống hiện chưa gắn ảnh riêng cho từng màu ở backend)
