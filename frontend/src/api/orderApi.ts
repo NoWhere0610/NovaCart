@@ -1,15 +1,25 @@
 import { apiClient } from './apiClient'
 
-export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'COMPLETED' | 'CANCELLED'
+export type OrderStatus =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'SHIPPING'
+  | 'DELIVERED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'RETURN_REQUESTED'
+  | 'RETURNED'
 export type PaymentMethod = 'COD' | 'BANK_TRANSFER'
 
 export interface OrderItemDto {
+  productId: number | null
   productName: string
   size: string
   color: string
   unitPrice: number
   quantity: number
   subtotal: number
+  reviewed: boolean | null
 }
 
 export interface OrderDto {
@@ -24,6 +34,7 @@ export interface OrderDto {
   status: OrderStatus
   paymentMethod: PaymentMethod
   note: string | null
+  returnReason: string | null
   createdAt: string
   items: OrderItemDto[] | null
 }
@@ -60,5 +71,15 @@ export async function getMyOrderDetailApi(orderId: number): Promise<OrderDto> {
 
 export async function cancelOrderApi(orderId: number): Promise<OrderDto> {
   const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/cancel`)
+  return data
+}
+
+export async function completeOrderApi(orderId: number): Promise<OrderDto> {
+  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/complete`)
+  return data
+}
+
+export async function requestReturnApi(orderId: number, reason: string): Promise<OrderDto> {
+  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/request-return`, { reason })
   return data
 }

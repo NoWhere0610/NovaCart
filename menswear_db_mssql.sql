@@ -323,3 +323,31 @@ VALUES
 (N'GIAM10', N'PERCENT', 10, 200000, 50000, 100, 1),
 (N'GIAM50K', N'AMOUNT', 50000, 300000, NULL, 50, 1);
 GO
+
+
+DECLARE @constraintName NVARCHAR(200);
+
+SELECT @constraintName = cc.name
+FROM sys.check_constraints cc
+JOIN sys.columns col
+    ON col.object_id = cc.parent_object_id AND col.column_id = cc.parent_column_id
+WHERE cc.parent_object_id = OBJECT_ID('dbo.orders')
+  AND col.name = 'status';
+
+IF @constraintName IS NOT NULL
+BEGIN
+    DECLARE @dropSql NVARCHAR(400) = N'ALTER TABLE dbo.orders DROP CONSTRAINT ' + QUOTENAME(@constraintName);
+    EXEC sp_executesql @dropSql;
+END
+GO
+
+ALTER TABLE dbo.orders
+    ADD CONSTRAINT CK_orders_status
+    CHECK (status IN ('PENDING','CONFIRMED','SHIPPING','DELIVERED','COMPLETED','CANCELLED','RETURN_REQUESTED','RETURNED'));
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'return_reason')
+BEGIN
+    ALTER TABLE dbo.orders ADD return_reason NVARCHAR(500) NULL;
+END
+GO

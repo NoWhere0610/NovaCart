@@ -23,6 +23,7 @@ public class AdminOrderResponse {
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
     private String note;
+    private String returnReason;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
 }

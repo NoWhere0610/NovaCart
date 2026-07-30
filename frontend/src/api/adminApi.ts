@@ -135,11 +135,20 @@ export interface AdminOrderDto {
   phone: string
   shippingAddress: string
   totalAmount: number
-  status: 'PENDING' | 'CONFIRMED' | 'SHIPPING' | 'COMPLETED' | 'CANCELLED'
+  status:
+    | 'PENDING'
+    | 'CONFIRMED'
+    | 'SHIPPING'
+    | 'DELIVERED'
+    | 'COMPLETED'
+    | 'CANCELLED'
+    | 'RETURN_REQUESTED'
+    | 'RETURNED'
   paymentMethod: 'COD' | 'BANK_TRANSFER'
   note: string | null
+  returnReason: string | null
   createdAt: string
-  items: { productName: string; size: string; color: string; unitPrice: number; quantity: number; subtotal: number }[] | null
+  items: { productId: number | null; productName: string; size: string; color: string; unitPrice: number; quantity: number; subtotal: number }[] | null
 }
 
 export async function getAdminOrdersApi(status: string, page = 0, size = 20) {

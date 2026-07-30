@@ -24,6 +24,7 @@ public class OrderResponse {
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
     private String note;
+    private String returnReason;
     private LocalDateTime createdAt;
     // null ở API danh sách (list) để nhẹ payload, chỉ có giá trị ở API xem chi tiết 1 đơn
     private List<OrderItemResponse> items;

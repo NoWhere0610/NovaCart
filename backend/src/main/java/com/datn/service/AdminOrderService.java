@@ -39,9 +39,20 @@ public class AdminOrderService {
     static {
         ALLOWED_TRANSITIONS.put(Order.Status.PENDING, EnumSet.of(Order.Status.CONFIRMED, Order.Status.CANCELLED));
         ALLOWED_TRANSITIONS.put(Order.Status.CONFIRMED, EnumSet.of(Order.Status.SHIPPING, Order.Status.CANCELLED));
-        ALLOWED_TRANSITIONS.put(Order.Status.SHIPPING, EnumSet.of(Order.Status.COMPLETED));
+        ALLOWED_TRANSITIONS.put(Order.Status.SHIPPING, EnumSet.of(Order.Status.DELIVERED));
+        // DELIVERED ("cần đánh giá") -> COMPLETED thường do CHÍNH KHÁCH bấm sau khi
+        // đánh giá (xem OrderService.completeMyOrder), nhưng admin vẫn có thể tự
+        // đóng đơn hộ khách nếu khách không thao tác gì sau một thời gian dài.
+        ALLOWED_TRANSITIONS.put(Order.Status.DELIVERED, EnumSet.of(Order.Status.COMPLETED));
+        // COMPLETED là điểm cuối từ góc nhìn admin — khách vẫn có thể tự chuyển
+        // sang RETURN_REQUESTED (xem OrderService.requestReturn), việc đó KHÔNG
+        // đi qua sơ đồ này (admin không chủ động đẩy đơn đã xong sang trả hàng)
         ALLOWED_TRANSITIONS.put(Order.Status.COMPLETED, EnumSet.noneOf(Order.Status.class));
         ALLOWED_TRANSITIONS.put(Order.Status.CANCELLED, EnumSet.noneOf(Order.Status.class));
+        // Khách yêu cầu trả hàng -> admin DUYỆT (RETURNED, hoàn kho + xem như đã
+        // hoàn tiền) hoặc TỪ CHỐI (trả lại COMPLETED, đơn coi như vẫn hoàn tất)
+        ALLOWED_TRANSITIONS.put(Order.Status.RETURN_REQUESTED, EnumSet.of(Order.Status.RETURNED, Order.Status.COMPLETED));
+        ALLOWED_TRANSITIONS.put(Order.Status.RETURNED, EnumSet.noneOf(Order.Status.class));
     }
 
     public PageResponse<AdminOrderResponse> list(Order.Status status, int page, int size) {
@@ -68,10 +79,10 @@ public class AdminOrderService {
                     "Không thể chuyển đơn hàng từ trạng thái " + order.getStatus() + " sang " + newStatus);
         }
 
-        // Admin huỷ đơn (CANCELLED) -> cũng phải hoàn tồn kho, giống hệt logic
-        // user tự huỷ đơn ở OrderService.cancelMyOrder() — tách riêng vì đây là
-        // hành động của ADMIN (không kiểm tra chủ sở hữu đơn hàng)
-        if (newStatus == Order.Status.CANCELLED) {
+        // Admin huỷ đơn (CANCELLED) hoặc DUYỆT trả hàng (RETURNED) -> đều phải
+        // hoàn tồn kho, giống hệt logic user tự huỷ đơn ở OrderService.cancelMyOrder()
+        // — tách riêng vì đây là hành động của ADMIN (không kiểm tra chủ sở hữu đơn hàng)
+        if (newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED) {
             for (OrderItem item : order.getItems()) {
                 ProductVariant variant = item.getVariant();
                 if (variant != null) {
@@ -99,8 +110,11 @@ public class AdminOrderService {
                 .status(order.getStatus())
                 .paymentMethod(order.getPaymentMethod())
                 .note(order.getNote())
+                .returnReason(order.getReturnReason())
                 .createdAt(order.getCreatedAt())
                 .items(includeItems ? order.getItems().stream().map(i -> OrderItemResponse.builder()
+                        .productId(i.getVariant() != null && i.getVariant().getProduct() != null
+                                ? i.getVariant().getProduct().getProductId() : null)
                         .productName(i.getProductName())
                         .size(i.getSize())
                         .color(i.getColor())

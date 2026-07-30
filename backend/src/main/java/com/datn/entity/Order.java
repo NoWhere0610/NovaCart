@@ -11,13 +11,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Đơn hàng. Địa chỉ giao hàng được SNAPSHOT (copy) trực tiếp vào các cột
- * receiver_name/phone/... của Order ngay lúc đặt hàng, thay vì chỉ giữ
- * address_id trỏ tới bảng addresses — vì nếu user sau này SỬA hoặc XOÁ địa
- * chỉ đó, đơn hàng cũ (đã giao/đang giao) không được phép bị thay đổi theo.
- * Đây là nguyên tắc bắt buộc trong nghiệp vụ đơn hàng thực tế.
- */
 @Entity
 @Table(name = "orders")
 @Getter
@@ -26,25 +19,30 @@ import java.util.List;
 @AllArgsConstructor
 public class Order {
 
-    /** Trạng thái xử lý đơn hàng, đi theo đúng 1 chiều (không nhảy cóc ngược lại). */
+    /**
+     * Trạng thái xử lý đơn hàng, đi theo đúng 1 chiều (không nhảy cóc ngược lại),
+     * mô phỏng đúng luồng của các sàn TMĐT lớn (Shopee/TikTok Shop):
+     * Chờ thanh toán -> Chờ vận chuyển -> Chờ giao hàng -> Cần đánh giá -> Hoàn thành,
+     * có thể rẽ nhánh sang Huỷ (đầu luồng) hoặc Trả hàng/Hoàn tiền (cuối luồng).
+     */
     public enum Status {
-        PENDING,     // vừa đặt, chờ xác nhận
-        CONFIRMED,   // đã xác nhận, chuẩn bị hàng
-        SHIPPING,    // đang giao
-        COMPLETED,   // đã giao thành công
-        CANCELLED    // đã huỷ (chỉ huỷ được khi còn PENDING/CONFIRMED)
+        PENDING,           // vừa đặt, chờ thanh toán / chờ người bán xác nhận
+        CONFIRMED,         // đã xác nhận, đang chuẩn bị hàng -> chờ vận chuyển
+        SHIPPING,          // đã giao cho đơn vị vận chuyển -> chờ nhận hàng
+        DELIVERED,         // đã giao thành công tới khách -> cần đánh giá
+        COMPLETED,         // khách đã đánh giá (hoặc xác nhận hoàn tất) -> hoàn thành
+        CANCELLED,         // đã huỷ (chỉ huỷ được khi còn PENDING/CONFIRMED)
+        RETURN_REQUESTED,  // khách yêu cầu trả hàng/hoàn tiền, chờ admin duyệt
+        RETURNED           // admin đã duyệt trả hàng/hoàn tiền
     }
 
     public enum PaymentMethod {
-        COD,            // thanh toán khi nhận hàng
-        BANK_TRANSFER,  // chuyển khoản (đồ án: đánh dấu thủ công / demo, chưa nối cổng thanh toán thật)
-        VNPAY,          // DB đã có sẵn CHECK constraint cho phép giá trị này (chưa nối cổng thanh toán thật)
+        COD,
+        BANK_TRANSFER,
+        VNPAY,
         MOMO
     }
 
-    // DB có sẵn cột payment_status (CHECK: UNPAID/PAID/REFUNDED) — thêm enum
-    // tương ứng để entity khớp đầy đủ với DB, dù đồ án hiện chưa có luồng
-    // tự động chuyển PAID (chưa nối cổng thanh toán thật, admin có thể tự cập nhật thủ công)
     public enum PaymentStatus {
         UNPAID, PAID, REFUNDED
     }
@@ -54,11 +52,6 @@ public class Order {
     @Column(name = "order_id")
     private Long orderId;
 
-    // QUAN TRỌNG: cột order_code trong DB có UNIQUE constraint, và SQL Server
-    // chỉ cho phép ĐÚNG 1 dòng NULL trong 1 UNIQUE constraint (khác Postgres/MySQL
-    // cho phép nhiều NULL) — nếu để trống, đơn hàng thứ 2 trở đi sẽ INSERT lỗi
-    // vi phạm unique constraint. BẮT BUỘC phải luôn set giá trị duy nhất khi tạo
-    // đơn (xem OrderService.checkout() -> generateOrderCode()).
     @Column(name = "order_code", unique = true, length = 50)
     private String orderCode;
 
@@ -66,7 +59,6 @@ public class Order {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    // ----- snapshot địa chỉ giao hàng tại thời điểm đặt -----
     @Column(name = "receiver_name", nullable = false, length = 100)
     private String receiverName;
 
@@ -75,26 +67,18 @@ public class Order {
 
     @Column(name = "shipping_address", nullable = false, length = 500)
     private String shippingAddress;
-    // ----- hết phần snapshot -----
 
     @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;
 
-    // ----- Sprint 4: áp mã giảm giá -----
-    // Tổng tiền hàng TRƯỚC khi áp voucher (= tổng subtotal của các OrderItem)
     @Column(name = "subtotal_amount", precision = 12, scale = 2)
     private BigDecimal subtotalAmount;
 
-    // Số tiền được giảm nhờ voucher — 0 nếu không dùng mã nào
     @Column(name = "discount_amount", precision = 12, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
-    // SNAPSHOT mã đã dùng (không lưu voucher_id tham chiếu động) — cùng lý do
-    // với việc snapshot địa chỉ/tên sản phẩm: voucher có thể bị admin xoá/sửa
-    // sau này nhưng hoá đơn cũ phải giữ nguyên đã dùng mã gì
     @Column(name = "voucher_code", length = 50)
     private String voucherCode;
-    // ----- hết phần voucher -----
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -110,6 +94,12 @@ public class Order {
 
     @Column(name = "note", length = 500)
     private String note;
+
+    // Lý do khách nhập khi bấm "Yêu cầu trả hàng/hoàn tiền" (chỉ có giá trị khi
+    // status là RETURN_REQUESTED/RETURNED) — cột mới, Hibernate tự ALTER TABLE
+    // thêm cột này vì ddl-auto=update (không cần migrate tay như cột status).
+    @Column(name = "return_reason", length = 500)
+    private String returnReason;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
