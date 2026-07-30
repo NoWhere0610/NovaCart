@@ -16,7 +16,8 @@ const CATEGORIES = [
  */
 export default function Header() {
   const navigate = useNavigate()
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
+  const isAdmin = user?.roles.includes('ADMIN') ?? false
   const [showCategories, setShowCategories] = useState(false)
 
   return (
@@ -77,6 +78,17 @@ export default function Header() {
               }}
               className="hidden sm:block w-48 border border-stone-300 px-3 py-1.5 text-sm outline-none focus:border-stone-900"
             />
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="hidden sm:flex items-center gap-1.5 bg-orange-700 hover:bg-orange-600 text-white text-xs font-semibold px-3 py-1.5"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z" />
+                </svg>
+                Quản trị
+              </Link>
+            )}
             <button onClick={() => navigate('/account')} aria-label="Tài khoản" className="text-stone-700 hover:text-stone-900">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <circle cx="12" cy="8" r="4" />

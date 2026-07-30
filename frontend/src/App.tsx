@@ -12,6 +12,7 @@ import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import AdminLayout from "./pages/AdminLayout";
 import AdminProductsPage from "./pages/AdminProductsPage";
+import AdminInventoryPage from "./pages/AdminInventoryPage";
 import AdminCategoriesPage from "./pages/AdminCategoriesPage";
 import AdminVouchersPage from "./pages/AdminVouchersPage";
 import AdminOrdersPage from "./pages/AdminOrdersPage";
@@ -79,6 +80,13 @@ function App() {
                 <Route path="vouchers" element={<AdminVouchersPage />} />
                 <Route path="orders" element={<AdminOrdersPage />} />
                 <Route path="users" element={<AdminUsersPage />} />
+
+                {/* Kho tồn hàng: chặn kép bằng RequireAdminRoute lần 2 — phòng trường hợp
+                    sau này nhóm route /admin phía trên được nới cho role khác (vd STAFF),
+                    riêng màn Inventory vẫn bắt buộc đúng role ADMIN. */}
+                <Route element={<RequireAdminRoute />}>
+                  <Route path="inventory" element={<AdminInventoryPage />} />
+                </Route>
               </Route>
             </Route>
           </Route>
