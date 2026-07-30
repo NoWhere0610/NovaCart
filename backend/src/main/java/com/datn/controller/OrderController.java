@@ -3,6 +3,7 @@ package com.datn.controller;
 import com.datn.dto.PageResponse;
 import com.datn.dto.order.CheckoutRequest;
 import com.datn.dto.order.OrderResponse;
+import com.datn.dto.order.RequestReturnRequest;
 import com.datn.security.UserPrincipal;
 import com.datn.service.OrderService;
 import jakarta.validation.Valid;
@@ -45,5 +46,22 @@ public class OrderController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable Long orderId) {
         return ResponseEntity.ok(orderService.cancelMyOrder(principal.getUserId(), orderId));
+    }
+
+    /** Khách bấm "Hoàn thành" ở tab Cần đánh giá: DELIVERED -> COMPLETED. */
+    @PostMapping("/{orderId}/complete")
+    public ResponseEntity<OrderResponse> completeOrder(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long orderId) {
+        return ResponseEntity.ok(orderService.completeMyOrder(principal.getUserId(), orderId));
+    }
+
+    /** Khách bấm "Yêu cầu trả hàng/hoàn tiền": DELIVERED/COMPLETED -> RETURN_REQUESTED. */
+    @PostMapping("/{orderId}/request-return")
+    public ResponseEntity<OrderResponse> requestReturn(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long orderId,
+            @Valid @RequestBody RequestReturnRequest request) {
+        return ResponseEntity.ok(orderService.requestReturn(principal.getUserId(), orderId, request));
     }
 }

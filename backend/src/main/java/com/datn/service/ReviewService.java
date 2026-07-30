@@ -44,11 +44,14 @@ public class ReviewService {
                 .build();
     }
 
+    private static final java.util.List<Order.Status> REVIEWABLE_STATUSES =
+            java.util.List.of(Order.Status.DELIVERED, Order.Status.COMPLETED);
+
     @Transactional
     public ReviewResponse create(Long userId, Long productId, CreateReviewRequest request) {
         boolean hasPurchased = orderItemRepository
-                .existsByOrder_User_UserIdAndOrder_StatusAndVariant_Product_ProductId(
-                        userId, Order.Status.COMPLETED, productId);
+                .existsByOrder_User_UserIdAndOrder_StatusInAndVariant_Product_ProductId(
+                        userId, REVIEWABLE_STATUSES, productId);
         if (!hasPurchased) {
             throw ApiException.badRequest(
                     "Bạn cần mua và nhận hàng thành công sản phẩm này trước khi đánh giá");

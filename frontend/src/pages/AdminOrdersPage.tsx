@@ -8,21 +8,47 @@ import {
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Chờ xác nhận',
-  CONFIRMED: 'Đã xác nhận',
-  SHIPPING: 'Đang giao',
-  COMPLETED: 'Hoàn tất',
+  PENDING: 'Chờ thanh toán',
+  CONFIRMED: 'Chờ vận chuyển',
+  SHIPPING: 'Chờ nhận hàng',
+  DELIVERED: 'Cần đánh giá (đã giao)',
+  COMPLETED: 'Hoàn thành',
   CANCELLED: 'Đã huỷ',
+  RETURN_REQUESTED: 'Yêu cầu trả hàng',
+  RETURNED: 'Đã trả hàng/hoàn tiền',
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  PENDING: 'bg-amber-100 text-amber-800',
+  CONFIRMED: 'bg-blue-100 text-blue-800',
+  SHIPPING: 'bg-purple-100 text-purple-800',
+  DELIVERED: 'bg-orange-100 text-orange-800',
+  COMPLETED: 'bg-green-100 text-green-800',
+  CANCELLED: 'bg-stone-200 text-stone-600',
+  RETURN_REQUESTED: 'bg-red-100 text-red-700',
+  RETURNED: 'bg-red-100 text-red-700',
 }
 
 // Khớp CHÍNH XÁC với ALLOWED_TRANSITIONS bên AdminOrderService — chỉ hiện
-// nút chuyển sang trạng thái mà backend THỰC SỰ cho phép
-const NEXT_STATUS: Record<string, string[]> = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['SHIPPING', 'CANCELLED'],
-  SHIPPING: ['COMPLETED'],
+// nút chuyển sang trạng thái mà backend THỰC SỰ cho phép.
+const NEXT_STATUS: Record<string, { status: string; label: string; danger?: boolean }[]> = {
+  PENDING: [
+    { status: 'CONFIRMED', label: '→ Xác nhận (chờ vận chuyển)' },
+    { status: 'CANCELLED', label: 'Huỷ đơn', danger: true },
+  ],
+  CONFIRMED: [
+    { status: 'SHIPPING', label: '→ Giao cho vận chuyển' },
+    { status: 'CANCELLED', label: 'Huỷ đơn', danger: true },
+  ],
+  SHIPPING: [{ status: 'DELIVERED', label: '→ Đã giao hàng' }],
+  DELIVERED: [{ status: 'COMPLETED', label: '→ Hoàn thành hộ khách' }],
   COMPLETED: [],
   CANCELLED: [],
+  RETURN_REQUESTED: [
+    { status: 'RETURNED', label: 'Duyệt trả hàng', danger: true },
+    { status: 'COMPLETED', label: 'Từ chối (giữ Hoàn thành)' },
+  ],
+  RETURNED: [],
 }
 
 export default function AdminOrdersPage() {
@@ -99,20 +125,33 @@ export default function AdminOrdersPage() {
                     <div className="text-xs text-stone-400">{o.buyerEmail}</div>
                   </td>
                   <td className="px-4 py-3">{formatVnd(o.totalAmount)}</td>
-                  <td className="px-4 py-3">{STATUS_LABEL[o.status]}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-1 rounded ${STATUS_COLOR[o.status]}`}>
+                      {STATUS_LABEL[o.status]}
+                    </span>
+                    {o.status === 'RETURN_REQUESTED' && o.returnReason && (
+                      <div className="text-xs text-stone-400 mt-1 max-w-[220px]">
+                        Lý do: {o.returnReason}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-stone-500">
                     {new Date(o.createdAt).toLocaleDateString('vi-VN')}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {NEXT_STATUS[o.status]?.map((next) => (
                         <button
-                          key={next}
+                          key={next.status}
                           disabled={busyId === o.orderId}
-                          onClick={() => handleChangeStatus(o.orderId, next)}
-                          className="text-xs border border-stone-300 px-2 py-1 hover:border-stone-900 disabled:opacity-50"
+                          onClick={() => handleChangeStatus(o.orderId, next.status)}
+                          className={`text-xs border px-2 py-1 disabled:opacity-50 ${
+                            next.danger
+                              ? 'border-red-300 text-red-600 hover:bg-red-50'
+                              : 'border-stone-300 hover:border-stone-900'
+                          }`}
                         >
-                          → {STATUS_LABEL[next]}
+                          {next.label}
                         </button>
                       ))}
                     </div>
