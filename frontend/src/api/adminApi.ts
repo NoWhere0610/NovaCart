@@ -64,6 +64,58 @@ export async function deleteAdminProductApi(productId: number) {
   await apiClient.delete(`/admin/products/${productId}`)
 }
 
+// ================== INVENTORY (Kho tồn hàng) ==================
+
+export interface AdminInventoryItemDto {
+  variantId: number
+  productId: number
+  productName: string
+  categoryName: string | null
+  size: string
+  color: string
+  sku: string | null
+  stockQuantity: number
+  price: number
+  productStatus: 'ACTIVE' | 'INACTIVE' | 'OUT_OF_STOCK'
+  lowStock: boolean
+}
+
+export interface AdminInventoryCreatePayload {
+  productId: number
+  size: string
+  color: string
+  sku?: string
+  stockQuantity: number
+}
+
+export interface AdminInventoryUpdatePayload {
+  size: string
+  color: string
+  sku?: string
+  stockQuantity: number
+}
+
+export async function getAdminInventoryApi(keyword: string, lowStockOnly: boolean, page = 0, size = 20) {
+  const { data } = await apiClient.get<PageResponse<AdminInventoryItemDto>>('/admin/inventory', {
+    params: { keyword: keyword || undefined, lowStockOnly, page, size },
+  })
+  return data
+}
+
+export async function createAdminInventoryItemApi(payload: AdminInventoryCreatePayload) {
+  const { data } = await apiClient.post<AdminInventoryItemDto>('/admin/inventory', payload)
+  return data
+}
+
+export async function updateAdminInventoryItemApi(variantId: number, payload: AdminInventoryUpdatePayload) {
+  const { data } = await apiClient.put<AdminInventoryItemDto>(`/admin/inventory/${variantId}`, payload)
+  return data
+}
+
+export async function deleteAdminInventoryItemApi(variantId: number) {
+  await apiClient.delete(`/admin/inventory/${variantId}`)
+}
+
 // ================== CATEGORIES ==================
 
 export interface AdminCategoryDto {
