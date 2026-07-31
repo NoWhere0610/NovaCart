@@ -41,6 +41,15 @@ public class OrderController {
         return ResponseEntity.ok(orderService.getMyOrderDetail(principal.getUserId(), orderId));
     }
 
+    @GetMapping("/{orderId}/vnpay-url")
+    public ResponseEntity<java.util.Map<String, String>> getVnpayUrl(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long orderId,
+            jakarta.servlet.http.HttpServletRequest request) {
+        String url = orderService.getVnpayPaymentUrl(principal.getUserId(), orderId, request);
+        return ResponseEntity.ok(java.util.Map.of("paymentUrl", url));
+    }
+
     @PostMapping("/{orderId}/cancel")
     public ResponseEntity<OrderResponse> cancelOrder(
             @AuthenticationPrincipal UserPrincipal principal,

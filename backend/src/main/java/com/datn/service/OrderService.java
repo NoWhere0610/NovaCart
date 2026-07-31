@@ -32,6 +32,8 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final VoucherService voucherService;
     private final ReviewRepository reviewRepository;
+    private final ShippingService shippingService;
+    private final VNPayService vnPayService;
 
     @Transactional
     public OrderResponse checkout(Long userId, CheckoutRequest request) {
@@ -72,8 +74,11 @@ public class OrderService {
                         "Sản phẩm \"" + variant.getProduct().getProductName() + "\" chỉ còn " + stock + " sản phẩm");
             }
 
-            variant.setStockQuantity(stock - cartItem.getQuantity());
-            variantRepository.save(variant);
+            // SỬA LỖI: KHÔNG trừ kho ở bước đặt hàng nữa. Đơn online chỉ thực sự trừ
+            // kho khi admin XÁC NHẬN đơn (PENDING -> CONFIRMED, xem
+            // AdminOrderService.updateStatus), đúng theo nghiệp vụ đã thống nhất —
+            // tránh giữ kho "ảo" cho các đơn PENDING mà khách/admin có thể huỷ bất
+            // cứ lúc nào. Ở đây chỉ KIỂM TRA còn đủ hàng hay không.
 
             BigDecimal unitPrice = CartService.effectivePrice(variant.getProduct());
             BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -98,7 +103,9 @@ public class OrderService {
             order.setVoucherCode(request.getVoucherCode().trim().toUpperCase());
         }
         order.setDiscountAmount(discount);
-        order.setTotalAmount(total.subtract(discount));
+        BigDecimal shippingFee = shippingService.calculateFee(address.getProvince(), total);
+        order.setShippingFee(shippingFee);
+        order.setTotalAmount(total.subtract(discount).add(shippingFee));
         Order saved = orderRepository.save(order);
 
         cart.getItems().clear();
@@ -130,12 +137,17 @@ public class OrderService {
             throw ApiException.badRequest("Đơn hàng đang giao hoặc đã hoàn tất, không thể huỷ");
         }
 
-        for (OrderItem item : order.getItems()) {
-            ProductVariant variant = item.getVariant();
-            if (variant != null) {
-                int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
-                variant.setStockQuantity(stock + item.getQuantity());
-                variantRepository.save(variant);
+        // SỬA LỖI: chỉ hoàn kho nếu đơn ĐÃ được admin xác nhận (CONFIRMED) — vì
+        // chỉ lúc đó kho mới thực sự bị trừ (xem AdminOrderService.updateStatus).
+        // Đơn còn PENDING chưa hề đụng tới kho nên huỷ không cần hoàn gì cả.
+        if (order.getStatus() == Order.Status.CONFIRMED) {
+            for (OrderItem item : order.getItems()) {
+                ProductVariant variant = item.getVariant();
+                if (variant != null) {
+                    int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
+                    variant.setStockQuantity(stock + item.getQuantity());
+                    variantRepository.save(variant);
+                }
             }
         }
 
@@ -231,13 +243,64 @@ public class OrderService {
                 .totalAmount(order.getTotalAmount())
                 .subtotalAmount(order.getSubtotalAmount())
                 .discountAmount(order.getDiscountAmount())
+                .shippingFee(order.getShippingFee())
                 .voucherCode(order.getVoucherCode())
                 .status(order.getStatus())
                 .paymentMethod(order.getPaymentMethod())
+                .paymentStatus(order.getPaymentStatus())
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
                 .createdAt(order.getCreatedAt())
                 .items(items)
                 .build();
+    }
+
+    /**
+     * Lấy link chuyển hướng sang VNPay để thanh toán 1 đơn đã đặt trước đó
+     * (paymentMethod = VNPAY, còn UNPAID). Đơn phải thuộc đúng người gọi API.
+     */
+    public String getVnpayPaymentUrl(Long userId, Long orderId, jakarta.servlet.http.HttpServletRequest request) {
+        Order order = orderRepository.findByOrderIdAndUser_UserId(orderId, userId)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
+
+        if (order.getPaymentMethod() != Order.PaymentMethod.VNPAY) {
+            throw ApiException.badRequest("Đơn hàng này không dùng phương thức thanh toán VNPay");
+        }
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            throw ApiException.badRequest("Đơn hàng đã được thanh toán");
+        }
+        return vnPayService.buildPaymentUrl(order, request);
+    }
+
+    /**
+     * Xử lý VNPay redirect khách VỀ sau khi thanh toán. Chỉ cập nhật
+     * paymentStatus khi chữ ký hợp lệ VÀ vnp_ResponseCode = "00" (thành công).
+     */
+    @Transactional
+    public boolean handleVnpayReturn(java.util.Map<String, String> params) {
+        if (!vnPayService.verifyReturn(params)) {
+            return false;
+        }
+
+        String responseCode = params.get("vnp_ResponseCode");
+        String txnRef = params.get("vnp_TxnRef");
+        if (txnRef == null) return false;
+
+        Long orderId;
+        try {
+            orderId = Long.valueOf(txnRef);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+
+        Order order = orderRepository.findById(orderId).orElse(null);
+        if (order == null || order.getPaymentMethod() != Order.PaymentMethod.VNPAY) return false;
+
+        if ("00".equals(responseCode)) {
+            order.setPaymentStatus(Order.PaymentStatus.PAID);
+            orderRepository.save(order);
+            return true;
+        }
+        return false;
     }
 }

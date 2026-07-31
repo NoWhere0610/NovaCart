@@ -47,6 +47,11 @@ public class Order {
         UNPAID, PAID, REFUNDED
     }
 
+    /** Nguồn tạo đơn: khách đặt qua web (ONLINE) hay nhân viên bán tại quầy (POS). */
+    public enum OrderType {
+        ONLINE, POS
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "order_id")
@@ -56,17 +61,34 @@ public class Order {
     private String orderCode;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id", nullable = true)
     private User user;
 
-    @Column(name = "receiver_name", nullable = false, length = 100)
+    // Đơn POS có thể là khách vãng lai không có tài khoản -> user null.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "order_type", nullable = false, length = 10)
+    private OrderType orderType = OrderType.ONLINE;
+
+    // Nhân viên đứng bán (role ADMIN, đồ án bỏ qua phân biệt STAFF riêng) —
+    // chỉ có giá trị với đơn POS.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cashier_id")
+    private User cashier;
+
+    // Nullable vì đơn POS bán trực tiếp tại quầy không có bước giao hàng.
+    // Validate "bắt buộc phải có" cho đơn ONLINE được thực hiện ở tầng Service.
+    @Column(name = "receiver_name", length = 100)
     private String receiverName;
 
-    @Column(name = "phone", nullable = false, length = 20)
+    @Column(name = "phone", length = 20)
     private String phone;
 
-    @Column(name = "shipping_address", nullable = false, length = 500)
+    @Column(name = "shipping_address", length = 500)
     private String shippingAddress;
+
+    // Phí vận chuyển (0 với đơn POS, tính theo ShippingService cho đơn ONLINE)
+    @Column(name = "shipping_fee", precision = 12, scale = 2)
+    private BigDecimal shippingFee = BigDecimal.ZERO;
 
     @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;

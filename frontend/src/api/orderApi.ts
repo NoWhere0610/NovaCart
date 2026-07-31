@@ -9,9 +9,11 @@ export type OrderStatus =
   | 'CANCELLED'
   | 'RETURN_REQUESTED'
   | 'RETURNED'
-export type PaymentMethod = 'COD' | 'BANK_TRANSFER'
+export type PaymentMethod = 'COD' | 'BANK_TRANSFER' | 'VNPAY'
 
 export interface OrderItemDto {
+  orderItemId: number | null
+  variantId: number | null
   productId: number | null
   productName: string
   size: string
@@ -30,9 +32,11 @@ export interface OrderDto {
   totalAmount: number
   subtotalAmount: number | null
   discountAmount: number | null
+  shippingFee: number | null
   voucherCode: string | null
   status: OrderStatus
   paymentMethod: PaymentMethod
+  paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED'
   note: string | null
   returnReason: string | null
   createdAt: string
@@ -82,4 +86,9 @@ export async function completeOrderApi(orderId: number): Promise<OrderDto> {
 export async function requestReturnApi(orderId: number, reason: string): Promise<OrderDto> {
   const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/request-return`, { reason })
   return data
+}
+
+export async function getVnpayUrlApi(orderId: number): Promise<string> {
+  const { data } = await apiClient.get<{ paymentUrl: string }>(`/orders/${orderId}/vnpay-url`)
+  return data.paymentUrl
 }

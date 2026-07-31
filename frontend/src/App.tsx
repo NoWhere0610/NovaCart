@@ -17,6 +17,9 @@ import AdminCategoriesPage from "./pages/AdminCategoriesPage";
 import AdminVouchersPage from "./pages/AdminVouchersPage";
 import AdminOrdersPage from "./pages/AdminOrdersPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminPosPage from "./pages/AdminPosPage";
+import AdminStatisticsPage from "./pages/AdminStatisticsPage";
+import VNPayResultPage from "./pages/VNPayResultPage";
 import RequireAuth from "./components/RequireAuth";
 import RequireAdminRoute from "./components/RequireAdminRoute";
 import FloatingSocialButtons from "./components/FloatingSocialButtons";
@@ -70,11 +73,14 @@ function App() {
               <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/orders/:orderId" element={<OrderDetailPage />} />
+              <Route path="/vnpay-result" element={<VNPayResultPage />} />
             </Route>
 
             <Route element={<RequireAdminRoute />}>
               <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<AdminProductsPage />} />
+                <Route index element={<AdminStatisticsPage />} />
+                <Route path="statistics" element={<AdminStatisticsPage />} />
+                <Route path="pos" element={<AdminPosPage />} />
                 <Route path="products" element={<AdminProductsPage />} />
                 <Route path="categories" element={<AdminCategoriesPage />} />
                 <Route path="vouchers" element={<AdminVouchersPage />} />

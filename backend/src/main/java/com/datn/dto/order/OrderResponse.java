@@ -20,9 +20,11 @@ public class OrderResponse {
     // Sprint 4: chi tiết áp mã giảm giá
     private BigDecimal subtotalAmount;
     private BigDecimal discountAmount;
+    private BigDecimal shippingFee;
     private String voucherCode;
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
+    private Order.PaymentStatus paymentStatus;
     private String note;
     private String returnReason;
     private LocalDateTime createdAt;

@@ -5,6 +5,13 @@
 -- Sprint 2: Cart/Order, Sprint 3: Admin, Sprint 4: Review/Voucher)
 -- =====================================================
 
+-- QUAN TRỌNG: phải chuyển context sang master trước khi DROP DATABASE,
+-- nếu không SQL Server sẽ không cho drop database mà connection hiện
+-- tại đang "đứng" trong đó (đây là nguyên nhân gây lỗi "already exists"
+-- ở các bước CREATE TABLE bên dưới, vì DROP đã âm thầm thất bại).
+USE master;
+GO
+
 IF DB_ID('menswear_shop') IS NOT NULL
 BEGIN
     ALTER DATABASE menswear_shop SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
@@ -267,9 +274,6 @@ GO
 -- =====================================================
 
 -- Admin mặc định — mật khẩu: Admin@123
--- (hash BCrypt THẬT tạo bằng bcrypt rounds=10, KHÔNG còn là chuỗi placeholder
--- giả '$2a$10$hashedpasswordplaceholder' như bản gốc — chuỗi đó không đăng
--- nhập được vì không phải hash hợp lệ)
 INSERT INTO users (username, password, email, full_name, is_active)
 VALUES (N'admin', N'$2b$10$PhCqGHhTMbwMYDVpp3AegO48UpBVOo8u69UdfhCaVnR/0kTKxXkIK', N'admin@menswear.com', N'Quản trị viên', 1);
 GO
@@ -291,8 +295,7 @@ GO
 INSERT INTO brands (brand_name) VALUES (N'Local Brand'), (N'No Brand');
 GO
 
--- Sản phẩm mẫu để trang chủ/giỏ hàng có dữ liệu test ngay (bản gốc không có
--- sản phẩm nào cả nên trang chủ sẽ trống trơn nếu không thêm phần này)
+-- Sản phẩm mẫu để trang chủ/giỏ hàng có dữ liệu test ngay
 DECLARE @catAoThun INT = (SELECT category_id FROM categories WHERE slug = N'ao-thun');
 DECLARE @catAoSoMi INT = (SELECT category_id FROM categories WHERE slug = N'ao-so-mi');
 DECLARE @catQuanJean INT = (SELECT category_id FROM categories WHERE slug = N'quan-jean');
@@ -317,13 +320,12 @@ CROSS APPLY (VALUES ('S', N'Đen'), ('M', N'Đen'), ('L', N'Trắng')) AS v(size
 WHERE slug IN (N'ao-thun-basic-cotton-001', N'ao-so-mi-trang-cong-so-002', N'quan-jean-slim-fit-003');
 GO
 
--- Voucher mẫu để test checkout ngay (khớp 2 mã đã cấu hình sẵn trong AdminVouchersPage demo)
+-- Voucher mẫu để test checkout ngay
 INSERT INTO vouchers (code, discount_type, discount_value, min_order_value, max_discount_amount, usage_limit, is_active)
 VALUES
 (N'GIAM10', N'PERCENT', 10, 200000, 50000, 100, 1),
 (N'GIAM50K', N'AMOUNT', 50000, 300000, NULL, 50, 1);
 GO
-
 
 DECLARE @constraintName NVARCHAR(200);
 
@@ -350,4 +352,64 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders
 BEGIN
     ALTER TABLE dbo.orders ADD return_reason NVARCHAR(500) NULL;
 END
+GO
+
+-- =====================================================
+-- Bổ sung: BÁN TẠI QUẦY (POS) + PHÍ VẬN CHUYỂN
+-- =====================================================
+
+-- 1. Loại đơn hàng: ONLINE (khách đặt qua web) hay POS (bán tại quầy)
+-- LƯU Ý: tách ADD COLUMN và ADD CONSTRAINT ra 2 batch (GO) riêng.
+-- Nếu gộp chung 1 batch, SQL Server compile toàn bộ statement trước khi
+-- chạy nên câu CHECK sẽ báo "Invalid column name 'order_type'" vì tại
+-- thời điểm parse, cột đó (vừa thêm ở statement trước) chưa được engine
+-- nhận diện trong cùng batch.
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'order_type')
+BEGIN
+    ALTER TABLE dbo.orders ADD order_type NVARCHAR(10) NOT NULL DEFAULT 'ONLINE';
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_orders_order_type')
+BEGIN
+    ALTER TABLE dbo.orders ADD CONSTRAINT CK_orders_order_type CHECK (order_type IN ('ONLINE','POS'));
+END
+GO
+
+-- 2. Nhân viên đứng bán (chỉ có giá trị với đơn POS)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'cashier_id')
+BEGIN
+    ALTER TABLE dbo.orders ADD cashier_id BIGINT NULL;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_orders_cashier')
+BEGIN
+    ALTER TABLE dbo.orders ADD CONSTRAINT FK_orders_cashier FOREIGN KEY (cashier_id) REFERENCES users(user_id);
+END
+GO
+
+-- 3. Phí vận chuyển (đơn ONLINE tính theo ShippingService; đơn POS luôn = 0)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'shipping_fee')
+BEGIN
+    ALTER TABLE dbo.orders ADD shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0;
+END
+GO
+
+-- 4. Đơn POS có thể là khách vãng lai (không có tài khoản) và không cần giao
+--    hàng -> nới lỏng NOT NULL trên các cột này.
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'user_id' AND is_nullable = 0)
+    ALTER TABLE dbo.orders ALTER COLUMN user_id BIGINT NULL;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'receiver_name')
+    ALTER TABLE dbo.orders ALTER COLUMN receiver_name NVARCHAR(100) NULL;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'phone')
+    ALTER TABLE dbo.orders ALTER COLUMN phone NVARCHAR(20) NULL;
+GO
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'shipping_address')
+    ALTER TABLE dbo.orders ALTER COLUMN shipping_address NVARCHAR(500) NULL;
 GO

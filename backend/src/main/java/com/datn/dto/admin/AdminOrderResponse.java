@@ -20,6 +20,7 @@ public class AdminOrderResponse {
     private String phone;
     private String shippingAddress;
     private BigDecimal totalAmount;
+    private BigDecimal shippingFee;
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
     private String note;

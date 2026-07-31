@@ -5,6 +5,7 @@ import {
   completeOrderApi,
   requestReturnApi,
   getMyOrderDetailApi,
+  getVnpayUrlApi,
   type OrderDto,
   type OrderStatus,
 } from "../api/orderApi";
@@ -167,6 +168,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<OrderDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [payingVnpay, setPayingVnpay] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnReason, setReturnReason] = useState("");
@@ -243,6 +245,22 @@ export default function OrderDetailPage() {
     );
 
   const canCancel = order.status === "PENDING" || order.status === "CONFIRMED";
+  const needsVnpayPayment =
+    order.paymentMethod === "VNPAY" &&
+    order.paymentStatus === "UNPAID" &&
+    (order.status === "PENDING" || order.status === "CONFIRMED");
+
+  async function handlePayAgain() {
+    if (!order) return;
+    setPayingVnpay(true);
+    try {
+      const url = await getVnpayUrlApi(order.orderId);
+      window.location.href = url;
+    } catch (err: any) {
+      alert(err.response?.data?.message ?? "Không thể tạo link thanh toán VNPay");
+      setPayingVnpay(false);
+    }
+  }
   const needsReview = order.status === "DELIVERED";
   const canRequestReturn = order.status === "DELIVERED" || order.status === "COMPLETED";
   const isCancelled = order.status === "CANCELLED";
@@ -296,7 +314,11 @@ export default function OrderDetailPage() {
             </p>
             <p>
               <span className="text-stone-400">Thanh toán:</span>{" "}
-              {order.paymentMethod === "COD" ? "Khi nhận hàng" : "Chuyển khoản"}
+              {order.paymentMethod === "COD"
+                ? "Khi nhận hàng"
+                : order.paymentMethod === "VNPAY"
+                ? `VNPay${order.paymentStatus === "PAID" ? " (đã thanh toán)" : " (chưa thanh toán)"}`
+                : "Chuyển khoản"}
             </p>
             {order.note && (
               <p>
@@ -332,17 +354,23 @@ export default function OrderDetailPage() {
             ))}
           </div>
 
-          {order.voucherCode && (
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm text-stone-500 mb-1">
+          {(order.voucherCode || order.shippingFee) && (
+            <div className="mt-4 space-y-1">
+              <div className="flex items-center justify-between text-sm text-stone-500">
                 <span>Tạm tính</span>
                 <span>
                   {formatVnd(order.subtotalAmount ?? order.totalAmount)}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-sm text-green-700">
-                <span>Mã giảm giá ({order.voucherCode})</span>
-                <span>-{formatVnd(order.discountAmount ?? 0)}</span>
+              {order.voucherCode && (
+                <div className="flex items-center justify-between text-sm text-green-700">
+                  <span>Mã giảm giá ({order.voucherCode})</span>
+                  <span>-{formatVnd(order.discountAmount ?? 0)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-sm text-stone-500">
+                <span>Phí vận chuyển</span>
+                <span>{formatVnd(order.shippingFee ?? 0)}</span>
               </div>
             </div>
           )}
@@ -353,6 +381,16 @@ export default function OrderDetailPage() {
               {formatVnd(order.totalAmount)}
             </span>
           </div>
+
+          {needsVnpayPayment && (
+            <button
+              onClick={handlePayAgain}
+              disabled={payingVnpay}
+              className="mt-6 w-full bg-orange-700 hover:bg-orange-600 disabled:opacity-60 transition-colors text-white text-sm font-semibold px-6 py-3"
+            >
+              {payingVnpay ? "Đang chuyển tới VNPay..." : "Thanh toán qua VNPay"}
+            </button>
+          )}
 
           {canCancel && (
             <button

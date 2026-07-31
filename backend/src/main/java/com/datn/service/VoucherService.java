@@ -115,6 +115,20 @@ public class VoucherService {
         return discount;
     }
 
+    /**
+     * Hoàn lại 1 lượt dùng đã cộng ở applyVoucher() — dùng khi hoá đơn CHỜ (POS)
+     * bị bỏ mã giảm giá hoặc huỷ hẳn trước khi thanh toán xong.
+     */
+    @Transactional
+    public void revertVoucherUsage(String code) {
+        if (code == null || code.isBlank()) return;
+        voucherRepository.findByCodeIgnoreCase(code).ifPresent(v -> {
+            int current = v.getUsedCount() != null ? v.getUsedCount() : 0;
+            v.setUsedCount(Math.max(0, current - 1));
+            voucherRepository.save(v);
+        });
+    }
+
     private void applyFields(Voucher voucher, AdminVoucherDto.Request request) {
         voucher.setCode(request.getCode().trim().toUpperCase());
         voucher.setDiscountType(request.getDiscountType());
