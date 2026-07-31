@@ -43,9 +43,13 @@ public class SecurityConfig {
      * Danh sách API KHÔNG cần đăng nhập (đăng ký, đăng nhập, xem trang chủ/sản
      * phẩm...).
      */
-    private static final String[] PUBLIC_ENDPOINTS = {
+     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
-            "/api/home/**"
+            "/api/home/**",
+            // VNPay redirect thẳng TRÌNH DUYỆT của khách về endpoint này -> bắt buộc
+            // phải public. An toàn vẫn đảm bảo vì OrderService.handleVnpayReturn()
+            // luôn verify chữ ký HMAC-SHA512 trước khi tin bất kỳ tham số nào.
+            "/api/vnpay/**"
     };
 
     @Bean

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getMyCartApi, type CartDto } from "../api/cartApi";
 import { getMyAddressesApi, type AddressDto } from "../api/addressApi";
-import { checkoutApi, type PaymentMethod } from "../api/orderApi";
+import { checkoutApi, getVnpayUrlApi, type PaymentMethod } from "../api/orderApi";
+import { getShippingFeeApi } from "../api/shippingApi";
 import BackButton from "../components/BackButton";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
@@ -21,10 +22,25 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voucherCode, setVoucherCode] = useState("");
+  const [shippingFee, setShippingFee] = useState(0);
+  const [loadingFee, setLoadingFee] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const addr = addresses.find((a) => a.addressId === selectedAddressId);
+    if (!addr || !cart) {
+      setShippingFee(0);
+      return;
+    }
+    setLoadingFee(true);
+    getShippingFeeApi(addr.province ?? "", cart.totalAmount)
+      .then(setShippingFee)
+      .catch(() => setShippingFee(0))
+      .finally(() => setLoadingFee(false));
+  }, [selectedAddressId, addresses, cart]);
 
   async function loadData() {
     setLoading(true);
@@ -58,6 +74,11 @@ export default function CheckoutPage() {
         note: note || undefined,
         voucherCode: voucherCode.trim() || undefined,
       });
+      if (paymentMethod === "VNPAY") {
+        const paymentUrl = await getVnpayUrlApi(order.orderId);
+        window.location.href = paymentUrl;
+        return;
+      }
       // Đặt hàng xong -> điều hướng thẳng tới trang chi tiết đơn vừa tạo
       navigate(`/orders/${order.orderId}`, { replace: true });
     } catch (err: any) {
@@ -150,7 +171,7 @@ export default function CheckoutPage() {
           Phương thức thanh toán
         </h2>
         <div className="flex gap-3 mb-6">
-          {(["COD", "BANK_TRANSFER"] as PaymentMethod[]).map((method) => (
+          {(["COD", "BANK_TRANSFER", "VNPAY"] as PaymentMethod[]).map((method) => (
             <label
               key={method}
               className={`flex-1 border px-4 py-3 text-sm text-center cursor-pointer ${
@@ -168,7 +189,9 @@ export default function CheckoutPage() {
               />
               {method === "COD"
                 ? "Thanh toán khi nhận hàng"
-                : "Chuyển khoản ngân hàng"}
+                : method === "BANK_TRANSFER"
+                ? "Chuyển khoản ngân hàng"
+                : "Thanh toán VNPay"}
             </label>
           ))}
         </div>
@@ -197,10 +220,18 @@ export default function CheckoutPage() {
           </p>
         )}
 
+        <div className="border-t border-stone-200 pt-4 mb-2 flex items-center justify-between text-sm text-stone-500">
+          <span>Tạm tính</span>
+          <span>{formatVnd(cart.totalAmount)}</span>
+        </div>
+        <div className="mb-6 flex items-center justify-between text-sm text-stone-500">
+          <span>Phí vận chuyển</span>
+          <span>{loadingFee ? "Đang tính..." : formatVnd(shippingFee)}</span>
+        </div>
         <div className="border-t border-stone-200 pt-4 mb-6 flex items-center justify-between">
           <span className="text-stone-600">Tổng thanh toán</span>
           <span className="text-xl font-semibold text-stone-900">
-            {formatVnd(cart.totalAmount)}
+            {formatVnd(cart.totalAmount + shippingFee)}
           </span>
         </div>
 

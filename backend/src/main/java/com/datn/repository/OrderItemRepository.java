@@ -16,4 +16,6 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     // không cần đợi khách xác nhận Hoàn thành mới cho đánh giá.
     boolean existsByOrder_User_UserIdAndOrder_StatusInAndVariant_Product_ProductId(
             Long userId, Collection<Order.Status> statuses, Long productId);
+
+    java.util.Optional<OrderItem> findByOrderItemIdAndOrder_OrderId(Long orderItemId, Long orderId);
 }

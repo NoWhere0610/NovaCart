@@ -73,16 +73,40 @@ public class AdminOrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
 
-        Set<Order.Status> allowedNext = ALLOWED_TRANSITIONS.getOrDefault(order.getStatus(), Set.of());
+        Order.Status oldStatus = order.getStatus();
+        Set<Order.Status> allowedNext = ALLOWED_TRANSITIONS.getOrDefault(oldStatus, Set.of());
         if (!allowedNext.contains(newStatus)) {
             throw ApiException.badRequest(
-                    "Không thể chuyển đơn hàng từ trạng thái " + order.getStatus() + " sang " + newStatus);
+                    "Không thể chuyển đơn hàng từ trạng thái " + oldStatus + " sang " + newStatus);
         }
 
-        // Admin huỷ đơn (CANCELLED) hoặc DUYỆT trả hàng (RETURNED) -> đều phải
-        // hoàn tồn kho, giống hệt logic user tự huỷ đơn ở OrderService.cancelMyOrder()
-        // — tách riêng vì đây là hành động của ADMIN (không kiểm tra chủ sở hữu đơn hàng)
-        if (newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED) {
+        // SỬA LỖI: PENDING -> CONFIRMED là thời điểm THỰC SỰ trừ kho đối với đơn
+        // online (checkout() không còn trừ kho ngay lúc đặt nữa). Kiểm tra lại
+        // tồn kho lần cuối vì từ lúc đặt (PENDING) tới lúc admin xác nhận có thể
+        // đã có đơn khác (POS hoặc online khác) bán mất hàng.
+        if (oldStatus == Order.Status.PENDING && newStatus == Order.Status.CONFIRMED) {
+            for (OrderItem item : order.getItems()) {
+                ProductVariant variant = item.getVariant();
+                if (variant == null) continue;
+                int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
+                if (item.getQuantity() > stock) {
+                    throw ApiException.badRequest(
+                            "Sản phẩm \"" + item.getProductName() + "\" (" + item.getSize() + "/" + item.getColor()
+                                    + ") chỉ còn " + stock + " trong kho, không đủ để xác nhận đơn hàng này");
+                }
+                variant.setStockQuantity(stock - item.getQuantity());
+                variantRepository.save(variant);
+            }
+        }
+
+        // Admin huỷ đơn (CANCELLED) -> CHỈ hoàn kho nếu đơn ĐÃ ở CONFIRMED (tức đã
+        // thực sự bị trừ kho ở bước trên); huỷ thẳng từ PENDING thì chưa từng đụng
+        // tới kho nên không cần hoàn gì (SỬA LỖI so với bản cũ luôn hoàn kho vô
+        // điều kiện). Duyệt trả hàng (RETURNED) thì luôn hoàn kho như cũ, vì đơn
+        // RETURNED chắc chắn đã đi qua CONFIRMED (đã bị trừ kho) trước đó rồi.
+        boolean shouldRestoreStock = (newStatus == Order.Status.CANCELLED && oldStatus == Order.Status.CONFIRMED)
+                || newStatus == Order.Status.RETURNED;
+        if (shouldRestoreStock) {
             for (OrderItem item : order.getItems()) {
                 ProductVariant variant = item.getVariant();
                 if (variant != null) {
@@ -107,6 +131,7 @@ public class AdminOrderService {
                 .phone(order.getPhone())
                 .shippingAddress(order.getShippingAddress())
                 .totalAmount(order.getTotalAmount())
+                .shippingFee(order.getShippingFee())
                 .status(order.getStatus())
                 .paymentMethod(order.getPaymentMethod())
                 .note(order.getNote())

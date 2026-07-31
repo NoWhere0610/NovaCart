@@ -8,6 +8,10 @@ import java.math.BigDecimal;
 @Getter
 @Builder
 public class OrderItemResponse {
+    // Chỉ có giá trị khi cần thao tác lại trên từng dòng (POS xoá 1 dòng khỏi
+    // hoá đơn chờ) — API "đơn hàng của tôi" phía khách hàng không cần dùng tới.
+    private Long orderItemId;
+    private Long variantId;
     // Có thể null nếu sản phẩm/biến thể gốc đã bị xoá khỏi hệ thống — khi đó
     // client vẫn hiển thị được tên/giá (đã snapshot) nhưng ẩn nút "Đánh giá"/"Mua lại"
     private Long productId;

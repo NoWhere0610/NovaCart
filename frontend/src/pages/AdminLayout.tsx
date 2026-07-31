@@ -61,7 +61,28 @@ function IconUsers() {
   )
 }
 
+function IconChart() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M3 3v18h18" />
+      <path d="M7 16v-4M12 16V8M17 16v-7" />
+    </svg>
+  )
+}
+
+function IconPos() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <rect x="3" y="7" width="18" height="12" rx="2" />
+      <path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2" />
+      <path d="M7 13h4" />
+    </svg>
+  )
+}
+
 const NAV_ITEMS = [
+  { to: '/admin/statistics', label: 'Thống kê', icon: IconChart },
+  { to: '/admin/pos', label: 'Bán tại quầy (POS)', icon: IconPos },
   { to: '/admin/products', label: 'Sản phẩm', icon: IconBox },
   { to: '/admin/inventory', label: 'Kho tồn hàng', icon: IconWarehouse, adminOnly: true },
   { to: '/admin/categories', label: 'Danh mục & Thương hiệu', icon: IconTag },
