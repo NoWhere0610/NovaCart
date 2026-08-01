@@ -14,6 +14,8 @@ public class AdminCategoryDto {
         private String categoryName;
         private Integer parentId;
         private String description;
+        // Mới thêm: ảnh đại diện danh mục (URL) — hiển thị ở CategoriesPage + mega-menu
+        private String imageUrl;
         private Boolean isActive;
     }
 
@@ -26,6 +28,7 @@ public class AdminCategoryDto {
         private Integer parentId;
         private String parentName;
         private String description;
+        private String imageUrl;
         private Boolean isActive;
     }
 }

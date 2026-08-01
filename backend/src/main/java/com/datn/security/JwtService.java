@@ -4,7 +4,6 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -23,13 +22,14 @@ public class JwtService {
     private final SecretKey signingKey;
     private final long expirationMs;
 
-    public JwtService(
-            @Value("${app.jwt.secret}") String secret,
-            @Value("${app.jwt.expiration-ms}") long expirationMs) {
+    // Đổi từ @Value("${app.jwt.secret}") / @Value("${app.jwt.expiration-ms}")
+    // trên constructor sang nhận JwtProperties (đã bind sẵn qua Binder) -
+    // né lỗi "Could not resolve placeholder" của Spring Boot 4.0.6.
+    public JwtService(JwtProperties jwtProperties) {
         // HS256 yêu cầu key tối thiểu 256 bit -> secret trong application.properties
         // phải đủ dài, nếu không sẽ ném exception ngay lúc khởi động app (fail-fast, tốt hơn lỗi ngầm lúc runtime)
-        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes());
-        this.expirationMs = expirationMs;
+        this.signingKey = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes());
+        this.expirationMs = jwtProperties.getExpirationMs();
     }
 
     /** Sinh access token chứa username (subject) + danh sách role (custom claim). */

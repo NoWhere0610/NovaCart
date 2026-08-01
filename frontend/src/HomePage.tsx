@@ -2,14 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { getMyCartApi } from "./api/cartApi";
 import { useAuth } from "./contexts/AuthContext";
+import CategoryMegaMenu, { type MegaMenuCategory } from "./components/CategoryMegaMenu";
+import { DEMO_CATEGORIES } from "./data/demoCategories";
 
 const API_BASE = "http://localhost:8080/api/home";
 
-interface Category {
-  categoryId: number;
-  categoryName: string;
-  slug: string;
-}
+type Category = MegaMenuCategory;
 
 interface ProductDto {
   productId: number;
@@ -37,14 +35,6 @@ const formatVND = (n: number | null | undefined): string =>
         style: "currency",
         currency: "VND",
       }).format(n);
-
-const DEMO_CATEGORIES: Category[] = [
-  { categoryId: 1, categoryName: "Áo thun", slug: "ao-thun" },
-  { categoryId: 2, categoryName: "Áo sơ mi", slug: "ao-so-mi" },
-  { categoryId: 3, categoryName: "Quần jean", slug: "quan-jean" },
-  { categoryId: 4, categoryName: "Quần tây", slug: "quan-tay" },
-  { categoryId: 5, categoryName: "Áo khoác", slug: "ao-khoac" },
-];
 
 const demoProduct = (
   id: number,
@@ -260,15 +250,16 @@ function Header({
           </a>
 
           <nav className="hidden lg:flex items-center gap-7 text-sm font-medium text-stone-700">
-            {categories.slice(0, 6).map((c) => (
-              <a
-                key={c.categoryId}
-                href={`/category/${c.slug}`}
-                className="hover:text-orange-700 transition-colors"
-              >
-                {c.categoryName}
-              </a>
-            ))}
+            <CategoryMegaMenu
+              categories={categories}
+              onSelect={(c) => (window.location.href = `/shop?category=${c.slug}`)}
+            />
+            <a href="#newest" className="hover:text-orange-700 transition-colors">
+              Hàng mới
+            </a>
+            <a href="#categories" className="hover:text-orange-700 transition-colors">
+              Danh mục
+            </a>
           </nav>
 
           <div className="flex items-center gap-4">
@@ -421,25 +412,37 @@ function CategoryStrip({
             <button
               key={c.categoryId}
               onClick={() => onSelect(c)}
-              className="group border border-stone-300 hover:border-stone-900 transition-colors px-4 py-8 text-left"
+              className="group relative aspect-[4/5] overflow-hidden bg-stone-200 text-left"
             >
-              <p className="text-sm font-semibold text-stone-900 mb-1">
-                {c.categoryName}
-              </p>
-              <span className="text-xs text-stone-500 group-hover:text-orange-700 inline-flex items-center gap-1">
-                Xem ngay
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                  <polyline points="12 5 19 12 12 19" />
-                </svg>
-              </span>
+              {c.imageUrl ? (
+                <img
+                  src={c.imageUrl}
+                  alt={c.categoryName}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              ) : (
+                <div className="w-full h-full bg-stone-200" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+              <div className="absolute bottom-4 left-4">
+                <p className="text-sm font-semibold text-white mb-1">
+                  {c.categoryName}
+                </p>
+                <span className="text-xs text-stone-200 group-hover:text-orange-400 inline-flex items-center gap-1">
+                  Xem ngay
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <polyline points="12 5 19 12 12 19" />
+                  </svg>
+                </span>
+              </div>
             </button>
           ))}
         </div>
@@ -573,7 +576,7 @@ export default function HomePage() {
   }, []);
 
   const handleSelectCategory = useCallback((category: Category) => {
-    window.location.href = `/category/${category.slug}`;
+    window.location.href = `/shop?category=${category.slug}`;
   }, []);
 
   return (

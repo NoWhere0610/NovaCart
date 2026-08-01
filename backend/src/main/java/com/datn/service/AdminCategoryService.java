@@ -50,6 +50,7 @@ public class AdminCategoryService {
     private void applyFields(Category category, AdminCategoryDto.Request request) {
         category.setCategoryName(request.getCategoryName());
         category.setDescription(request.getDescription());
+        category.setImageUrl(request.getImageUrl());
         category.setIsActive(request.getIsActive() != null ? request.getIsActive() : true);
         category.setSlug(request.getCategoryName().toLowerCase()
                 .replaceAll("[^a-z0-9\\s-]", "").trim().replaceAll("\\s+", "-"));
@@ -71,6 +72,7 @@ public class AdminCategoryService {
                 .parentId(c.getParent() != null ? c.getParent().getCategoryId() : null)
                 .parentName(c.getParent() != null ? c.getParent().getCategoryName() : null)
                 .description(c.getDescription())
+                .imageUrl(c.getImageUrl())
                 .isActive(c.getIsActive())
                 .build();
     }

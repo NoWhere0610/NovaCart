@@ -37,6 +37,10 @@ public class Category {
     @Column(name = "description", columnDefinition = "NVARCHAR(MAX)")
     private String description;
 
+    // Mới thêm: ảnh đại diện danh mục — dùng cho CategoriesPage và mega-menu ở trang chủ
+    @Column(name = "image_url", length = 255)
+    private String imageUrl;
+
     @Column(name = "is_active")
     private Boolean isActive = true;
 }
