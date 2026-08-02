@@ -1,66 +1,52 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-
-const CATEGORIES = [
-  { slug: 'ao-thun', label: 'Áo thun' },
-  { slug: 'ao-so-mi', label: 'Áo sơ mi' },
-  { slug: 'quan-jean', label: 'Quần jean' },
-  { slug: 'quan-tay', label: 'Quần tây' },
-  { slug: 'ao-khoac', label: 'Áo khoác' },
-]
+import { apiClient } from '../api/apiClient'
+import CategoryMegaMenu, { type MegaMenuCategory } from './CategoryMegaMenu'
+import { DEMO_CATEGORIES } from '../data/demoCategories'
 
 /**
  * Header dùng chung cho MỌI trang (trừ login/register và khu vực admin).
  * Cố định về bố cục — chỉ nội dung bên dưới header mới thay đổi theo từng trang.
+ *
+ * Dùng CategoryMegaMenu (danh mục cha -> con, load từ API /home/categories,
+ * fallback DEMO_CATEGORIES nếu API lỗi) thay vì dropdown phẳng cũ, để khớp
+ * với phần "Danh mục sản phẩm" từng có riêng ở LandingPage — giờ chỉ còn
+ * MỘT header duy nhất, tránh trùng lặp.
  */
 export default function Header() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
-  const [showCategories, setShowCategories] = useState(false)
+  const [categories, setCategories] = useState<MegaMenuCategory[]>(DEMO_CATEGORIES)
+
+  useEffect(() => {
+    let cancelled = false
+    apiClient
+      .get<MegaMenuCategory[]>('/home/categories')
+      .then((res) => {
+        if (!cancelled && res.data && res.data.length > 0) setCategories(res.data)
+      })
+      .catch(() => {
+        /* giữ nguyên danh mục demo nếu API lỗi */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <header className="bg-stone-50 border-b border-stone-200">
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex items-center justify-between h-20">
           <div className="flex items-center gap-6">
-            {/* Nút Danh mục — dropdown xổ xuống khi bấm */}
-            <div
-              className="relative"
-              onBlur={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  setShowCategories(false)
-                }
-              }}
-            >
-              <button
-                onClick={() => setShowCategories((v) => !v)}
-                className="flex items-center gap-2 text-sm text-stone-700 hover:text-stone-900 border border-stone-300 px-3 py-2"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-                Danh mục sản phẩm
-              </button>
-
-              {showCategories && (
-                <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-stone-200 shadow-lg z-50">
-                  {CATEGORIES.map((c) => (
-                    <button
-                      key={c.slug}
-                      onClick={() => {
-                        setShowCategories(false)
-                        navigate(`/shop?category=${c.slug}`)
-                      }}
-                      className="block w-full text-left px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50"
-                    >
-                      {c.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Danh mục sản phẩm — mega-menu 2 cấp: di chuột vào để xổ xuống
+                các nhóm danh mục, rồi di chuột vào 1 nhóm để hiện bên cạnh
+                các loại con thuộc nhóm đó. */}
+            <CategoryMegaMenu
+              categories={categories}
+              onSelect={(c) => navigate(`/shop?category=${c.slug}`)}
+            />
 
             <Link to="/" className="flex items-center gap-2">
               <span className="text-2xl font-bold tracking-tight text-stone-900">MENSWEAR</span>

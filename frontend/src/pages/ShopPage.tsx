@@ -7,6 +7,8 @@ interface CategoryDto {
   categoryId: number
   categoryName: string
   slug: string
+  imageUrl?: string | null
+  children?: CategoryDto[]
 }
 
 interface ProductDto {
@@ -33,18 +35,23 @@ export default function ShopPage() {
   const categorySlug = searchParams.get('category') ?? ''
   const keyword = searchParams.get('keyword') ?? ''
 
-  const [categories, setCategories] = useState<CategoryDto[]>([])
+  // Cây danh mục 2 cấp như trả về từ API (nhóm cha + danh mục con)
+  const [categoryTree, setCategoryTree] = useState<CategoryDto[]>([])
+  // Làm phẳng cây (cha + con) để tra cứu theo slug và để tương thích với
+  // các danh mục lá không có nhóm cha (VD: "Bộ đồ")
+  const flatCategories: CategoryDto[] = categoryTree.flatMap((g) => [g, ...(g.children ?? [])])
+
   const [products, setProducts] = useState<ProductDto[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiClient.get<CategoryDto[]>('/home/categories').then((res) => setCategories(res.data))
+    apiClient.get<CategoryDto[]>('/home/categories').then((res) => setCategoryTree(res.data))
   }, [])
 
   useEffect(() => {
     loadProducts()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categorySlug, keyword, categories])
+  }, [categorySlug, keyword, categoryTree])
 
   async function loadProducts() {
     setLoading(true)
@@ -55,13 +62,14 @@ export default function ShopPage() {
           params: { keyword, page: 0, size: 24 },
         })
       } else if (categorySlug) {
-        const cat = categories.find((c) => c.slug === categorySlug)
+        const cat = flatCategories.find((c) => c.slug === categorySlug)
         if (!cat) {
-          if (categories.length === 0) return
+          if (flatCategories.length === 0) return
           res = await apiClient.get<PageResponse<ProductDto>>('/home/products/newest', {
             params: { page: 0, size: 24 },
           })
         } else {
+          // Backend tự gom sản phẩm của danh mục con nếu đây là danh mục cha
           res = await apiClient.get<PageResponse<ProductDto>>(`/home/products/category/${cat.categoryId}`, {
             params: { page: 0, size: 24 },
           })
@@ -79,7 +87,7 @@ export default function ShopPage() {
     }
   }
 
-  const currentCategoryName = categories.find((c) => c.slug === categorySlug)?.categoryName
+  const currentCategoryName = flatCategories.find((c) => c.slug === categorySlug)?.categoryName
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
@@ -96,9 +104,9 @@ export default function ShopPage() {
         </div>
 
         <div className="flex gap-8">
-          <aside className="w-48 flex-shrink-0 hidden md:block">
+          <aside className="w-56 flex-shrink-0 hidden md:block">
             <p className="text-xs font-semibold text-stone-500 uppercase mb-3">Danh mục</p>
-            <div className="space-y-1">
+            <div className="space-y-4">
               <button
                 onClick={() => setSearchParams({})}
                 className={`block w-full text-left text-sm px-3 py-2 ${
@@ -107,16 +115,33 @@ export default function ShopPage() {
               >
                 Tất cả
               </button>
-              {categories.map((c) => (
-                <button
-                  key={c.categoryId}
-                  onClick={() => setSearchParams({ category: c.slug })}
-                  className={`block w-full text-left text-sm px-3 py-2 ${
-                    categorySlug === c.slug ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'
-                  }`}
-                >
-                  {c.categoryName}
-                </button>
+
+              {categoryTree.map((group) => (
+                <div key={group.categoryId}>
+                  <button
+                    onClick={() => setSearchParams({ category: group.slug })}
+                    className={`block w-full text-left text-xs font-semibold uppercase tracking-wide px-3 py-1.5 ${
+                      categorySlug === group.slug ? 'text-orange-700' : 'text-stone-500 hover:text-stone-800'
+                    }`}
+                  >
+                    {group.categoryName}
+                  </button>
+                  {group.children && group.children.length > 0 && (
+                    <div className="space-y-0.5">
+                      {group.children.map((c) => (
+                        <button
+                          key={c.categoryId}
+                          onClick={() => setSearchParams({ category: c.slug })}
+                          className={`block w-full text-left text-sm px-3 py-1.5 ${
+                            categorySlug === c.slug ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'
+                          }`}
+                        >
+                          {c.categoryName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </aside>

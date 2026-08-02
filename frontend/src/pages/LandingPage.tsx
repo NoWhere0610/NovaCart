@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 // Khi có ảnh sản phẩm thật, đổi URL này thành ảnh chụp thật của shop.
 const HERO_IMAGE = 'https://picsum.photos/seed/menswear-hero/900/1100'
 
+// Header/danh mục sản phẩm đã chuyển vào Header.tsx (dùng chung qua Layout)
+// -> bỏ khối <header> từng có riêng ở đây để tránh render trùng 2 header.
 export default function LandingPage() {
   const navigate = useNavigate()
 

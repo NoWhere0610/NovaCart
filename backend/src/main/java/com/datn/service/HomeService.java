@@ -46,9 +46,30 @@ public class HomeService {
         return PageResponse.from(page.map(this::toProductResponse));
     }
 
+    /**
+     * Xem sản phẩm theo danh mục. Nếu categoryId là danh mục CHA (VD: "Áo"),
+     * gom luôn sản phẩm của các danh mục CON active bên trong (vì sản phẩm chỉ
+     * được gán trực tiếp vào danh mục lá) — tránh trang trống khi bấm vào 1
+     * nhóm cha ở mega-menu/CategoriesPage.
+     */
     public PageResponse<ProductResponse> getProductsByCategory(Integer categoryId, Pageable pageable) {
-        Page<Product> page = productRepository.findByStatusAndCategory_CategoryIdOrderByCreatedAtDesc(
-                Product.Status.ACTIVE, categoryId, pageable);
+        List<Integer> categoryIds = categoryRepository.findById(categoryId)
+                .map(cat -> {
+                    List<Integer> childIds = cat.getChildren() == null ? List.of() : cat.getChildren().stream()
+                            .filter(ch -> Boolean.TRUE.equals(ch.getIsActive()))
+                            .map(Category::getCategoryId)
+                            .toList();
+                    if (childIds.isEmpty()) {
+                        return List.of(categoryId);
+                    }
+                    List<Integer> all = new java.util.ArrayList<>(childIds);
+                    all.add(categoryId);
+                    return all;
+                })
+                .orElse(List.of(categoryId));
+
+        Page<Product> page = productRepository.findByStatusAndCategory_CategoryIdInOrderByCreatedAtDesc(
+                Product.Status.ACTIVE, categoryIds, pageable);
         return PageResponse.from(page.map(this::toProductResponse));
     }
 
@@ -122,11 +143,25 @@ public class HomeService {
                 .build();
     }
 
+    /**
+     * Chuyển 1 Category thành CategoryResponse, kèm theo danh sách con (nếu có)
+     * đã lọc active + sắp xếp theo tên — dùng cho mega-menu (hover xổ danh mục
+     * cha rồi hiện danh mục con bên cạnh) và CategoriesPage (nhóm theo cha).
+     */
     private CategoryResponse toCategoryResponse(Category c) {
+        List<CategoryResponse> children = c.getChildren() == null ? List.of() : c.getChildren().stream()
+                .filter(child -> Boolean.TRUE.equals(child.getIsActive()))
+                .sorted(Comparator.comparing(Category::getCategoryName))
+                .map(this::toCategoryResponse)
+                .toList();
+
         return CategoryResponse.builder()
                 .categoryId(c.getCategoryId())
                 .categoryName(c.getCategoryName())
                 .slug(c.getSlug())
+                .imageUrl(c.getImageUrl())
+                .parentId(c.getParent() != null ? c.getParent().getCategoryId() : null)
+                .children(children)
                 .build();
     }
 }
