@@ -82,6 +82,12 @@ export default function Header() {
                 <path d="M9 12h6M9 16h6" />
               </svg>
             </button>
+            <button onClick={() => navigate('/account')} aria-label="Tài khoản" className="text-stone-700 hover:text-stone-900">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21c0-4 4-7 8-7s8 3 8 7" />
+              </svg>
+            </button>
             <button onClick={() => navigate('/cart')} aria-label="Giỏ hàng" className="text-stone-700 hover:text-stone-900">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <path d="M6 7h12l-1 13H7L6 7z" />
