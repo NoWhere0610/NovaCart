@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   createAddressApi,
@@ -83,6 +83,21 @@ export default function AccountPage() {
             Đăng xuất
           </button>
         </div>
+
+        <Link
+          to="/orders"
+          className="flex items-center justify-between border border-stone-200 hover:border-stone-900 transition-colors px-4 py-3 mb-6 text-sm"
+        >
+          <span className="flex items-center gap-2 text-stone-900 font-medium">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+              <path d="M9 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4" />
+              <rect x="9" y="3" width="6" height="4" rx="1" />
+              <path d="M9 12h6M9 16h6" />
+            </svg>
+            Đơn hàng của tôi
+          </span>
+          <span className="text-stone-400">→</span>
+        </Link>
 
         <h2 className="text-lg font-medium text-stone-900 mb-3">Sổ địa chỉ</h2>
 

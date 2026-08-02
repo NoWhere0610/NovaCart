@@ -9,7 +9,7 @@ export default function LandingPage() {
   const navigate = useNavigate()
 
   return (
-    <section className="grid grid-cols-1 md:grid-cols-2 bg-stone-900 min-h-[calc(100vh-80px)]">
+    <section className="grid grid-cols-1 md:grid-cols-2 bg-stone-900 min-h-full">
       <div className="flex flex-col justify-center px-8 md:px-16 py-16 text-stone-50">
         <p className="text-orange-500 text-xs font-semibold tracking-widest uppercase mb-4">
           Bộ sưu tập mới
