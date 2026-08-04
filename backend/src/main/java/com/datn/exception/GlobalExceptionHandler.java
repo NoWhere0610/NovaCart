@@ -1,6 +1,8 @@
 package com.datn.exception;
 
 import com.datn.dto.ApiError;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -19,6 +21,8 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     // Lỗi nghiệp vụ tự định nghĩa (username trùng, not found...)
     @ExceptionHandler(ApiException.class)
@@ -46,6 +50,9 @@ public class GlobalExceptionHandler {
     // Lưới an toàn cuối cùng: bắt mọi lỗi không lường trước, tránh lộ stack trace ra client
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnknown(Exception ex) {
+        // Trước đây nuốt hoàn toàn không log gì -> không có cách nào biết lỗi thật là gì khi debug
+        // (vd lộ ra khi tích hợp ChatService gọi sang chatbot kit). Vẫn KHÔNG lộ chi tiết ra client.
+        log.error("Lỗi không lường trước", ex);
         return ResponseEntity.internalServerError()
                 .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, "Đã có lỗi xảy ra ở hệ thống", null));
     }

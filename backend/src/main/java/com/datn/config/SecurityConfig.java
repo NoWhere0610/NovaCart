@@ -49,7 +49,11 @@ public class SecurityConfig {
             // VNPay redirect thẳng TRÌNH DUYỆT của khách về endpoint này -> bắt buộc
             // phải public. An toàn vẫn đảm bảo vì OrderService.handleVnpayReturn()
             // luôn verify chữ ký HMAC-SHA512 trước khi tin bất kỳ tham số nào.
-            "/api/vnpay/**"
+            "/api/vnpay/**",
+            // Gọi server-to-server từ chatbot kit (Node.js) khi đồng bộ sản phẩm mỗi ngày -> không có
+            // JWT khách hàng để xác thực. An toàn vẫn đảm bảo vì InternalKbController tự verify header
+            // "X-Internal-Secret" khớp novacart.internal-secret trước khi trả dữ liệu (xem class đó).
+            "/internal/**"
     };
 
     @Bean

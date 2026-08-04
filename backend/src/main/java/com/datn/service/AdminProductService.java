@@ -10,6 +10,7 @@ import com.datn.exception.ApiException;
 import com.datn.repository.BrandRepository;
 import com.datn.repository.CategoryRepository;
 import com.datn.repository.ProductRepository;
+import com.datn.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +31,7 @@ public class AdminProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
+    private final ProductVariantRepository variantRepository;
 
     /** Danh sách sản phẩm cho bảng quản trị — KHÔNG lọc theo status (admin phải thấy cả sản phẩm ẩn/hết hàng). */
     @Transactional(readOnly = true)
@@ -37,7 +40,17 @@ public class AdminProductService {
                 ? productRepository.findAll(PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")))
                 : productRepository.findByProductNameContainingIgnoreCase(
                     keyword, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
-        return PageResponse.from(products.map(this::toResponse));
+
+        // Batch 1 query lấy variants cho CẢ TRANG sản phẩm, thay vì product.getVariants() lazy-load
+        // riêng từng dòng (N+1) -- không gộp vào @EntityGraph cùng "images" được vì đó là 2 bag
+        // collection, xem comment ở ProductRepository.findByProductNameContainingIgnoreCase.
+        List<Long> productIds = products.getContent().stream().map(Product::getProductId).toList();
+        Map<Long, List<ProductVariant>> variantsByProductId = variantRepository
+                .findByProduct_ProductIdIn(productIds).stream()
+                .collect(Collectors.groupingBy(v -> v.getProduct().getProductId()));
+
+        return PageResponse.from(products.map(p ->
+                toResponse(p, variantsByProductId.getOrDefault(p.getProductId(), List.of()))));
     }
 
     @Transactional(readOnly = true)
@@ -87,6 +100,11 @@ public class AdminProductService {
         product.setProductName(request.getProductName());
         product.setDescription(request.getDescription());
         product.setCategory(category);
+        // @DecimalMin ở DTO chỉ chặn được salePrice < 0 (validation từng field riêng lẻ) -> giá
+        // khuyến mãi CAO HƠN giá gốc phải chặn ở đây (cần so sánh 2 field cùng lúc).
+        if (request.getSalePrice() != null && request.getSalePrice().compareTo(request.getPrice()) > 0) {
+            throw ApiException.badRequest("Giá khuyến mãi không được cao hơn giá bán");
+        }
         product.setPrice(request.getPrice());
         product.setSalePrice(request.getSalePrice());
         product.setMaterial(request.getMaterial());
@@ -175,12 +193,21 @@ public class AdminProductService {
                 .replaceAll("\\s+", "-");
     }
 
+    // Dùng cho getDetail/create/update: 1 sản phẩm đơn lẻ, p.getVariants() lazy-load là đủ rẻ (không
+    // phải N+1 vì chỉ có 1 N ở đây).
     private AdminProductResponse toResponse(Product p) {
+        return toResponse(p, p.getVariants());
+    }
+
+    // Dùng cho list(): variantsForProduct được batch-fetch sẵn CHO CẢ TRANG ở nơi gọi, KHÔNG phải
+    // p.getVariants() (mỗi lần gọi getVariants() trên 1 Product khác trong vòng lặp map() sẽ lazy-load
+    // riêng -> N+1 lại quay về).
+    private AdminProductResponse toResponse(Product p, List<ProductVariant> variantsForProduct) {
         List<String> imageUrls = p.getImages() == null ? List.of()
                 : p.getImages().stream().map(ProductImage::getImageUrl).toList();
 
-        List<ProductVariantResponse> variants = p.getVariants() == null ? List.of()
-                : p.getVariants().stream().map(v -> ProductVariantResponse.builder()
+        List<ProductVariantResponse> variants = variantsForProduct == null ? List.of()
+                : variantsForProduct.stream().map(v -> ProductVariantResponse.builder()
                     .variantId(v.getVariantId())
                     .size(v.getSize())
                     .color(v.getColor())

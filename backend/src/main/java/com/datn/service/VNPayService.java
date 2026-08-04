@@ -11,6 +11,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -117,8 +118,12 @@ public class VNPayService {
             if (it.hasNext()) hashData.append('&');
         }
 
+        // MessageDigest.isEqual thay vì equalsIgnoreCase -> so sánh constant-time cho chữ ký
+        // (equalsIgnoreCase thoát sớm ở ký tự sai đầu tiên, có thể lộ thông tin qua thời gian phản hồi).
         String computedHash = hmacSHA512(hashSecret, hashData.toString());
-        return computedHash.equalsIgnoreCase(receivedHash);
+        return MessageDigest.isEqual(
+                computedHash.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8),
+                receivedHash.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8));
     }
 
     private String urlEncode(String value) {

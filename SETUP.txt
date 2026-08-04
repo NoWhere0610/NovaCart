@@ -1,0 +1,52 @@
+HƯỚNG DẪN CÀI ĐẶT NOVACART (cho máy chưa từng chạy dự án này)
+
+Cần cài trước:
+- Java 17
+- Node.js 18 trở lên
+- SQL Server (bản Express miễn phí) + 1 công cụ quản lý DB (SSMS hoặc Azure Data Studio)
+- Git
+
+KHÔNG bắt buộc phải có Docker hay API key nào để chạy được trang web chính (bán hàng + quản trị).
+Chỉ phần CHATBOT TƯ VẤN (mục 4 bên dưới) mới cần — có thể bỏ qua phần đó, web vẫn chạy đầy đủ, chỉ
+riêng khung chat AI sẽ báo lỗi/không trả lời.
+
+1. LẤY CODE
+   git clone (hoặc git pull) repo này về.
+
+2. TẠO DATABASE
+   - Mở SSMS/Azure Data Studio, kết nối vào SQL Server local.
+   - Mở file "menswear_db_mssql.sql" ở thư mục gốc dự án, chạy toàn bộ file đó (tự tạo database
+     "menswear_shop" + toàn bộ bảng + dữ liệu mẫu, không cần tạo tay).
+   - Tài khoản admin có sẵn sau khi chạy xong: username "admin", mật khẩu "Admin@123".
+
+3. CHẠY BACKEND + FRONTEND
+   Cách nhanh nhất: mở PowerShell ở thư mục gốc dự án, chạy:
+     .\start.bat
+   (Tự mở 2 cửa sổ riêng cho backend và frontend. Muốn khởi động lại thì dùng .\restart.bat).
+
+   Hoặc chạy tay từng phần:
+     Backend:  cd backend
+               .\mvnw spring-boot:run
+               -> chạy ở http://localhost:8080
+     Frontend: cd frontend
+               npm install
+               npm run dev
+               -> chạy ở http://localhost:5173
+
+4. (TÙY CHỌN) CHATBOT TƯ VẤN — cần Docker + API key miễn phí
+   Bỏ qua bước này nếu chưa cần dùng thử chatbot.
+
+   a) Cài Docker Desktop (docker.com), mở lên cho chạy nền.
+   b) Lấy API key Gemini miễn phí tại https://aistudio.google.com/apikey (đăng nhập Google, bấm tạo key).
+   c) cd chatbot
+      copy .env.example thành .env
+      Mở .env, điền GEMINI_API_KEY vừa lấy được ở bước (b). Các giá trị khác trong .env giữ nguyên mặc
+      định là chạy được.
+   d) docker compose up -d --build
+      (Lần đầu sẽ hơi lâu vì tải image. Chạy xong, kho tri thức cho chatbot tự sẵn sàng ở
+      http://localhost:3200)
+   e) Đồng bộ dữ liệu sản phẩm vào chatbot (chạy 1 lần, hoặc mỗi khi đổi sản phẩm nhiều):
+      docker compose exec app node lib/productSync.js
+   f) Quay lại backend (mục 3), khởi động lại backend để nó nối được với chatbot vừa bật.
+
+Nếu vướng ở bước nào thì chụp lại lỗi gửi hỏi thêm.

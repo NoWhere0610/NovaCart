@@ -8,9 +8,15 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, Long> {
+
+    // Batch-load variant cho NHIỀU sản phẩm cùng lúc (VD: 1 trang danh sách sản phẩm admin) trong 1
+    // query riêng, thay vì product.getVariants() lazy-load từng dòng -- và thay vì nhét chung vào
+    // @EntityGraph của ProductRepository (sẽ đụng "images", 2 bag collection trong 1 query -> lỗi).
+    List<ProductVariant> findByProduct_ProductIdIn(List<Long> productIds);
 
     // Load kèm Product ngay để CartService lấy được tên/giá/ảnh sản phẩm
     // trong 1 lần query, không phải query thêm lần 2

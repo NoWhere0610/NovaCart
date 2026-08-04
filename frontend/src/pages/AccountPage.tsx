@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { IconPackage, IconChevronRight } from '@tabler/icons-react'
 import { useAuth } from '../contexts/AuthContext'
 import {
   createAddressApi,
@@ -15,6 +16,7 @@ export default function AccountPage() {
 
   const [addresses, setAddresses] = useState<AddressDto[]>([])
   const [loadingAddresses, setLoadingAddresses] = useState(true)
+  const [addressError, setAddressError] = useState<string | null>(null)
   const [form, setForm] = useState({ receiverName: '', phone: '', detailAddress: '' })
   const [submitting, setSubmitting] = useState(false)
 
@@ -26,9 +28,13 @@ export default function AccountPage() {
 
   async function loadAddresses() {
     setLoadingAddresses(true)
+    setAddressError(null)
     try {
       const data = await getMyAddressesApi()
       setAddresses(data)
+    } catch {
+      // Không để lỗi tải sổ địa chỉ hiển thị giống hệt "chưa có địa chỉ nào" (addresses.length === 0)
+      setAddressError('Không thể tải sổ địa chỉ. Vui lòng thử lại.')
     } finally {
       setLoadingAddresses(false)
     }
@@ -49,14 +55,20 @@ export default function AccountPage() {
       })
       setForm({ receiverName: '', phone: '', detailAddress: '' })
       await loadAddresses()
+    } catch (err: any) {
+      alert(err.response?.data?.message ?? 'Không thể thêm địa chỉ')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function handleDelete(addressId: number) {
-    await deleteAddressApi(addressId)
-    await loadAddresses()
+    try {
+      await deleteAddressApi(addressId)
+      await loadAddresses()
+    } catch (err: any) {
+      alert(err.response?.data?.message ?? 'Không thể xoá địa chỉ')
+    }
   }
 
   function handleLogout() {
@@ -71,7 +83,7 @@ export default function AccountPage() {
         <div className="bg-white border border-stone-200 p-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-stone-900">Tài khoản của tôi</h1>
+            <h1 className="font-display text-2xl font-semibold text-stone-900">Tài khoản của tôi</h1>
             <p className="text-sm text-stone-500 mt-1">
               {user?.fullName || user?.username} — {user?.email}
             </p>
@@ -89,20 +101,23 @@ export default function AccountPage() {
           className="flex items-center justify-between border border-stone-200 hover:border-stone-900 transition-colors px-4 py-3 mb-6 text-sm"
         >
           <span className="flex items-center gap-2 text-stone-900 font-medium">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-              <path d="M9 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4" />
-              <rect x="9" y="3" width="6" height="4" rx="1" />
-              <path d="M9 12h6M9 16h6" />
-            </svg>
+            <IconPackage size={18} stroke={1.7} />
             Đơn hàng của tôi
           </span>
-          <span className="text-stone-400">→</span>
+          <IconChevronRight size={16} className="text-stone-400" />
         </Link>
 
         <h2 className="text-lg font-medium text-stone-900 mb-3">Sổ địa chỉ</h2>
 
         {loadingAddresses ? (
           <p className="text-sm text-stone-500">Đang tải...</p>
+        ) : addressError ? (
+          <div className="mb-6 text-sm text-stone-600">
+            <p className="mb-2">{addressError}</p>
+            <button onClick={loadAddresses} className="text-gold-dark font-medium underline">
+              Thử lại
+            </button>
+          </div>
         ) : addresses.length === 0 ? (
           <p className="text-sm text-stone-500 mb-4">Bạn chưa có địa chỉ nào.</p>
         ) : (
@@ -116,7 +131,7 @@ export default function AccountPage() {
                   <p className="font-medium text-stone-900">
                     {addr.receiverName} — {addr.phone}
                     {addr.isDefault && (
-                      <span className="ml-2 text-[11px] bg-orange-700 text-white px-2 py-0.5">
+                      <span className="ml-2 text-[11px] bg-stone-900 border-gold-metallic text-white px-2 py-0.5">
                         Mặc định
                       </span>
                     )}
@@ -159,7 +174,7 @@ export default function AccountPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="bg-orange-700 hover:bg-orange-600 disabled:opacity-60 transition-colors text-stone-50 text-sm font-semibold px-6 py-2"
+            className="bg-stone-900 border-gold-metallic gold-glow disabled:opacity-60 text-stone-50 text-sm font-semibold px-6 py-2"
           >
             {submitting ? 'Đang lưu...' : 'Thêm địa chỉ'}
           </button>

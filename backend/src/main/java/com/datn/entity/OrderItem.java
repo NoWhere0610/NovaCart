@@ -16,7 +16,8 @@ import java.math.BigDecimal;
  * giá mình đã trả lúc mua).
  */
 @Entity
-@Table(name = "order_items")
+// order_id có FK nhưng KHÔNG có index riêng -- mỗi lần xem chi tiết 1 đơn hàng đều query theo order_id.
+@Table(name = "order_items", indexes = @Index(name = "idx_order_items_order_id", columnList = "order_id"))
 @Getter
 @Setter
 @NoArgsConstructor

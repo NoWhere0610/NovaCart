@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import PageFade from '../components/PageFade'
 
 // Icon inline SVG (không phụ thuộc thư viện ngoài như lucide-react, vì project
 // hiện chưa cài — tránh bắt người dùng phải chạy lại "npm install").
@@ -135,7 +136,9 @@ export default function AdminLayout() {
       </aside>
 
       <main className="flex-1 p-8 overflow-x-auto">
-        <Outlet />
+        <PageFade>
+          <Outlet />
+        </PageFade>
       </main>
     </div>
   )
