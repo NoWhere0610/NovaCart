@@ -12,9 +12,8 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Chuẩn bị dữ liệu sản phẩm cho chatbot kit (Node.js) đồng bộ vào kho tri
- * thức mỗi ngày -- xem GET /internal/kb/products (InternalKbController) và
- * "chatbot/lib/productSync.js" trong repo này (bên gọi).
+ * Chuẩn bị dữ liệu sản phẩm cho chatbot kit đồng bộ vào kho tri thức mỗi ngày --
+ * xem GET /internal/kb/products (InternalKbController).
  */
 @Service
 @RequiredArgsConstructor
@@ -40,10 +39,8 @@ public class InternalKbService {
                 .maSanPham(String.valueOf(p.getProductId()))
                 .tenSanPham(p.getProductName())
                 .danhMuc(p.getCategory() != null ? p.getCategory().getCategoryName() : null)
-                // "No Brand" là 1 giá trị THẬT trong bảng brands (gán cho sản phẩm không có thương hiệu cụ
-                // thể) -- đưa nguyên văn vào đây sẽ khiến bot trả lời kiểu "Thương hiệu: No Brand" cho khách,
-                // đọc như 1 nhãn hàng thật. Coi nó tương đương null (không nhắc thương hiệu), giống cách xử
-                // lý ở frontend (LandingPage/ProductDetailPage).
+                // "No Brand" là giá trị thật trong DB cho sản phẩm không có thương hiệu -- coi như null để
+                // bot không trả lời kiểu "Thương hiệu: No Brand", giống cách xử lý ở frontend.
                 .thuongHieu(p.getBrand() != null && !"No Brand".equals(p.getBrand().getBrandName())
                         ? p.getBrand().getBrandName() : null)
                 .gia(p.getSalePrice() != null ? p.getSalePrice() : p.getPrice())

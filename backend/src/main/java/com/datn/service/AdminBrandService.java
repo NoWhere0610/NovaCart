@@ -41,10 +41,8 @@ public class AdminBrandService {
     public void delete(Integer brandId) {
         Brand brand = brandRepository.findById(brandId)
                 .orElseThrow(() -> ApiException.notFound("Thương hiệu không tồn tại"));
-        // Brand không có cột isActive trong schema hiện tại và product.brand_id được phép NULL
-        // (khác Category) -> xoá cứng an toàn hơn, nhưng chỉ khi không còn sản phẩm nào tham chiếu.
-        // Đồ án đơn giản hoá: để DB tự ném lỗi khoá ngoại nếu còn sản phẩm dùng brand này,
-        // GlobalExceptionHandler sẽ bắt và trả lỗi chung, admin sẽ biết cần gỡ sản phẩm trước.
+        // Brand không có isActive, product.brand_id cho phép NULL -> xoá cứng, dựa vào lỗi khoá ngoại
+        // của DB nếu còn sản phẩm tham chiếu (GlobalExceptionHandler bắt và trả lỗi chung).
         brandRepository.delete(brand);
     }
 

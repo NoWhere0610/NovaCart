@@ -48,9 +48,7 @@ export default function CategoriesPage() {
     }
   }, [])
 
-  // Danh mục KHÔNG có con (trường hợp thực tế hiện tại — 5 danh mục phẳng) gộp chung vào 1 lưới duy
-  // nhất, thay vì mỗi cái tách thành 1 section riêng chỉ chứa đúng 1 thẻ (lặp lại tên, tốn diện tích).
-  // Danh mục CÓ con (nếu sau này thêm phân cấp) vẫn hiển thị theo từng nhóm như cũ.
+  // Danh mục không có con gộp chung vào 1 lưới; danh mục có con vẫn hiển thị theo từng nhóm riêng.
   const leafCategories = groups.filter((g) => !g.children || g.children.length === 0)
   const groupsWithChildren = groups.filter((g) => g.children && g.children.length > 0)
 

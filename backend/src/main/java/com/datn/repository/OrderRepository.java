@@ -12,14 +12,12 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-    // Trang "Đơn hàng của tôi" - phân trang, mới nhất lên đầu (xem OrderService)
     Page<Order> findByUser_UserId(Long userId, Pageable pageable);
 
     @EntityGraph(attributePaths = { "items" })
     Optional<Order> findByOrderIdAndUser_UserId(Long orderId, Long userId);
 
-    // Dùng cho trang quản trị: lọc theo trạng thái (không giới hạn theo user cụ
-    // thể)
+    // Trang quản trị: lọc theo trạng thái, không giới hạn theo user.
     Page<Order> findByStatus(Order.Status status, Pageable pageable);
 
     // ----- POS (bán tại quầy) -----

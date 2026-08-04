@@ -19,8 +19,7 @@ public class WishlistController {
 
     private final WishlistService wishlistService;
 
-    // Danh sách RIÊNG chỉ productId -- FE dùng để tô đậm icon trái tim ở mọi nơi hiển thị sản phẩm mà
-    // không phải tải cả object Product cho mục đích đó.
+    // Danh sách riêng chỉ productId -- FE dùng tô đậm icon trái tim mà không cần tải cả object Product.
     @GetMapping("/product-ids")
     public List<Long> getProductIds(@AuthenticationPrincipal UserPrincipal principal) {
         return wishlistService.getProductIds(principal.getUserId());

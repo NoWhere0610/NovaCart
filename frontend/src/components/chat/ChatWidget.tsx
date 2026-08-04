@@ -34,8 +34,7 @@ export default function ChatWidget() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
-  // Chatbot chỉ phục vụ khách đã đăng nhập (đúng scope hiện tại) -- không hiện bong bóng chat cho
-  // khách vãng lai thay vì hiện ra rồi báo lỗi 401 khi bấm gửi.
+  // Backend yêu cầu JWT -- ẩn luôn thay vì hiện ra rồi báo lỗi 401.
   if (!isAuthenticated) return null
 
   async function handleSend(e: FormEvent) {

@@ -35,8 +35,7 @@ public class WishlistService {
         return PageResponse.from(page.map(w -> toProductResponse(w.getProduct())));
     }
 
-    // Idempotent -- bấm tim khi ĐÃ lưu rồi (vd 2 tab cùng lưu) không nên báo lỗi, chỉ cần đảm bảo cuối
-    // cùng có đúng 1 dòng trong wishlist.
+    // Idempotent -- bấm tim khi đã lưu rồi không báo lỗi, chỉ đảm bảo cuối cùng có đúng 1 dòng.
     @Transactional
     public void add(Long userId, Long productId) {
         if (wishlistRepository.existsByUser_UserIdAndProduct_ProductId(userId, productId)) {
@@ -59,8 +58,7 @@ public class WishlistService {
         wishlistRepository.deleteByUser_UserIdAndProduct_ProductId(userId, productId);
     }
 
-    // Giống HomeService.toProductResponse() -- KHÔNG tái dùng chung (inject HomeService vào đây chỉ để
-    // gọi 1 hàm private) vì tạo phụ thuộc chéo giữa 2 service không cần thiết cho 1 đoạn map ngắn.
+    // Giống HomeService.toProductResponse() -- không tái dùng chung để tránh phụ thuộc chéo giữa 2 service.
     private ProductResponse toProductResponse(Product p) {
         String thumbnail = p.getImages() == null ? null : p.getImages().stream()
                 .filter(ProductImage::getIsThumbnail)

@@ -4,9 +4,7 @@ import { useAuth } from './AuthContext'
 
 interface WishlistContextValue {
   isWishlisted: (productId: number) => boolean
-  // Optimistic: cập nhật UI (Set) NGAY, gọi API nền sau -- tim phải phản hồi tức thì khi bấm, không
-  // đợi round-trip API mới đổi trạng thái (khác CartContext, ở đây không cần server trả dữ liệu gì
-  // thêm để hiển thị, nên optimistic an toàn và mượt hơn).
+  // Optimistic: cập nhật UI ngay, gọi API nền sau -- tim phản hồi tức thì khi bấm.
   toggle: (productId: number) => void
 }
 
@@ -24,8 +22,7 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
     getWishlistProductIdsApi()
       .then((list) => setIds(new Set(list)))
       .catch(() => {
-        /* Không có chỗ hiển thị lỗi hợp lý cho việc này -- chỉ ảnh hưởng trạng thái tô đậm icon tim,
-           không chặn thao tác nào khác của khách. */
+        /* Lỗi chỉ ảnh hưởng trạng thái tô đậm icon tim, không chặn thao tác khác. */
       })
   }, [isAuthenticated])
 

@@ -18,12 +18,11 @@ public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
     @Transactional
     void deleteByUser_UserIdAndProduct_ProductId(Long userId, Long productId);
 
-    // Danh sách RIÊNG chỉ productId -- dùng để tô đậm icon trái tim trên khắp nơi (Shop/Landing/chi
-    // tiết sản phẩm) mà KHÔNG cần tải cả object Product, chỉ cần biết "đã lưu hay chưa".
+    // Chỉ lấy productId, không tải cả Product -- dùng để tô icon trái tim đã lưu hay chưa.
     @Query("SELECT w.product.productId FROM Wishlist w WHERE w.user.userId = :userId")
     List<Long> findProductIdsByUser_UserId(@Param("userId") Long userId);
 
-    // Trang "Sản phẩm yêu thích" -- cần đủ thông tin Product để hiển thị dạng lưới giống ShopPage.
+    // Trang "Sản phẩm yêu thích": cần đủ thông tin Product để hiển thị dạng lưới.
     @EntityGraph(attributePaths = { "product", "product.images", "product.category", "product.brand" })
     Page<Wishlist> findByUser_UserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 }

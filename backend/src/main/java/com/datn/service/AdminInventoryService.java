@@ -18,10 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Nghiệp vụ cho màn "Kho tồn hàng" (Inventory) — quản lý tồn kho ở mức biến thể
- * (size/màu) của sản phẩm. Khác AdminProductService (sửa cả sản phẩm: tên, giá, ảnh...),
- * service này CHỈ thao tác trên ProductVariant, phục vụ nhân viên kho tra cứu/điều chỉnh
- * số lượng tồn nhanh mà không cần mở form sửa toàn bộ sản phẩm.
+ * Quản lý tồn kho ở mức biến thể (size/màu). Khác AdminProductService (sửa cả sản phẩm),
+ * service này chỉ thao tác trên ProductVariant.
  */
 @Service
 @RequiredArgsConstructor
@@ -88,8 +86,7 @@ public class AdminInventoryService {
             variantRepository.delete(variant);
             variantRepository.flush();
         } catch (DataIntegrityViolationException ex) {
-            // variant_id trong order_items KHÔNG có ON DELETE CASCADE (giữ lịch sử đơn hàng)
-            // -> xoá thẳng sẽ vi phạm FK nếu biến thể này đã từng được đặt hàng.
+            // variant_id trong order_items không có ON DELETE CASCADE -> xoá sẽ vi phạm FK nếu đã từng được đặt hàng.
             throw ApiException.badRequest(
                     "Không thể xoá — mặt hàng này đã từng phát sinh đơn hàng. Hãy đặt tồn kho về 0 thay vì xoá.");
         }

@@ -20,10 +20,8 @@ import java.util.List;
 public class Order {
 
     /**
-     * Trạng thái xử lý đơn hàng, đi theo đúng 1 chiều (không nhảy cóc ngược lại),
-     * mô phỏng đúng luồng của các sàn TMĐT lớn (Shopee/TikTok Shop):
-     * Chờ thanh toán -> Chờ vận chuyển -> Chờ giao hàng -> Cần đánh giá -> Hoàn thành,
-     * có thể rẽ nhánh sang Huỷ (đầu luồng) hoặc Trả hàng/Hoàn tiền (cuối luồng).
+     * Trạng thái đơn hàng, đi 1 chiều: Chờ thanh toán -> Chờ vận chuyển -> Chờ giao hàng -> Cần đánh giá
+     * -> Hoàn thành, có thể rẽ Huỷ (đầu luồng) hoặc Trả hàng/Hoàn tiền (cuối luồng).
      */
     public enum Status {
         PENDING,           // vừa đặt, chờ thanh toán / chờ người bán xác nhận
@@ -69,14 +67,12 @@ public class Order {
     @Column(name = "order_type", nullable = false, length = 10)
     private OrderType orderType = OrderType.ONLINE;
 
-    // Nhân viên đứng bán (role ADMIN, đồ án bỏ qua phân biệt STAFF riêng) —
-    // chỉ có giá trị với đơn POS.
+    // Nhân viên đứng bán (role ADMIN, không phân biệt STAFF riêng) -- chỉ có giá trị với đơn POS.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cashier_id")
     private User cashier;
 
-    // Nullable vì đơn POS bán trực tiếp tại quầy không có bước giao hàng.
-    // Validate "bắt buộc phải có" cho đơn ONLINE được thực hiện ở tầng Service.
+    // Nullable vì đơn POS không có bước giao hàng; validate bắt buộc cho đơn ONLINE ở tầng Service.
     @Column(name = "receiver_name", length = 100)
     private String receiverName;
 
@@ -117,9 +113,7 @@ public class Order {
     @Column(name = "note", length = 500)
     private String note;
 
-    // Lý do khách nhập khi bấm "Yêu cầu trả hàng/hoàn tiền" (chỉ có giá trị khi
-    // status là RETURN_REQUESTED/RETURNED) — cột mới, Hibernate tự ALTER TABLE
-    // thêm cột này vì ddl-auto=update (không cần migrate tay như cột status).
+    // Lý do trả hàng/hoàn tiền, chỉ có giá trị khi status là RETURN_REQUESTED/RETURNED.
     @Column(name = "return_reason", length = 500)
     private String returnReason;
 

@@ -3,10 +3,8 @@ package com.datn.dto.chatbot;
 import lombok.Builder;
 import lombok.Getter;
 
-/** Body gửi SANG chatbot kit (Node.js) tại POST {api-base}/api/chat/ask -- xem
- * routes/chatSession.js bên kit. `userId` lấy từ JWT đã xác thực (KHÔNG bao
- * giờ nhận trực tiếp từ client) để tránh 1 user đọc được lịch sử chat của
- * người khác bằng cách tự truyền userId giả. */
+/** Body gửi sang chatbot kit (Node.js) tại POST {api-base}/api/chat/ask. `userId` lấy từ JWT đã xác
+ * thực, không nhận trực tiếp từ client, tránh user giả mạo userId để đọc lịch sử chat người khác. */
 @Getter
 @Builder
 public class KitAskRequest {

@@ -35,8 +35,7 @@ export default function AdminInventoryPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    // Danh sách sản phẩm để chọn khi thêm mới 1 dòng tồn kho — lấy tối đa,
-    // không lọc theo status vì admin có thể muốn nhập tồn cho sản phẩm đang ẩn
+    // Không lọc theo status vì admin có thể muốn nhập tồn cho sản phẩm đang ẩn
     getAdminProductsApi('', 0, 500).then((res) => setProducts(res.content))
   }, [])
 

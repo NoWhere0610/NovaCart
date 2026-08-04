@@ -1,5 +1,4 @@
-// Map tên màu tiếng Việt (lưu trong DB, khớp FULL_COLORS ở ProductDetailPage/ShopPage) sang mã hex thật
-// -- dùng để vẽ ô màu (swatch) trực quan thay vì chỉ hiện chữ, đúng chuẩn UX ngành thời trang.
+// Map tên màu tiếng Việt (khớp FULL_COLORS ở ProductDetailPage/ShopPage) sang mã hex để vẽ swatch.
 export const COLOR_SWATCHES: Record<string, string> = {
   'Đen': '#1c1917',
   'Trắng': '#ffffff',
@@ -19,8 +18,7 @@ export const COLOR_SWATCHES: Record<string, string> = {
   'Bạc': '#c0c0c0',
 }
 
-// Fallback trung tính cho màu lạ chưa có trong bảng (không nên xảy ra với dữ liệu hiện tại, nhưng
-// tránh vẽ swatch trống/undefined nếu sau này có màu mới chưa kịp thêm vào bảng).
+// Fallback trung tính cho màu chưa có trong bảng.
 export function colorToHex(colorName: string): string {
   return COLOR_SWATCHES[colorName] ?? '#a8a29e'
 }

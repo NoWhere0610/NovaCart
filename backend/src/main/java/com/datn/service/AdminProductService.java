@@ -41,9 +41,7 @@ public class AdminProductService {
                 : productRepository.findByProductNameContainingIgnoreCase(
                     keyword, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
 
-        // Batch 1 query lấy variants cho CẢ TRANG sản phẩm, thay vì product.getVariants() lazy-load
-        // riêng từng dòng (N+1) -- không gộp vào @EntityGraph cùng "images" được vì đó là 2 bag
-        // collection, xem comment ở ProductRepository.findByProductNameContainingIgnoreCase.
+        // Batch 1 query lấy variants cho cả trang, tránh N+1 -- không gộp @EntityGraph vì "images" là bag collection khác.
         List<Long> productIds = products.getContent().stream().map(Product::getProductId).toList();
         Map<Long, List<ProductVariant>> variantsByProductId = variantRepository
                 .findByProduct_ProductIdIn(productIds).stream()
@@ -79,9 +77,7 @@ public class AdminProductService {
     @Transactional
     public void delete(Long productId) {
         Product product = getProductOrThrow(productId);
-        // KHÔNG xoá cứng (hard delete) sản phẩm đã từng được đặt hàng — OrderItem đã snapshot
-        // dữ liệu riêng nên không bị lỗi tham chiếu, nhưng để an toàn dữ liệu lịch sử/thống kê,
-        // đồ án chọn cách chuyển status = INACTIVE (soft delete) thay vì xoá thật khỏi DB.
+        // Soft delete (INACTIVE) thay vì xoá cứng -- giữ dữ liệu lịch sử/thống kê.
         product.setStatus(Product.Status.INACTIVE);
         productRepository.save(product);
     }
@@ -100,8 +96,7 @@ public class AdminProductService {
         product.setProductName(request.getProductName());
         product.setDescription(request.getDescription());
         product.setCategory(category);
-        // @DecimalMin ở DTO chỉ chặn được salePrice < 0 (validation từng field riêng lẻ) -> giá
-        // khuyến mãi CAO HƠN giá gốc phải chặn ở đây (cần so sánh 2 field cùng lúc).
+        // @DecimalMin ở DTO không so sánh được 2 field -> chặn salePrice > price ở đây.
         if (request.getSalePrice() != null && request.getSalePrice().compareTo(request.getPrice()) > 0) {
             throw ApiException.badRequest("Giá khuyến mãi không được cao hơn giá bán");
         }
@@ -109,8 +104,7 @@ public class AdminProductService {
         product.setSalePrice(request.getSalePrice());
         product.setMaterial(request.getMaterial());
         product.setStatus(request.getStatus() != null ? request.getStatus() : Product.Status.ACTIVE);
-        // Slug tự sinh từ tên (đơn giản hoá cho đồ án: không xử lý bỏ dấu tiếng Việt phức tạp,
-        // chỉ thay khoảng trắng + lowercase, đủ dùng cho URL thân thiện)
+        // Slug tự sinh từ tên, không xử lý bỏ dấu tiếng Việt.
         product.setSlug(toSlug(request.getProductName()) + "-" + System.currentTimeMillis() % 100000);
 
         if (request.getBrandId() != null) {
@@ -123,10 +117,8 @@ public class AdminProductService {
     }
 
     /**
-     * Đồng bộ ảnh: XOÁ SẠCH ảnh cũ rồi tạo lại theo đúng danh sách mới gửi lên.
-     * Đơn giản hoá hợp lý cho đồ án vì ảnh không bị tham chiếu bởi bảng nào khác
-     * (không như variant có thể đã nằm trong OrderItem/CartItem) — orphanRemoval=true
-     * trên Product.images sẽ tự xoá record cũ trong DB khi list được thay thế.
+     * Đồng bộ ảnh: xoá sạch ảnh cũ rồi tạo lại theo danh sách mới.
+     * Ảnh không bị bảng nào tham chiếu nên xoá/tạo lại an toàn (orphanRemoval=true).
      */
     private void syncImages(Product product, List<String> imageUrls) {
         if (product.getImages() == null) {
@@ -147,13 +139,9 @@ public class AdminProductService {
     }
 
     /**
-     * Đồng bộ variant theo chiến lược "match theo variantId":
-     *  - variantId != null VÀ còn trong request -> GIỮ LẠI, cập nhật size/color/sku/stock (KHÔNG tạo record mới,
-     *    vì variant này có thể đã được tham chiếu trong CartItem/OrderItem lịch sử qua variant_id).
-     *  - variantId == null -> variant MỚI, tạo record mới.
-     *  - variant cũ trong DB nhưng KHÔNG còn xuất hiện trong request -> bị XOÁ (orphanRemoval).
-     * Cách làm này tránh việc xoá-tạo-lại toàn bộ variant mỗi lần sửa, vốn sẽ làm ĐỨT liên kết
-     * variant_id trong OrderItem/CartItem cũ (biến chúng thành tham chiếu tới ID không tồn tại).
+     * Đồng bộ variant theo variantId: còn trong request -> giữ lại và cập nhật;
+     * variantId null -> tạo mới; không còn trong request -> xoá (orphanRemoval).
+     * Không xoá-tạo lại toàn bộ vì sẽ làm đứt liên kết variant_id trong OrderItem/CartItem cũ.
      */
     private void syncVariants(Product product, List<AdminVariantRequest> variantRequests) {
         if (product.getVariants() == null) {
@@ -193,15 +181,12 @@ public class AdminProductService {
                 .replaceAll("\\s+", "-");
     }
 
-    // Dùng cho getDetail/create/update: 1 sản phẩm đơn lẻ, p.getVariants() lazy-load là đủ rẻ (không
-    // phải N+1 vì chỉ có 1 N ở đây).
+    // Dùng cho 1 sản phẩm đơn lẻ -- lazy-load getVariants() ở đây không phải N+1.
     private AdminProductResponse toResponse(Product p) {
         return toResponse(p, p.getVariants());
     }
 
-    // Dùng cho list(): variantsForProduct được batch-fetch sẵn CHO CẢ TRANG ở nơi gọi, KHÔNG phải
-    // p.getVariants() (mỗi lần gọi getVariants() trên 1 Product khác trong vòng lặp map() sẽ lazy-load
-    // riêng -> N+1 lại quay về).
+    // Dùng cho list(): variants đã được batch-fetch sẵn ở nơi gọi, tránh N+1.
     private AdminProductResponse toResponse(Product p, List<ProductVariant> variantsForProduct) {
         List<String> imageUrls = p.getImages() == null ? List.of()
                 : p.getImages().stream().map(ProductImage::getImageUrl).toList();

@@ -21,8 +21,7 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
-  // Riêng với "error" (lỗi lúc bấm Đặt hàng, hiển thị INLINE trong form) -- loadError là lỗi tải
-  // cart/địa chỉ ban đầu, phải thay THẾ TOÀN BỘ trang vì form chưa có gì để hiển thị hợp lệ.
+  // Khác với "error" (lỗi bấm Đặt hàng, hiện inline) -- loadError là lỗi tải ban đầu, thay thế toàn bộ trang.
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +62,7 @@ export default function CheckoutPage() {
         addressData.find((a) => a.isDefault) ?? addressData[0];
       setSelectedAddressId(defaultAddr?.addressId ?? null);
     } catch {
-      // Không để lỗi tải cart/địa chỉ bị hiểu nhầm thành "giỏ hàng trống, không đặt được" ở nhánh
-      // return sớm ngay dưới — 2 tình huống cần thông báo khác nhau hoàn toàn.
+      // Tránh nhầm lỗi tải với "giỏ hàng trống" ở nhánh return sớm bên dưới -- 2 thông báo khác nhau.
       setLoadError("Không thể tải thông tin đặt hàng. Vui lòng thử lại.");
     } finally {
       setLoading(false);
@@ -85,9 +83,7 @@ export default function CheckoutPage() {
         note: note || undefined,
         voucherCode: voucherCode.trim() || undefined,
       });
-      // checkoutApi() thành công -> server đã xoá giỏ hàng NGAY LẬP TỨC (bất kể phương thức thanh toán
-      // nào) -- clear ngay ở đây, không chờ trang sau tự tải lại (VNPAY thì rời hẳn sang trang ngoài,
-      // COD/BANK_TRANSFER thì điều hướng NỘI BỘ SPA nên Header vẫn giữ nguyên state cũ nếu không clear).
+      // Server đã xoá giỏ hàng ngay -- clear count ở đây luôn vì COD/BANK_TRANSFER điều hướng nội bộ SPA, Header sẽ giữ state cũ nếu không clear.
       clearCartCount();
       if (paymentMethod === "VNPAY") {
         const paymentUrl = await getVnpayUrlApi(order.orderId);
@@ -214,9 +210,7 @@ export default function CheckoutPage() {
               <input
                 type="radio"
                 name="payment"
-                // "hidden" (display:none) loại HẲN input khỏi tab order -- không cách nào chọn phương
-                // thức thanh toán bằng bàn phím. "sr-only" chỉ ẩn về mặt hình ảnh (vẫn ở trong accessibility
-                // tree + tab order như bình thường), nên focus-within ở label cha mới thực sự có tác dụng.
+                // sr-only thay vì hidden -- vẫn giữ trong tab order để focus-within trên label cha hoạt động.
                 className="sr-only"
                 checked={paymentMethod === method}
                 onChange={() => setPaymentMethod(method)}

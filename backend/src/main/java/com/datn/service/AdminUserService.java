@@ -31,8 +31,7 @@ public class AdminUserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy người dùng"));
 
-        // Chặn admin tự khoá chính tài khoản đang đăng nhập của mình -> tránh
-        // tình huống dở khóc dở cười: khoá xong không còn ai có quyền mở lại
+        // Chặn admin tự khoá tài khoản đang đăng nhập của chính mình -- tránh khoá xong không ai mở lại được.
         String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
         if (!active && user.getUsername().equals(currentUsername)) {
             throw ApiException.badRequest("Không thể tự khoá tài khoản đang đăng nhập của chính mình");

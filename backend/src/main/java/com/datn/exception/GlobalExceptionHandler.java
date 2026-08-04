@@ -15,9 +15,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * "Bắt" toàn bộ exception ném ra từ Controller/Service ở MỘT nơi duy nhất,
- * thay vì mỗi Controller phải tự try-catch -> code Controller sạch hơn nhiều
- * và response lỗi luôn đồng nhất format cho frontend.
+ * Bắt toàn bộ exception từ Controller/Service ở một nơi duy nhất -- response lỗi
+ * đồng nhất format cho frontend, Controller không cần tự try-catch.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -50,8 +49,7 @@ public class GlobalExceptionHandler {
     // Lưới an toàn cuối cùng: bắt mọi lỗi không lường trước, tránh lộ stack trace ra client
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnknown(Exception ex) {
-        // Trước đây nuốt hoàn toàn không log gì -> không có cách nào biết lỗi thật là gì khi debug
-        // (vd lộ ra khi tích hợp ChatService gọi sang chatbot kit). Vẫn KHÔNG lộ chi tiết ra client.
+        // Log để debug được, nhưng không lộ chi tiết ra client.
         log.error("Lỗi không lường trước", ex);
         return ResponseEntity.internalServerError()
                 .body(buildError(HttpStatus.INTERNAL_SERVER_ERROR, "Đã có lỗi xảy ra ở hệ thống", null));

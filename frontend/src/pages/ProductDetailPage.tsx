@@ -18,13 +18,10 @@ import Breadcrumb from "../components/Breadcrumb";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
-// Bộ SIZE chuẩn đầy đủ của ngành may mặc nam — hiển thị TẤT CẢ, không chỉ
-// những size sản phẩm đang có sẵn. Size nào sản phẩm không có/hết hàng sẽ
-// tự động bị disable (xem isSizeAvailable), không phải xoá khỏi danh sách.
+// Bộ size chuẩn -- luôn hiển thị hết, size không có/hết hàng bị disable (xem isSizeAvailable) chứ không ẩn.
 const FULL_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL"];
 
-// Bộ MÀU đầy đủ thường dùng trong thời trang nam — tương tự, hiển thị hết,
-// màu nào sản phẩm không có sẽ bị disable chứ không ẩn đi.
+// Bộ màu chuẩn -- tương tự, màu không có sẽ bị disable chứ không ẩn.
 const FULL_COLORS = [
   "Đen", "Trắng", "Xám", "Xanh Navy", "Xanh Dương", "Xanh Lá", "Xanh Rêu",
   "Be", "Nâu", "Kem", "Đỏ", "Cam", "Vàng", "Hồng", "Tím", "Bạc",
@@ -117,13 +114,9 @@ export default function ProductDetailPage() {
   }
 
   const onSale = product.salePrice != null;
-  // Size vẫn hiển thị TOÀN BỘ chuẩn (FULL_SIZES) -- size sản phẩm không bán/hết hàng tự bị disable ở
-  // dưới (isSizeAvailable), không ẩn, để khách thấy hết dải size chuẩn.
+  // Size hiển thị toàn bộ chuẩn, size không bán/hết hàng tự disable ở dưới.
   const uniqueSizes = FULL_SIZES;
-  // Màu thì NGƯỢC LẠI -- chỉ hiện màu sản phẩm THẬT SỰ có (dù còn/hết hàng), ẩn hẳn màu sản phẩm không
-  // hề bán tới (trước đây hiện cả FULL_COLORS, quá nhiều màu bị mờ/gạch chéo không liên quan tới sản
-  // phẩm này, rối mắt). Màu có bán nhưng hết hàng ở size đang chọn vẫn hiện mờ/gạch chéo như cũ (khác
-  // với "không hề bán" -- vẫn đáng cho khách biết màu đó tồn tại, có thể còn ở size khác).
+  // Màu ngược lại -- chỉ hiện màu sản phẩm thật sự có, ẩn hẳn màu không hề bán (tránh rối mắt vì quá nhiều màu mờ không liên quan).
   const uniqueColors = FULL_COLORS.filter((c) =>
     product!.variants.some((v) => v.color === c),
   );
@@ -146,9 +139,7 @@ export default function ProductDetailPage() {
 
   function pickVariant(size: string, color: string) {
     let found = getVariant(size, color);
-    // Nếu tổ hợp (size, màu đang chọn) không tồn tại/hết hàng nhưng size này
-    // vẫn còn hàng ở màu khác (isSizeAvailable === true), tự động chuyển sang
-    // màu đầu tiên còn hàng của size đó thay vì bỏ qua thao tác bấm.
+    // Nếu tổ hợp (size, màu đang chọn) hết hàng nhưng size này còn hàng ở màu khác, tự chuyển sang màu đầu tiên còn hàng.
     if (!found || found.stockQuantity === 0) {
       found = product!.variants.find(
         (v) => v.size === size && v.stockQuantity > 0,
@@ -156,8 +147,7 @@ export default function ProductDetailPage() {
     }
     if (!found) return; // size này không còn hàng ở bất kỳ màu nào
     setSelectedVariant(found);
-    // Đổi ảnh chính theo màu đã chọn (best-effort: ánh xạ theo thứ tự màu ->
-    // thứ tự ảnh, vì hệ thống hiện chưa gắn ảnh riêng cho từng màu ở backend)
+    // Đổi ảnh chính theo màu (best-effort: ánh xạ theo thứ tự, chưa có ảnh riêng theo màu ở backend)
     const colorIndex = uniqueColors.indexOf(color);
     if (product!.imageUrls.length > 0) {
       setMainImageIndex(colorIndex % product!.imageUrls.length);
@@ -172,15 +162,13 @@ export default function ProductDetailPage() {
           items={[
             { label: 'Trang chủ', to: '/' },
             { label: 'Shop', to: '/shop' },
-            // categoryName không kèm slug trong response chi tiết sản phẩm -- hiện dạng chữ thường
-            // (không link) thay vì đoán slug sai dẫn tới link hỏng.
+            // categoryName không kèm slug -- hiện chữ thường, không link, tránh đoán slug sai.
             ...(product.categoryName ? [{ label: product.categoryName }] : []),
             { label: product.productName },
           ]}
         />
       </div>
-      {/* bg-white + border + shadow -- trước đây khối ảnh/thông tin nằm trực tiếp trên nền bg-stone-50
-          của trang, không có card/độ sâu nào bao quanh, khác hẳn Cart/Checkout đã có card từ trước. */}
+      {/* Card bao ảnh/thông tin, khớp style Cart/Checkout. */}
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10 bg-white border border-stone-200 shadow-sm p-6 md:p-8">
         {/* Gallery ảnh */}
         <div>
@@ -217,8 +205,7 @@ export default function ProductDetailPage() {
         {/* Thông tin + chọn mua */}
         <div>
           <p className="text-[11px] uppercase tracking-widest text-stone-500 mb-1">
-            {/* "No Brand" là 1 giá trị thật trong bảng brands (gán cho sản phẩm không có thương hiệu cụ
-                thể) -- hiện nguyên văn trông như tên nhãn hàng thật, coi nó tương đương "chưa có brand". */}
+            {/* "No Brand" là giá trị thật trong DB -- coi tương đương "chưa có brand", không hiện nguyên văn. */}
             {product.brandName && product.brandName !== 'No Brand' ? product.brandName : product.categoryName}
           </p>
           <h1 className="font-display text-2xl font-semibold text-stone-900 mb-3">
@@ -293,9 +280,7 @@ export default function ProductDetailPage() {
               <p className="text-xs font-medium text-stone-600 mb-2">
                 Màu sắc{selectedVariant?.color ? `: ${selectedVariant.color}` : ""}
               </p>
-              {/* Ô màu thật (swatch) thay vì chỉ hiện tên -- vẫn giữ tên màu ở nhãn phía trên (không chỉ
-                  dựa vào màu sắc để phân biệt, tốt hơn cho người khó phân biệt màu) + title/aria-label
-                  trên từng nút cho screen reader. */}
+              {/* Vẫn giữ tên màu ở nhãn phía trên, không chỉ dựa vào swatch (hỗ trợ người khó phân biệt màu). */}
               <div className="flex gap-2.5 flex-wrap">
                 {uniqueColors.map((color) => {
                   const available = isColorAvailable(color);

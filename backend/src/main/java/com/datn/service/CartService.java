@@ -128,8 +128,7 @@ public class CartService {
     private CartResponse toResponse(Cart cart) {
         List<CartItem> rawItems = cart.getItems();
 
-        // Batch 1 query lấy ảnh cho TẤT CẢ sản phẩm trong giỏ, thay vì product.getImages() lazy-load
-        // riêng từng dòng (N+1) -- xem giải thích ở ProductImageRepository.findByProduct_ProductIdInOrderByDisplayOrderAsc.
+        // Batch 1 query lấy ảnh cho tất cả sản phẩm trong giỏ, tránh N+1.
         List<Long> productIds = rawItems.stream()
                 .map(ci -> ci.getVariant().getProduct().getProductId())
                 .distinct()

@@ -7,11 +7,8 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Dữ liệu 1 sản phẩm trả về cho chatbot kit (Node.js) đồng bộ vào kho tri thức
- * -- xem GET /internal/kb/products (InternalKbController). Tên field khớp
- * CHÍNH XÁC với productToText()/syncProducts() trong
- * "D:/My Tech/Chatbot/lib/productSync.js" (Jackson serialize camelCase y
- * nguyên, không đổi tên).
+ * Dữ liệu 1 sản phẩm cho chatbot kit đồng bộ vào kho tri thức (GET /internal/kb/products).
+ * Tên field phải khớp chính xác với productSync.js bên kit (Jackson serialize camelCase, không đổi tên).
  */
 @Getter
 @Builder

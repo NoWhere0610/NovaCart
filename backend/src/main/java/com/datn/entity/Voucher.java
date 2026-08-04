@@ -15,7 +15,7 @@ import java.time.LocalDate;
  *  - Cột là min_order_value (không phải min_order_amount)
  *  - KHÔNG có max_discount_amount ở DB gốc -> field này map tới cột được
  *    bổ sung thêm qua migration (xem sprint4_migration_fix.sql), có thể
- *    NULL nếu bạn chưa chạy migration đó.
+ *    NULL nếu chưa chạy migration đó.
  *  - KHÔNG có used_count ở DB gốc -> cũng là cột bổ sung thêm qua migration.
  *  - discount_type CHECK constraint chỉ cho 'PERCENT' hoặc 'AMOUNT'
  *    (KHÔNG phải 'FIXED' như bản trước) -> đổi tên enum tương ứng.

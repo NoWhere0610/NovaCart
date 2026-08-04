@@ -29,28 +29,19 @@ public class AdminOrderService {
     private final OrderRepository orderRepository;
     private final ProductVariantRepository variantRepository;
 
-    /**
-     * Sơ đồ trạng thái HỢP LỆ — admin chỉ được chuyển đơn hàng theo đúng các
-     * mũi tên này, không được "nhảy cóc" (vd PENDING -> COMPLETED thẳng) hay
-     * đi ngược lại. Định nghĩa tập trung ở đây để dễ kiểm soát toàn bộ luồng
-     * nghiệp vụ chỉ tại 1 chỗ duy nhất.
-     */
+    /** Sơ đồ trạng thái hợp lệ -- admin chỉ được chuyển đơn theo đúng các mũi tên này, không nhảy cóc hay đi ngược. */
     private static final Map<Order.Status, Set<Order.Status>> ALLOWED_TRANSITIONS = new EnumMap<>(Order.Status.class);
     static {
         ALLOWED_TRANSITIONS.put(Order.Status.PENDING, EnumSet.of(Order.Status.CONFIRMED, Order.Status.CANCELLED));
         ALLOWED_TRANSITIONS.put(Order.Status.CONFIRMED, EnumSet.of(Order.Status.SHIPPING, Order.Status.CANCELLED));
         ALLOWED_TRANSITIONS.put(Order.Status.SHIPPING, EnumSet.of(Order.Status.DELIVERED));
-        // DELIVERED ("cần đánh giá") -> COMPLETED thường do CHÍNH KHÁCH bấm sau khi
-        // đánh giá (xem OrderService.completeMyOrder), nhưng admin vẫn có thể tự
-        // đóng đơn hộ khách nếu khách không thao tác gì sau một thời gian dài.
+        // DELIVERED -> COMPLETED thường do khách tự bấm (OrderService.completeMyOrder), nhưng admin có thể đóng hộ.
         ALLOWED_TRANSITIONS.put(Order.Status.DELIVERED, EnumSet.of(Order.Status.COMPLETED));
-        // COMPLETED là điểm cuối từ góc nhìn admin — khách vẫn có thể tự chuyển
-        // sang RETURN_REQUESTED (xem OrderService.requestReturn), việc đó KHÔNG
-        // đi qua sơ đồ này (admin không chủ động đẩy đơn đã xong sang trả hàng)
+        // COMPLETED là điểm cuối với admin -- khách vẫn có thể tự chuyển sang RETURN_REQUESTED
+        // (OrderService.requestReturn), không qua sơ đồ này.
         ALLOWED_TRANSITIONS.put(Order.Status.COMPLETED, EnumSet.noneOf(Order.Status.class));
         ALLOWED_TRANSITIONS.put(Order.Status.CANCELLED, EnumSet.noneOf(Order.Status.class));
-        // Khách yêu cầu trả hàng -> admin DUYỆT (RETURNED, hoàn kho + xem như đã
-        // hoàn tiền) hoặc TỪ CHỐI (trả lại COMPLETED, đơn coi như vẫn hoàn tất)
+        // Khách yêu cầu trả hàng -> admin duyệt (RETURNED, hoàn kho) hoặc từ chối (về lại COMPLETED).
         ALLOWED_TRANSITIONS.put(Order.Status.RETURN_REQUESTED, EnumSet.of(Order.Status.RETURNED, Order.Status.COMPLETED));
         ALLOWED_TRANSITIONS.put(Order.Status.RETURNED, EnumSet.noneOf(Order.Status.class));
     }
@@ -80,10 +71,8 @@ public class AdminOrderService {
                     "Không thể chuyển đơn hàng từ trạng thái " + oldStatus + " sang " + newStatus);
         }
 
-        // SỬA LỖI: PENDING -> CONFIRMED là thời điểm THỰC SỰ trừ kho đối với đơn
-        // online (checkout() không còn trừ kho ngay lúc đặt nữa). Kiểm tra lại
-        // tồn kho lần cuối vì từ lúc đặt (PENDING) tới lúc admin xác nhận có thể
-        // đã có đơn khác (POS hoặc online khác) bán mất hàng.
+        // PENDING -> CONFIRMED là lúc thực sự trừ kho cho đơn online -- kiểm tra lại tồn kho vì
+        // có thể đã bị đơn khác bán mất từ lúc đặt tới lúc xác nhận.
         if (oldStatus == Order.Status.PENDING && newStatus == Order.Status.CONFIRMED) {
             for (OrderItem item : order.getItems()) {
                 ProductVariant variant = item.getVariant();
@@ -99,11 +88,8 @@ public class AdminOrderService {
             }
         }
 
-        // Admin huỷ đơn (CANCELLED) -> CHỈ hoàn kho nếu đơn ĐÃ ở CONFIRMED (tức đã
-        // thực sự bị trừ kho ở bước trên); huỷ thẳng từ PENDING thì chưa từng đụng
-        // tới kho nên không cần hoàn gì (SỬA LỖI so với bản cũ luôn hoàn kho vô
-        // điều kiện). Duyệt trả hàng (RETURNED) thì luôn hoàn kho như cũ, vì đơn
-        // RETURNED chắc chắn đã đi qua CONFIRMED (đã bị trừ kho) trước đó rồi.
+        // Huỷ đơn chỉ hoàn kho nếu đã ở CONFIRMED (đã từng bị trừ kho); huỷ từ PENDING thì chưa đụng kho.
+        // RETURNED luôn hoàn kho vì chắc chắn đã qua CONFIRMED trước đó.
         boolean shouldRestoreStock = (newStatus == Order.Status.CANCELLED && oldStatus == Order.Status.CONFIRMED)
                 || newStatus == Order.Status.RETURNED;
         if (shouldRestoreStock) {

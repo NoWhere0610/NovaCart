@@ -2,8 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import PageFade from '../components/PageFade'
 
-// Icon inline SVG (không phụ thuộc thư viện ngoài như lucide-react, vì project
-// hiện chưa cài — tránh bắt người dùng phải chạy lại "npm install").
+// Icon inline SVG, không phụ thuộc thư viện ngoài.
 function IconBox() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -96,10 +95,7 @@ export default function AdminLayout() {
   const { user } = useAuth()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
 
-  // "Kho tồn hàng" chỉ hiện với role ADMIN — role khác (vd STAFF) không thấy
-  // mục này trong menu, chứ không chỉ disable. Lớp chặn thật sự vẫn nằm ở
-  // route guard (RequireAdminRoute, chặn kép) + backend hasRole("ADMIN")
-  // cho /api/admin/inventory/**; ẩn ở UI chỉ là lớp trải nghiệm thêm.
+  // "Kho tồn hàng" chỉ hiện với ADMIN -- ẩn UI chỉ là lớp UX phụ, chặn thật sự ở route guard + backend.
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
 
   return (

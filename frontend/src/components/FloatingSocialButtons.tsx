@@ -1,10 +1,8 @@
 import { IconBrandTiktok, IconBrandFacebook } from '@tabler/icons-react'
 
 /**
- * Chỉ còn 2 link mạng xã hội nổi góc màn hình -- phần chat đã tách sang
- * components/chat/ChatWidget.tsx (dùng backend NovaCart thật thay vì gọi
- * thẳng Gemini từ trình duyệt như trước). Đặt bottom-24 để không đè lên nút
- * chat của ChatWidget (đang ở bottom-6).
+ * 2 link mạng xã hội nổi góc màn hình. Đặt bottom-24 để không đè lên nút chat
+ * của ChatWidget (đang ở bottom-6).
  */
 export default function FloatingSocialButtons() {
   return (

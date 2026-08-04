@@ -2,11 +2,8 @@ import type { ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 
 /**
- * Bọc quanh <Outlet /> để tạo animation fade + trượt nhẹ lên mỗi khi chuyển trang/tab. Key theo
- * pathname (không phải toàn bộ location) để KHÔNG re-trigger fade khi chỉ đổi
- * query string trong cùng 1 trang (vd phân trang/filter ở ShopPage).
- * Dùng "page-fade-slide" riêng (không phải "page-fade" của lưới sản phẩm ShopPage) -- chuyển trang thật
- * nên có cảm giác sang hơn (dịch nhẹ lên), lọc sản phẩm thì nên nhẹ/nhanh, không dịch chuyển.
+ * Bọc quanh <Outlet /> để fade + trượt nhẹ khi chuyển trang. Key theo pathname (không phải
+ * toàn bộ location) để không re-trigger khi chỉ đổi query string (vd phân trang ở ShopPage).
  */
 export default function PageFade({ children }: { children: ReactNode }) {
   const location = useLocation()

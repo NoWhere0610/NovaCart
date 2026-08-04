@@ -56,24 +56,17 @@ export default function ProductReviews({ productId }: { productId: number }) {
   }
 
   async function handleSubmitReview() {
-    // KHÔNG setFormMessage(null) ở đây -- nếu đang hiện message cũ (vd lỗi từ lần bấm trước) và bấm gửi
-    // lại, xoá message ngay lập tức rồi đợi API xong mới hiện lại (dù cùng nội dung) sẽ làm message biến
-    // mất rồi hiện lại, kéo theo chiều cao trang co-giãn theo -- đúng cảm giác "chớp nhoáng" bị báo. Cứ
-    // để message CŨ hiển thị nguyên cho tới khi biết kết quả MỚI, lúc đó set đè trực tiếp (1 lần thay
-    // đổi duy nhất, không có khoảng trống ở giữa).
+    // Không setFormMessage(null) ở đây -- để message cũ hiển thị nguyên tới khi có kết quả mới,
+    // tránh message biến mất rồi hiện lại làm trang giật chiều cao.
     setSubmitting(true)
     try {
       const created = await createReviewApi(productId, rating, comment)
       setComment('')
       setFormMessage({ type: 'success', text: 'Cảm ơn bạn đã đánh giá!' })
-      // Thêm thẳng đánh giá vừa tạo (API trả về sẵn đầy đủ) vào đầu danh sách hiện có -- KHÔNG gọi lại
-      // loadReviews(). Gọi lại sẽ set loading=true, khiến khối đánh giá bị THAY HẲN bằng dòng "Đang tải
-      // đánh giá..." (ngắn hơn) trong chốc lát rồi mới quay lại danh sách (dài hơn, có thêm 1 dòng) --
-      // đúng cảm giác trang "giật"/nhảy chiều cao mà không cần fetch lại (dữ liệu đã có sẵn trong tay).
+      // Thêm thẳng đánh giá mới vào đầu danh sách, không gọi lại loadReviews() để tránh giật layout.
       setReviews((prev) => [created, ...prev])
     } catch (err: any) {
-      // Lỗi phổ biến: chưa mua hàng / đơn chưa COMPLETED / đã đánh giá rồi
-      // (xem điều kiện đầy đủ ở ReviewService.create() bên backend)
+      // Lỗi phổ biến: chưa mua hàng / đơn chưa COMPLETED / đã đánh giá rồi (xem ReviewService.create() backend)
       setFormMessage({ type: 'error', text: err.response?.data?.message ?? 'Không thể gửi đánh giá' })
     } finally {
       setSubmitting(false)
@@ -84,8 +77,7 @@ export default function ProductReviews({ productId }: { productId: number }) {
     <div className="max-w-6xl mx-auto mt-12 px-0">
       <h2 className="font-display text-lg font-semibold text-stone-900 mb-4">Đánh giá sản phẩm</h2>
 
-      {/* Form gửi đánh giá — chỉ hiện nếu đã đăng nhập; điều kiện "đã mua & nhận
-          hàng" được backend kiểm tra thật sự, ở đây chỉ ẩn form với khách vãng lai */}
+      {/* Chỉ hiện form nếu đã đăng nhập; điều kiện "đã mua & nhận hàng" backend tự kiểm tra */}
       {isAuthenticated ? (
         <div className="bg-white border border-stone-200 p-4 mb-6">
           <p className="text-sm font-medium text-stone-700 mb-2">Viết đánh giá của bạn</p>

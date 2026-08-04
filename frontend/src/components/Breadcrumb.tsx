@@ -6,8 +6,7 @@ interface BreadcrumbItem {
   to?: string
 }
 
-/** Điều hướng dạng "Trang chủ > Shop > ..." -- mục cuối (trang hiện tại) không có "to", hiện đậm hơn
- * thay vì là link. Dùng chung cho Shop/ProductDetail thay vì chỉ có nút "Quay lại". */
+/** Điều hướng dạng "Trang chủ > Shop > ..." -- mục cuối không có "to", hiện đậm hơn thay vì là link. */
 export default function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
   return (
     <nav aria-label="Breadcrumb" className="flex items-center flex-wrap gap-1.5 text-xs text-stone-500 mb-4">

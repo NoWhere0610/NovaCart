@@ -17,14 +17,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
- * Tích hợp cổng thanh toán VNPay (môi trường sandbox), theo đúng đặc tả tại
- * https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html
- *
- * Luồng: FE gọi buildPaymentUrl() lấy link -> chuyển hướng khách sang VNPay
- * -> khách thanh toán xong -> VNPay redirect khách VỀ vnp_ReturnUrl kèm tham
- * số đã ký (vnp_SecureHash) -> BE verifyReturn() kiểm tra chữ ký khớp không
- * TRƯỚC KHI tin bất kỳ tham số nào trong đó (KHÔNG được chỉ tin vnp_ResponseCode
- * suông vì query string có thể bị khách tự sửa tay trên trình duyệt).
+ * Tích hợp VNPay sandbox (https://sandbox.vnpayment.vn/apis/docs/thanh-toan-pay/pay.html).
+ * Luồng: buildPaymentUrl() -> khách thanh toán -> VNPay redirect về kèm vnp_SecureHash ->
+ * verifyReturn() phải kiểm tra chữ ký khớp trước khi tin tham số (không chỉ tin vnp_ResponseCode).
  */
 @Service
 @RequiredArgsConstructor
@@ -94,9 +89,8 @@ public class VNPayService {
     }
 
     /**
-     * Kiểm tra chữ ký của tham số VNPay redirect về. TRẢ VỀ FALSE nếu chữ ký
-     * không khớp -> tuyệt đối không được cập nhật trạng thái đơn hàng trong
-     * trường hợp này (có thể là request giả mạo).
+     * Kiểm tra chữ ký VNPay redirect về. Trả về false nếu không khớp -- không được
+     * cập nhật trạng thái đơn hàng trong trường hợp này (có thể là request giả mạo).
      */
     public boolean verifyReturn(Map<String, String> allParams) {
         if (hashSecret == null || hashSecret.isBlank()) return false;
@@ -118,8 +112,7 @@ public class VNPayService {
             if (it.hasNext()) hashData.append('&');
         }
 
-        // MessageDigest.isEqual thay vì equalsIgnoreCase -> so sánh constant-time cho chữ ký
-        // (equalsIgnoreCase thoát sớm ở ký tự sai đầu tiên, có thể lộ thông tin qua thời gian phản hồi).
+        // MessageDigest.isEqual thay vì equalsIgnoreCase -> so sánh constant-time, tránh lộ qua thời gian phản hồi.
         String computedHash = hmacSHA512(hashSecret, hashData.toString());
         return MessageDigest.isEqual(
                 computedHash.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8),

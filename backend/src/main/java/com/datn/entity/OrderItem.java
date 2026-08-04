@@ -9,14 +9,11 @@ import lombok.AllArgsConstructor;
 import java.math.BigDecimal;
 
 /**
- * 1 dòng sản phẩm trong đơn hàng. Cũng giống Order, SNAPSHOT lại tên sản
- * phẩm/size/color/đơn giá tại thời điểm đặt hàng thay vì chỉ join sang
- * Product/ProductVariant — vì nếu admin sau này đổi tên/giá sản phẩm, hoá
- * đơn cũ của khách KHÔNG được phép đổi theo (khách phải luôn xem lại đúng
- * giá mình đã trả lúc mua).
+ * 1 dòng sản phẩm trong đơn hàng. Snapshot tên/size/color/đơn giá tại thời điểm đặt hàng (không join
+ * sống sang Product/ProductVariant), để hoá đơn cũ không đổi theo khi admin sửa giá/tên sau này.
  */
 @Entity
-// order_id có FK nhưng KHÔNG có index riêng -- mỗi lần xem chi tiết 1 đơn hàng đều query theo order_id.
+// order_id có FK nhưng không có index riêng -- cần vì mỗi lần xem chi tiết đơn đều query theo order_id.
 @Table(name = "order_items", indexes = @Index(name = "idx_order_items_order_id", columnList = "order_id"))
 @Getter
 @Setter
@@ -33,8 +30,7 @@ public class OrderItem {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    // Vẫn giữ liên kết tới variant gốc (phục vụ thống kê "sản phẩm bán chạy"),
-    // nhưng KHÔNG dùng field này để hiển thị tên/giá cho khách - dùng các field snapshot bên dưới
+    // Giữ liên kết variant gốc để thống kê "sản phẩm bán chạy" -- không dùng để hiển thị, dùng field snapshot bên dưới.
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "variant_id")
     private ProductVariant variant;
