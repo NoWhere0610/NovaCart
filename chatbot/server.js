@@ -7,6 +7,7 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const { requireApiKey } = require('./middleware/apiKeyAuth');
+const scheduler = require('./lib/scheduler');
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -28,4 +29,7 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = Number(process.env.PORT) || 3200;
-app.listen(PORT, () => console.log(`  [server] RAG Chatbot Kit đang chạy tại http://127.0.0.1:${PORT} (demo: /demo.html)`));
+app.listen(PORT, () => {
+  console.log(`  [server] RAG Chatbot Kit đang chạy tại http://127.0.0.1:${PORT} (demo: /demo.html)`);
+  scheduler.start();
+});
