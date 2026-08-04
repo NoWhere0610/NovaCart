@@ -1,6 +1,8 @@
 import { Outlet } from 'react-router-dom'
 import Header from './Header'
 import Footer from './Footer'
+import PageFade from './PageFade'
+import ScrollToTop from './ScrollToTop'
 
 /**
  * Layout dùng chung cho toàn bộ trang (trừ login/register/admin).
@@ -10,9 +12,12 @@ import Footer from './Footer'
 export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col">
+      <ScrollToTop />
       <Header />
       <main className="flex-1">
-        <Outlet />
+        <PageFade>
+          <Outlet />
+        </PageFade>
       </main>
       <Footer />
     </div>

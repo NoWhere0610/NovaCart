@@ -64,7 +64,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                if (jwtService.isTokenValid(token, userDetails.getUsername())) {
+                // isEnabled() phản ánh is_active hiện tại trong DB (KHÔNG phải lúc token được cấp) ->
+                // tài khoản bị khoá SAU KHI đã có JWT sẽ mất quyền truy cập ngay từ request tiếp theo,
+                // thay vì phải chờ token hết hạn (24h, xem app.jwt.expiration-ms).
+                if (jwtService.isTokenValid(token, userDetails.getUsername()) && userDetails.isEnabled()) {
                     var authToken = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

@@ -20,8 +20,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -53,7 +57,16 @@ public class HomeService {
      * nhóm cha ở mega-menu/CategoriesPage.
      */
     public PageResponse<ProductResponse> getProductsByCategory(Integer categoryId, Pageable pageable) {
-        List<Integer> categoryIds = categoryRepository.findById(categoryId)
+        List<Integer> categoryIds = resolveCategoryIdsWithChildren(categoryId);
+        Page<Product> page = productRepository.findByStatusAndCategory_CategoryIdInOrderByCreatedAtDesc(
+                Product.Status.ACTIVE, categoryIds, pageable);
+        return PageResponse.from(page.map(this::toProductResponse));
+    }
+
+    /** Danh mục CHA -> gom thêm ID các danh mục CON active (sản phẩm chỉ gán trực tiếp vào danh mục lá).
+     * Dùng chung cho getProductsByCategory() và filterProducts() -- tách ra để không lặp logic này. */
+    private List<Integer> resolveCategoryIdsWithChildren(Integer categoryId) {
+        return categoryRepository.findById(categoryId)
                 .map(cat -> {
                     List<Integer> childIds = cat.getChildren() == null ? List.of() : cat.getChildren().stream()
                             .filter(ch -> Boolean.TRUE.equals(ch.getIsActive()))
@@ -67,10 +80,6 @@ public class HomeService {
                     return all;
                 })
                 .orElse(List.of(categoryId));
-
-        Page<Product> page = productRepository.findByStatusAndCategory_CategoryIdInOrderByCreatedAtDesc(
-                Product.Status.ACTIVE, categoryIds, pageable);
-        return PageResponse.from(page.map(this::toProductResponse));
     }
 
     public PageResponse<ProductResponse> getOnSaleProducts(Pageable pageable) {
@@ -81,6 +90,30 @@ public class HomeService {
     public PageResponse<ProductResponse> searchProducts(String keyword, Pageable pageable) {
         Page<Product> page = productRepository.findByStatusAndProductNameContainingIgnoreCase(
                 Product.Status.ACTIVE, keyword, pageable);
+        return PageResponse.from(page.map(this::toProductResponse));
+    }
+
+    /** "Đã xem gần đây" (LandingPage) -- trả về ĐÚNG THỨ TỰ ids truyền vào (mới xem nhất trước), vì
+     * IN (...) ở DB không đảm bảo giữ thứ tự danh sách truyền vào. */
+    public List<ProductResponse> getProductsByIds(List<Long> ids) {
+        List<Product> products = productRepository.findByProductIdInAndStatus(ids, Product.Status.ACTIVE);
+        Map<Long, Product> byId = products.stream()
+                .collect(Collectors.toMap(Product::getProductId, p -> p));
+        return ids.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .map(this::toProductResponse)
+                .toList();
+    }
+
+    /** Trang Shop: kết hợp danh mục (optional) + từ khoá + khoảng giá + size/màu, tất cả optional. */
+    public PageResponse<ProductResponse> filterProducts(
+            Integer categoryId, String keyword, BigDecimal minPrice, BigDecimal maxPrice,
+            String size, String color, Pageable pageable) {
+        Page<Product> page = categoryId == null
+                ? productRepository.filterProducts(Product.Status.ACTIVE, keyword, minPrice, maxPrice, size, color, pageable)
+                : productRepository.filterProductsByCategory(
+                        Product.Status.ACTIVE, resolveCategoryIdsWithChildren(categoryId), keyword, minPrice, maxPrice, size, color, pageable);
         return PageResponse.from(page.map(this::toProductResponse));
     }
 

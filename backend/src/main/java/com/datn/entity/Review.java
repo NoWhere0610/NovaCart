@@ -20,7 +20,12 @@ import java.time.LocalDateTime;
     uniqueConstraints = @UniqueConstraint(
         name = "uq_review_user_product",
         columnNames = {"user_id", "product_id"}
-    )
+    ),
+    // uq_review_user_product ở trên KHÔNG phục vụ được query lọc riêng theo product_id (composite unique
+    // bắt đầu bằng user_id -- không dùng được nếu thiếu user_id ở điều kiện WHERE). ReviewRepository lại
+    // gọi findByProduct_ProductId/countByProduct_ProductId riêng trên MỌI trang chi tiết sản phẩm -> cần
+    // thêm index riêng cho product_id.
+    indexes = @Index(name = "idx_reviews_product_id", columnList = "product_id")
 )
 @Getter
 @Setter

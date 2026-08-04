@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { cancelOrderApi, getMyOrdersApi, type OrderDto, type OrderStatus } from '../api/orderApi'
+import { IconPackage } from '@tabler/icons-react'
 import BackButton from '../components/BackButton'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
@@ -53,6 +54,7 @@ export default function OrdersPage() {
 
   const [orders, setOrders] = useState<OrderDto[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
 
   useEffect(() => {
@@ -61,9 +63,14 @@ export default function OrdersPage() {
 
   async function load() {
     setLoading(true)
+    setError(null)
     try {
       const res = await getMyOrdersApi(0, 100)
       setOrders(res.content)
+    } catch {
+      // Phải phân biệt rõ với "chưa có đơn hàng nào" (filtered.length === 0) -- lỗi tải khác hoàn
+      // toàn về ý nghĩa với 1 tài khoản thật sự chưa từng đặt đơn nào.
+      setError('Không thể tải danh sách đơn hàng. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -88,10 +95,13 @@ export default function OrdersPage() {
     <div className="min-h-screen bg-stone-50 px-4 py-10">
       <div className="max-w-3xl mx-auto">
         <BackButton />
-        <h1 className="text-2xl font-semibold text-stone-900 mb-6">Đơn hàng của tôi</h1>
+        <h1 className="font-display text-2xl font-semibold text-stone-900 mb-6">Đơn hàng của tôi</h1>
 
-        <div className="bg-white border border-stone-200 mb-4 overflow-x-auto">
-          <div className="flex min-w-max">
+        {/* flex-wrap thay vì overflow-x-auto + min-w-max -- 7 tab với nhãn dài ("Chờ vận chuyển",
+            "Trả hàng/Hoàn tiền"...) không đủ chỗ trong max-w-3xl (768px) dù màn hình rộng thế nào, ép
+            cuộn ngang lúc nào cũng xảy ra. Cho tự xuống dòng thấy hết tab ngay, không cần cuộn. */}
+        <div className="bg-white border border-stone-200 mb-4">
+          <div className="flex flex-wrap">
             {TABS.map((t) => {
               const count = orders.filter((o) => matchesTab(o, t.key)).length
               const active = activeTab === t.key
@@ -101,7 +111,7 @@ export default function OrdersPage() {
                   onClick={() => setSearchParams(t.key === 'ALL' ? {} : { tab: t.key })}
                   className={`px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                     active
-                      ? 'border-orange-600 text-orange-700 font-semibold'
+                      ? 'border-gold text-gold-dark font-semibold'
                       : 'border-transparent text-stone-500 hover:text-stone-800'
                   }`}
                 >
@@ -115,10 +125,21 @@ export default function OrdersPage() {
 
         {loading ? (
           <p className="text-stone-500">Đang tải...</p>
+        ) : error ? (
+          <div className="bg-white border border-stone-200 p-10 text-center">
+            <p className="text-stone-700 mb-4">{error}</p>
+            <button
+              onClick={load}
+              className="bg-stone-900 border-gold-metallic gold-glow text-white text-sm font-semibold px-6 py-2.5"
+            >
+              Thử lại
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="bg-white border border-stone-200 p-10 text-center">
+            <IconPackage size={40} stroke={1.3} className="mx-auto mb-3 text-stone-300" />
             <p className="text-stone-500 mb-4">Không có đơn hàng nào trong mục này.</p>
-            <Link to="/" className="text-orange-700 font-medium underline">
+            <Link to="/" className="text-gold-dark font-medium underline">
               Mua sắm ngay
             </Link>
           </div>
@@ -154,7 +175,7 @@ export default function OrdersPage() {
                       {needsReview && (
                         <Link
                           to={`/orders/${order.orderId}`}
-                          className="text-xs bg-orange-700 hover:bg-orange-600 text-white px-3 py-1.5 font-medium"
+                          className="text-xs bg-stone-900 border-gold-metallic gold-glow text-white px-3 py-1.5 font-medium"
                         >
                           Đánh giá ngay
                         </Link>

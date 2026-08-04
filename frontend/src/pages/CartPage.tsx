@@ -6,14 +6,20 @@ import {
   updateCartItemApi,
   type CartDto,
 } from '../api/cartApi'
+import { useCart } from '../contexts/CartContext'
+import { IconShoppingBag } from '@tabler/icons-react'
 import BackButton from '../components/BackButton'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
 export default function CartPage() {
   const navigate = useNavigate()
+  const { applyCart } = useCart()
   const [cart, setCart] = useState<CartDto | null>(null)
   const [loading, setLoading] = useState(true)
+  // null = chưa biết / đang tải; '' KHÔNG được dùng làm "không lỗi" vì dễ nhầm với message rỗng -> dùng
+  // riêng 1 boolean ngầm qua giá trị null của error thay vì suy luận từ cart.
+  const [error, setError] = useState<string | null>(null)
   // Theo dõi item nào đang gọi API để disable đúng nút đó (tránh double-click gây lỗi)
   const [busyId, setBusyId] = useState<number | null>(null)
 
@@ -23,8 +29,15 @@ export default function CartPage() {
 
   async function loadCart() {
     setLoading(true)
+    setError(null)
     try {
-      setCart(await getMyCartApi())
+      const data = await getMyCartApi()
+      setCart(data)
+      applyCart(data)
+    } catch {
+      // Lỗi mạng/server phải hiển thị RÕ RÀNG khác với "giỏ hàng trống thật" — nếu không, người dùng
+      // tưởng giỏ hàng bị mất đồ trong khi thực ra chỉ là tải lỗi.
+      setError('Không thể tải giỏ hàng. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -34,7 +47,9 @@ export default function CartPage() {
     if (quantity < 1) return
     setBusyId(cartItemId)
     try {
-      setCart(await updateCartItemApi(cartItemId, quantity))
+      const data = await updateCartItemApi(cartItemId, quantity)
+      setCart(data)
+      applyCart(data)
     } catch (err: any) {
       alert(err.response?.data?.message ?? 'Không thể cập nhật số lượng')
     } finally {
@@ -45,7 +60,11 @@ export default function CartPage() {
   async function handleRemove(cartItemId: number) {
     setBusyId(cartItemId)
     try {
-      setCart(await removeCartItemApi(cartItemId))
+      const data = await removeCartItemApi(cartItemId)
+      setCart(data)
+      applyCart(data)
+    } catch (err: any) {
+      alert(err.response?.data?.message ?? 'Không thể xoá sản phẩm khỏi giỏ hàng')
     } finally {
       setBusyId(null)
     }
@@ -55,18 +74,35 @@ export default function CartPage() {
     return <div className="min-h-screen flex items-center justify-center text-stone-500">Đang tải giỏ hàng...</div>
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white border border-stone-200 p-8 text-center">
+          <p className="text-stone-700 mb-4">{error}</p>
+          <button
+            onClick={loadCart}
+            className="bg-stone-900 border-gold-metallic gold-glow text-white text-sm font-semibold px-6 py-2.5"
+          >
+            Thử lại
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const isEmpty = !cart || cart.items.length === 0
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
       <div className="max-w-3xl mx-auto">
         <BackButton />
-        <h1 className="text-2xl font-semibold text-stone-900 mb-6">Giỏ hàng của bạn</h1>
+        <h1 className="font-display text-2xl font-semibold text-stone-900 mb-6">Giỏ hàng của bạn</h1>
 
         {isEmpty ? (
           <div className="bg-white border border-stone-200 p-10 text-center">
+            <IconShoppingBag size={40} stroke={1.3} className="mx-auto mb-3 text-stone-300" />
             <p className="text-stone-500 mb-4">Giỏ hàng đang trống.</p>
-            <Link to="/" className="text-orange-700 font-medium underline">
+            <Link to="/" className="text-gold-dark font-medium underline">
               Tiếp tục mua sắm
             </Link>
           </div>
@@ -135,7 +171,7 @@ export default function CartPage() {
 
             <button
               onClick={() => navigate('/checkout')}
-              className="mt-6 w-full bg-orange-700 hover:bg-orange-600 transition-colors text-stone-50 text-sm font-semibold px-6 py-3"
+              className="mt-6 w-full bg-stone-900 border-gold-metallic gold-glow text-stone-50 text-sm font-semibold px-6 py-3"
             >
               Tiến hành đặt hàng
             </button>

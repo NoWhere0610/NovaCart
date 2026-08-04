@@ -7,6 +7,7 @@ import RegisterPage from "./pages/RegisterPage";
 import AccountPage from "./pages/AccountPage";
 import ProductDetailPage from "./pages/ProductDetailPage";
 import CartPage from "./pages/CartPage";
+import WishlistPage from "./pages/WishlistPage";
 import CheckoutPage from "./pages/CheckoutPage";
 import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
@@ -23,18 +24,24 @@ import VNPayResultPage from "./pages/VNPayResultPage";
 import RequireAuth from "./components/RequireAuth";
 import RequireAdminRoute from "./components/RequireAdminRoute";
 import FloatingSocialButtons from "./components/FloatingSocialButtons";
+import ChatWidget from "./components/chat/ChatWidget";
 import Layout from "./components/Layout.tsx";
 import ReturnPolicyPage from "./pages/ReturnPolicyPage.tsx";
 import ShippingPolicyPage from "./pages/ShippingPolicyPage.tsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.tsx";
 import TermsPage from "./pages/TermsPage.tsx";
 import { AuthProvider } from "./contexts/AuthContext";
+import { CartProvider } from "./contexts/CartContext";
+import { WishlistProvider } from "./contexts/WishlistContext";
 
 function App() {
   return (
     <AuthProvider>
+      <CartProvider>
+      <WishlistProvider>
       <BrowserRouter>
         <FloatingSocialButtons />
+        <ChatWidget />
         <Routes>
           {/* Chỉ 2 route này KHÔNG cần đăng nhập */}
           <Route path="/login" element={<LoginPage />} />
@@ -70,6 +77,7 @@ function App() {
                 element={<ProductDetailPage />}
               />
               <Route path="/cart" element={<CartPage />} />
+              <Route path="/wishlist" element={<WishlistPage />} />
               <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/orders/:orderId" element={<OrderDetailPage />} />
@@ -98,6 +106,8 @@ function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </WishlistProvider>
+      </CartProvider>
     </AuthProvider>
   );
 }

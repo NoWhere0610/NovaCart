@@ -4,12 +4,14 @@ import { getMyCartApi, type CartDto } from "../api/cartApi";
 import { getMyAddressesApi, type AddressDto } from "../api/addressApi";
 import { checkoutApi, getVnpayUrlApi, type PaymentMethod } from "../api/orderApi";
 import { getShippingFeeApi } from "../api/shippingApi";
+import { useCart } from "../contexts/CartContext";
 import BackButton from "../components/BackButton";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
+  const { applyCart, clearCartCount } = useCart();
 
   const [cart, setCart] = useState<CartDto | null>(null);
   const [addresses, setAddresses] = useState<AddressDto[]>([]);
@@ -19,6 +21,9 @@ export default function CheckoutPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
+  // Riêng với "error" (lỗi lúc bấm Đặt hàng, hiển thị INLINE trong form) -- loadError là lỗi tải
+  // cart/địa chỉ ban đầu, phải thay THẾ TOÀN BỘ trang vì form chưa có gì để hiển thị hợp lệ.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voucherCode, setVoucherCode] = useState("");
@@ -44,17 +49,23 @@ export default function CheckoutPage() {
 
   async function loadData() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [cartData, addressData] = await Promise.all([
         getMyCartApi(),
         getMyAddressesApi(),
       ]);
       setCart(cartData);
+      applyCart(cartData);
       setAddresses(addressData);
       // Tự chọn sẵn địa chỉ mặc định (is_default) nếu có, để user không phải chọn lại
       const defaultAddr =
         addressData.find((a) => a.isDefault) ?? addressData[0];
       setSelectedAddressId(defaultAddr?.addressId ?? null);
+    } catch {
+      // Không để lỗi tải cart/địa chỉ bị hiểu nhầm thành "giỏ hàng trống, không đặt được" ở nhánh
+      // return sớm ngay dưới — 2 tình huống cần thông báo khác nhau hoàn toàn.
+      setLoadError("Không thể tải thông tin đặt hàng. Vui lòng thử lại.");
     } finally {
       setLoading(false);
     }
@@ -74,6 +85,10 @@ export default function CheckoutPage() {
         note: note || undefined,
         voucherCode: voucherCode.trim() || undefined,
       });
+      // checkoutApi() thành công -> server đã xoá giỏ hàng NGAY LẬP TỨC (bất kể phương thức thanh toán
+      // nào) -- clear ngay ở đây, không chờ trang sau tự tải lại (VNPAY thì rời hẳn sang trang ngoài,
+      // COD/BANK_TRANSFER thì điều hướng NỘI BỘ SPA nên Header vẫn giữ nguyên state cũ nếu không clear).
+      clearCartCount();
       if (paymentMethod === "VNPAY") {
         const paymentUrl = await getVnpayUrlApi(order.orderId);
         window.location.href = paymentUrl;
@@ -98,13 +113,29 @@ export default function CheckoutPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white border border-stone-200 p-8 text-center">
+          <p className="text-stone-700 mb-4">{loadError}</p>
+          <button
+            onClick={loadData}
+            className="bg-stone-900 border-gold-metallic gold-glow text-white text-sm font-semibold px-6 py-2.5"
+          >
+            Thử lại
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!cart || cart.items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-stone-500">
         <p>Giỏ hàng trống, không thể đặt hàng.</p>
         <button
           onClick={() => navigate("/")}
-          className="text-orange-700 underline"
+          className="text-gold-dark underline"
         >
           Về trang chủ
         </button>
@@ -118,7 +149,7 @@ export default function CheckoutPage() {
         <BackButton />
       </div>
       <div className="max-w-2xl mx-auto bg-white border border-stone-200 p-8">
-        <h1 className="text-2xl font-semibold text-stone-900 mb-6">
+        <h1 className="font-display text-2xl font-semibold text-stone-900 mb-6">
           Xác nhận đặt hàng
         </h1>
 
@@ -134,7 +165,7 @@ export default function CheckoutPage() {
         {addresses.length === 0 ? (
           <p className="text-sm text-stone-500 mb-4">
             Bạn chưa có địa chỉ nào.{" "}
-            <a href="/account" className="text-orange-700 underline">
+            <a href="/account" className="text-gold-dark underline">
               Thêm địa chỉ
             </a>
           </p>
@@ -145,7 +176,7 @@ export default function CheckoutPage() {
                 key={addr.addressId}
                 className={`flex items-start gap-3 border px-4 py-3 text-sm cursor-pointer ${
                   selectedAddressId === addr.addressId
-                    ? "border-stone-900"
+                    ? "border-gold"
                     : "border-stone-200"
                 }`}
               >
@@ -174,16 +205,19 @@ export default function CheckoutPage() {
           {(["COD", "BANK_TRANSFER", "VNPAY"] as PaymentMethod[]).map((method) => (
             <label
               key={method}
-              className={`flex-1 border px-4 py-3 text-sm text-center cursor-pointer ${
+              className={`flex-1 border px-4 py-3 text-sm text-center cursor-pointer focus-within:ring-2 focus-within:ring-gold-dark ${
                 paymentMethod === method
-                  ? "border-stone-900"
+                  ? "border-gold"
                   : "border-stone-200"
               }`}
             >
               <input
                 type="radio"
                 name="payment"
-                className="hidden"
+                // "hidden" (display:none) loại HẲN input khỏi tab order -- không cách nào chọn phương
+                // thức thanh toán bằng bàn phím. "sr-only" chỉ ẩn về mặt hình ảnh (vẫn ở trong accessibility
+                // tree + tab order như bình thường), nên focus-within ở label cha mới thực sự có tác dụng.
+                className="sr-only"
                 checked={paymentMethod === method}
                 onChange={() => setPaymentMethod(method)}
               />
@@ -238,7 +272,7 @@ export default function CheckoutPage() {
         <button
           onClick={handleConfirm}
           disabled={submitting || addresses.length === 0}
-          className="w-full bg-orange-700 hover:bg-orange-600 disabled:opacity-60 transition-colors text-stone-50 text-sm font-semibold px-6 py-3"
+          className="w-full bg-stone-900 border-gold-metallic gold-glow disabled:opacity-60 text-stone-50 text-sm font-semibold px-6 py-3"
         >
           {submitting ? "Đang xử lý..." : "Đặt hàng"}
         </button>

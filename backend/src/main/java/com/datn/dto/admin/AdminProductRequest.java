@@ -30,6 +30,7 @@ public class AdminProductRequest {
     private BigDecimal price;
 
     // null = không giảm giá
+    @DecimalMin(value = "0", message = "Giá khuyến mãi phải >= 0")
     private BigDecimal salePrice;
 
     private String material;

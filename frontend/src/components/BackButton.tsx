@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { IconArrowLeft } from '@tabler/icons-react'
 
 /**
  * Nút quay lại — dùng useNavigate(-1) để quay ĐÚNG trang vừa xem trước đó
@@ -19,11 +20,9 @@ export default function BackButton({ label = 'Quay lại' }: { label?: string })
   return (
     <button
       onClick={handleBack}
-      className="inline-flex items-center gap-1.5 text-sm text-stone-600 hover:text-stone-900 mb-6 transition-colors"
+      className="inline-flex items-center gap-1.5 text-sm text-stone-600 hover:text-gold-dark mb-6 -ml-3 px-3 py-1.5 rounded-full hover:bg-stone-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-dark"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M15 18l-6-6 6-6" />
-      </svg>
+      <IconArrowLeft size={16} stroke={2} />
       {label}
     </button>
   )

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>RAG Chatbot Kit — Demo</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 820px; margin: 32px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  label { display: block; font-size: 12.5px; font-weight: 600; margin: 10px 0 3px; color: #444; }
+  input[type=text], input[type=password] { width: 100%; box-sizing: border-box; padding: 7px 9px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
+  button { margin-top: 10px; padding: 7px 14px; border: 1px solid #333; background: #1a1a1a; color: #fff; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #333; }
+  button.secondary { background: #fff; color: #1a1a1a; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  #folders, #chatlog { border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin-top: 8px; min-height: 40px; font-size: 13px; white-space: pre-wrap; }
+  .msg-user { color: #1a56db; margin: 6px 0; }
+  .msg-bot { color: #166534; margin: 6px 0; }
+  .msg-src { color: #888; font-size: 11px; }
+  .status { font-size: 12px; color: #888; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>RAG Chatbot Kit — trang demo tự test</h1>
+<p style="font-size:13px;color:#555">Trang tĩnh, không build, gọi thẳng REST API bằng <code>fetch()</code>. Dùng để tự kiểm tra upload + hỏi-đáp + nhớ ngữ cảnh phiên chat trước khi tích hợp vào dự án thật.</p>
+
+<h2>1. Kết nối</h2>
+<label>X-API-Key</label>
+<input type="password" id="apiKey" placeholder="dán API_KEY trong .env vào đây" />
+<label>Namespace (phạm vi dữ liệu, tự đặt tên)</label>
+<input type="text" id="namespace" value="demo" />
+<label>User ID (định danh người hỏi, dùng để nhớ lịch sử chat)</label>
+<input type="text" id="userId" value="demo-user-1" />
+
+<h2>2. Nhóm dữ liệu (folder) &amp; tải tài liệu</h2>
+<div class="row">
+  <div>
+    <label>Mã nhóm (id)</label>
+    <input type="text" id="folderId" value="tai-lieu-demo" />
+  </div>
+  <div>
+    <label>Tên nhóm</label>
+    <input type="text" id="folderTen" value="Tài liệu demo" />
+  </div>
+</div>
+<button onclick="createFolder()">Tạo/cập nhật nhóm</button>
+<button class="secondary" onclick="loadFolders()">Tải lại danh sách nhóm</button>
+<div id="folders">(chưa tải)</div>
+
+<label style="margin-top:16px">Chọn file (PDF/DOCX/XLSX/TXT, tối đa 20MB)</label>
+<input type="file" id="fileInput" />
+<button onclick="uploadFile()">Tải lên &amp; lập chỉ mục</button>
+<div id="uploadStatus" class="status"></div>
+
+<h2>3. Hỏi-đáp (RAG, có nhớ ngữ cảnh trong cùng phiên)</h2>
+<div id="chatlog"></div>
+<div class="row" style="margin-top:8px">
+  <div><input type="text" id="question" placeholder="Nhập câu hỏi..." onkeydown="if(event.key==='Enter')ask()" /></div>
+</div>
+<button onclick="ask()">Gửi câu hỏi</button>
+<button class="secondary" onclick="newSession()">Phiên mới</button>
+<div id="chatStatus" class="status"></div>
+
+<script>
+let sessionId = null;
+
+function headers(json = true) {
+  const h = { 'X-API-Key': document.getElementById('apiKey').value.trim() };
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+
+async function createFolder() {
+  const namespace = document.getElementById('namespace').value.trim();
+  const id = document.getElementById('folderId').value.trim();
+  const ten = document.getElementById('folderTen').value.trim();
+  const r = await fetch('/api/kb/folders', { method: 'POST', headers: headers(), body: JSON.stringify({ namespace, id, ten }) });
+  const j = await r.json();
+  document.getElementById('uploadStatus').textContent = j.ok ? 'Đã tạo/cập nhật nhóm.' : 'Lỗi: ' + j.message;
+  if (j.ok) loadFolders();
+}
+
+async function loadFolders() {
+  const namespace = document.getElementById('namespace').value.trim();
+  const r = await fetch('/api/kb/folders?namespace=' + encodeURIComponent(namespace), { headers: headers(false) });
+  const j = await r.json();
+  document.getElementById('folders').textContent = j.ok ? JSON.stringify(j.folders, null, 2) : 'Lỗi: ' + j.message;
+}
+
+async function uploadFile() {
+  const namespace = document.getElementById('namespace').value.trim();
+  const folderId = document.getElementById('folderId').value.trim();
+  const userId = document.getElementById('userId').value.trim();
+  const file = document.getElementById('fileInput').files[0];
+  const status = document.getElementById('uploadStatus');
+  if (!file) { status.textContent = 'Chưa chọn file.'; return; }
+  status.textContent = 'Đang tải lên + lập chỉ mục (có thể mất vài giây tuỳ độ dài file)...';
+  const fd = new FormData();
+  fd.append('namespace', namespace);
+  fd.append('folderId', folderId);
+  fd.append('nguoiTai', userId);
+  fd.append('file', file);
+  const r = await fetch('/api/kb/upload', { method: 'POST', headers: headers(false), body: fd });
+  const j = await r.json();
+  status.textContent = j.ok ? `Trạng thái: ${j.trangThai}${j.message ? ' — ' + j.message : ''}` : 'Lỗi: ' + j.message;
+  if (j.ok) loadFolders();
+}
+
+function appendMsg(role, text, sources) {
+  const log = document.getElementById('chatlog');
+  const div = document.createElement('div');
+  div.className = role === 'user' ? 'msg-user' : 'msg-bot';
+  div.textContent = (role === 'user' ? 'Bạn: ' : 'Bot: ') + text;
+  log.appendChild(div);
+  if (sources && sources.length) {
+    const s = document.createElement('div');
+    s.className = 'msg-src';
+    s.textContent = 'Nguồn: ' + sources.join(', ');
+    log.appendChild(s);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+function newSession() {
+  sessionId = null;
+  document.getElementById('chatlog').textContent = '';
+  document.getElementById('chatStatus').textContent = 'Đã bắt đầu phiên mới.';
+}
+
+async function ask() {
+  const namespace = document.getElementById('namespace').value.trim();
+  const userId = document.getElementById('userId').value.trim();
+  const qEl = document.getElementById('question');
+  const q = qEl.value.trim();
+  if (!q) return;
+  appendMsg('user', q);
+  qEl.value = '';
+  document.getElementById('chatStatus').textContent = 'Đang hỏi...';
+  const r = await fetch('/api/chat/ask', {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ namespace, userId, sessionId, question: q }),
+  });
+  const j = await r.json();
+  document.getElementById('chatStatus').textContent = '';
+  if (!j.ok) { appendMsg('bot', '(lỗi) ' + j.message); return; }
+  sessionId = j.sessionId;
+  appendMsg('bot', j.answer, j.sources);
+}
+</script>
+</body>
+</html>

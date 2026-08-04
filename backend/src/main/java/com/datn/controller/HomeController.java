@@ -10,6 +10,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -61,5 +62,28 @@ public class HomeController {
             @RequestParam(defaultValue = "12") int size) {
         Pageable pageable = PageRequest.of(page, size);
         return homeService.searchProducts(keyword, pageable);
+    }
+
+    // "Đã xem gần đây" -- FE đọc danh sách productId từ localStorage rồi gọi 1 lần lấy đủ thông tin
+    // hiển thị, thay vì gọi GET /products/{id} lặp lại N lần.
+    @GetMapping("/products/by-ids")
+    public List<ProductResponse> getProductsByIds(@RequestParam List<Long> ids) {
+        return homeService.getProductsByIds(ids);
+    }
+
+    // Trang Shop: hợp nhất lọc danh mục/từ khoá/khoảng giá/size/màu vào 1 endpoint duy nhất -- mọi tham
+    // số đều optional, không truyền = không lọc theo tiêu chí đó.
+    @GetMapping("/products/filter")
+    public PageResponse<ProductResponse> filterProducts(
+            @RequestParam(required = false) Integer categoryId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) String size,
+            @RequestParam(required = false) String color,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int pageSize) {
+        Pageable pageable = PageRequest.of(page, pageSize);
+        return homeService.filterProducts(categoryId, keyword, minPrice, maxPrice, size, color, pageable);
     }
 }

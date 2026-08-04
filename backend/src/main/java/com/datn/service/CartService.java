@@ -7,17 +7,21 @@ import com.datn.entity.Cart;
 import com.datn.entity.CartItem;
 import com.datn.entity.Product;
 import com.datn.entity.ProductVariant;
+import com.datn.entity.ProductImage;
 import com.datn.entity.User;
 import com.datn.exception.ApiException;
 import com.datn.repository.CartItemRepository;
 import com.datn.repository.CartRepository;
+import com.datn.repository.ProductImageRepository;
 import com.datn.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +30,7 @@ public class CartService {
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
     private final ProductVariantRepository variantRepository;
+    private final ProductImageRepository productImageRepository;
 
     // ================== XEM GIỎ HÀNG ==================
 
@@ -123,6 +128,17 @@ public class CartService {
     private CartResponse toResponse(Cart cart) {
         List<CartItem> rawItems = cart.getItems();
 
+        // Batch 1 query lấy ảnh cho TẤT CẢ sản phẩm trong giỏ, thay vì product.getImages() lazy-load
+        // riêng từng dòng (N+1) -- xem giải thích ở ProductImageRepository.findByProduct_ProductIdInOrderByDisplayOrderAsc.
+        List<Long> productIds = rawItems.stream()
+                .map(ci -> ci.getVariant().getProduct().getProductId())
+                .distinct()
+                .toList();
+        Map<Long, String> firstImageUrlByProductId = new HashMap<>();
+        for (ProductImage img : productImageRepository.findByProduct_ProductIdInOrderByDisplayOrderAsc(productIds)) {
+            firstImageUrlByProductId.putIfAbsent(img.getProduct().getProductId(), img.getImageUrl());
+        }
+
         List<CartItemResponse> items = rawItems.stream().map(ci -> {
             ProductVariant variant = ci.getVariant();
             Product product = variant.getProduct();
@@ -134,8 +150,7 @@ public class CartService {
                     .variantId(variant.getVariantId())
                     .productId(product.getProductId())
                     .productName(product.getProductName())
-                    .imageUrl(product.getImages() != null && !product.getImages().isEmpty()
-                            ? product.getImages().get(0).getImageUrl() : null)
+                    .imageUrl(firstImageUrlByProductId.get(product.getProductId()))
                     .size(variant.getSize())
                     .color(variant.getColor())
                     .unitPrice(unitPrice)

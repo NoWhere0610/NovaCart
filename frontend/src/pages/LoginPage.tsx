@@ -32,7 +32,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-stone-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-white border border-stone-200 p-8">
-        <h1 className="text-2xl font-semibold text-stone-900 mb-1">Đăng nhập</h1>
+        <h1 className="font-display text-2xl font-semibold text-stone-900 mb-1">Đăng nhập</h1>
         <p className="text-sm text-stone-500 mb-6">Chào mừng bạn quay lại NovaCart</p>
 
         {error && (
@@ -67,7 +67,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-orange-700 hover:bg-orange-600 disabled:opacity-60 transition-colors text-stone-50 text-sm font-semibold px-6 py-3"
+            className="w-full bg-stone-900 border-gold-metallic gold-glow disabled:opacity-60 text-stone-50 text-sm font-semibold px-6 py-3"
           >
             {submitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>

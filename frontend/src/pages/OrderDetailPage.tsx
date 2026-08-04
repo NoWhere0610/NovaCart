@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { IconCheck } from "@tabler/icons-react";
 import {
   cancelOrderApi,
   completeOrderApi,
@@ -36,16 +37,14 @@ const FLOW_STEPS: { status: OrderStatus; label: string }[] = [
 function StepIcon({ done, current }: { done: boolean; current: boolean }) {
   return (
     <div
-      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 ${
+      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
         done || current
-          ? "bg-orange-600 border-orange-600 text-white"
-          : "bg-white border-stone-300 text-stone-400"
+          ? "border-gold-metallic-round text-white"
+          : "border-2 bg-white border-stone-300 text-stone-400"
       }`}
     >
       {done ? (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M5 12l5 5L19 7" />
-        </svg>
+        <IconCheck size={16} stroke={3} />
       ) : (
         <span className="text-xs font-semibold">{current ? "•" : ""}</span>
       )}
@@ -67,14 +66,14 @@ function OrderTimeline({ status }: { status: OrderStatus }) {
               <StepIcon done={done} current={current} />
               <span
                 className={`text-[11px] text-center leading-tight ${
-                  current ? "text-orange-700 font-semibold" : done ? "text-stone-700" : "text-stone-400"
+                  current ? "text-gold-dark font-semibold" : done ? "text-stone-700" : "text-stone-400"
                 }`}
               >
                 {step.label}
               </span>
             </div>
             {idx < FLOW_STEPS.length - 1 && (
-              <div className={`h-0.5 flex-1 -mt-5 ${done ? "bg-orange-600" : "bg-stone-200"}`} />
+              <div className={`h-0.5 flex-1 -mt-5 ${done ? "bg-gold" : "bg-stone-200"}`} />
             )}
           </div>
         );
@@ -91,7 +90,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
           key={star}
           type="button"
           onClick={() => onChange(star)}
-          className={`text-xl leading-none cursor-pointer ${star <= value ? "text-orange-500" : "text-stone-300"}`}
+          className={`text-xl leading-none cursor-pointer ${star <= value ? "text-gold-dark" : "text-stone-300"}`}
         >
           ★
         </button>
@@ -125,7 +124,7 @@ function ReviewItemForm({ productId, onDone }: { productId: number; onDone: () =
     return (
       <button
         onClick={() => setOpen(true)}
-        className="text-xs border border-orange-600 text-orange-700 hover:bg-orange-50 px-3 py-1.5 font-medium"
+        className="text-xs border-gold-metallic text-gold-dark hover:bg-stone-50 px-3 py-1.5 font-medium"
       >
         Đánh giá
       </button>
@@ -147,7 +146,7 @@ function ReviewItemForm({ productId, onDone }: { productId: number; onDone: () =
         <button
           onClick={submit}
           disabled={submitting}
-          className="text-xs bg-orange-700 hover:bg-orange-600 disabled:opacity-60 text-white px-3 py-1.5 font-medium"
+          className="text-xs bg-stone-900 border-gold-metallic gold-glow disabled:opacity-60 text-white px-3 py-1.5 font-medium"
         >
           {submitting ? "Đang gửi..." : "Gửi đánh giá"}
         </button>
@@ -272,7 +271,7 @@ export default function OrderDetailPage() {
         <BackButton />
         <div className="bg-white border border-stone-200 p-8">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-semibold text-stone-900">
+            <h1 className="font-display text-2xl font-semibold text-stone-900">
               Đơn hàng #{order.orderId}
             </h1>
             <span className="text-sm font-medium text-stone-700">
@@ -386,7 +385,7 @@ export default function OrderDetailPage() {
             <button
               onClick={handlePayAgain}
               disabled={payingVnpay}
-              className="mt-6 w-full bg-orange-700 hover:bg-orange-600 disabled:opacity-60 transition-colors text-white text-sm font-semibold px-6 py-3"
+              className="mt-6 w-full bg-stone-900 border-gold-metallic gold-glow disabled:opacity-60 text-white text-sm font-semibold px-6 py-3"
             >
               {payingVnpay ? "Đang chuyển tới VNPay..." : "Thanh toán qua VNPay"}
             </button>
@@ -406,7 +405,7 @@ export default function OrderDetailPage() {
             <button
               onClick={handleComplete}
               disabled={completing}
-              className="mt-6 w-full bg-orange-700 hover:bg-orange-600 disabled:opacity-60 text-white transition-colors text-sm font-semibold px-6 py-3"
+              className="mt-6 w-full bg-stone-900 border-gold-metallic gold-glow disabled:opacity-60 text-white text-sm font-semibold px-6 py-3"
             >
               {completing ? "Đang xử lý..." : "Hoàn thành đơn hàng"}
             </button>

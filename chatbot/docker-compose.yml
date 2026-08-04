@@ -1,0 +1,46 @@
+# ============================================================================
+#  RAG Chatbot Kit — Docker Compose
+#      docker compose up -d --build   -> http://127.0.0.1:3200 (demo: /demo.html)
+#  Khối "chatbot-postgres" copy nguyên từ apsp-ioc-react/docker-compose.yml
+#  (2026-08-04) — cùng image/pattern đã chạy ổn định trong CoreX.
+# ============================================================================
+services:
+  app:
+    build: .
+    container_name: rag-chatbot-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Trong mạng Docker luôn nối qua tên service + cổng nội bộ 5432 (khác cổng lộ ra host ở dưới,
+      # dùng khi dev chạy `node server.js` trực tiếp trên máy) — ghi đè bất kể .env đặt gì.
+      CHATBOT_PG_HOST: chatbot-postgres
+      CHATBOT_PG_PORT: "5432"
+    ports:
+      - "127.0.0.1:${APP_PORT:-3200}:3200"
+    volumes:
+      - ./kb-files:/app/kb-files # giữ file gốc đã tải lên qua các lần deploy
+    depends_on:
+      chatbot-postgres:
+        condition: service_healthy
+
+  chatbot-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-chatbot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CHATBOT_PG_DATABASE:-chatbot_kb}
+      POSTGRES_USER: ${CHATBOT_PG_USER:-chatbot}
+      POSTGRES_PASSWORD: ${CHATBOT_PG_PASSWORD:-changeme}
+    ports:
+      - "127.0.0.1:${CHATBOT_PG_PORT:-5433}:5432" # chỉ mở ra localhost — cho `node server.js` chạy trực tiếp trên host lúc dev nối vào
+    volumes:
+      - chatbot_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHATBOT_PG_USER:-chatbot} -d ${CHATBOT_PG_DATABASE:-chatbot_kb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  chatbot_pg_data:

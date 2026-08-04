@@ -1,1 +1,127 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap");
 @import "tailwindcss";
+
+/* Bảng màu thương hiệu: nền đen/trắng, gold chỉ dùng làm điểm nhấn (viền, giá,
+   badge, hover) — không tô nền mảng lớn bằng gold. */
+@theme {
+  --color-gold: #c6a664;
+  --color-gold-dark: #a9873f;
+  --color-gold-light: #e4d4a8;
+  /* Be nhạt -- MÀU DUY NHẤT thêm mới cho việc xen kẽ nền giữa các section (LandingPage), đứng giữa
+     trắng và gold nên không phá tương phản giá/chữ, không phải đổi cả nền trang sang tối. */
+  --color-cream: #f1e8d6;
+  --font-display: "Playfair Display", serif;
+}
+
+/* ============================================================================
+   HIỆU ỨNG "ÁNH KIM" cho gold — 1 màu phẳng (--color-gold) KHÔNG thể trông như
+   kim loại thật, vì ánh kim loại luôn có vùng sáng/tối do phản chiếu ánh sáng
+   không đều trên bề mặt. 2 kỹ thuật kết hợp (đã bỏ shimmer quét sáng theo yêu
+   cầu — chỉ còn gradient tĩnh + glow):
+   1. Gradient nhiều tông vàng (đậm -> sáng -> đậm) thay cho màu phẳng.
+   2. Bóng phát sáng nhẹ quanh viền/chữ (glow) — cảm giác "ánh lên" thay vì
+      viền cứng khô.
+   ============================================================================ */
+
+/* (1) Viền gradient ánh kim — dùng border-image vì border thường không nhận
+   gradient trực tiếp. Chỉ hợp khi góc vuông (đúng phong cách site này), vì
+   border-image không bo góc đẹp được. Khai báo qua @utility (Tailwind v4) thay
+   vì class CSS thường để dùng được biến thể hover:/group-hover: như code đang
+   dùng với border-gold sẵn có (vd hover:border-gold-metallic). */
+@utility border-gold-metallic {
+  /* KHÔNG ép border-width/style ở đây — để tự kết hợp với border/border-2 sẵn có trên phần tử (tránh
+     lệch bề dày viền khi chuyển trạng thái, vd border-2 border-transparent group-hover:border-gold-metallic). */
+  border-image: linear-gradient(135deg, #8a6d3a 0%, #e4d4a8 25%, #c6a664 50%, #f3e6c1 75%, #8a6d3a 100%) 1;
+}
+
+/* (1) Chữ gradient ánh kim — dùng cho các điểm nhấn quan trọng (giá sale...),
+   KHÔNG lạm dụng cho mọi chữ gold nhỏ (label/eyebrow) kẻo rối mắt. */
+@utility text-gold-metallic {
+  background-image: linear-gradient(135deg, #8a6d3a 0%, #e4d4a8 30%, #c6a664 50%, #f3e6c1 70%, #8a6d3a 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* (1) Biến thể viền gradient ánh kim CHO PHẦN TỬ BO TRÒN (vd nút FAB chat tròn) — border-image ở trên
+   sẽ LÀM MẤT bo góc (giới hạn của CSS: border-image luôn đè border-radius), nên phần tử bo tròn phải
+   dùng kỹ thuật khác: 2 lớp background chồng nhau (nền thật ở trong, gradient ở viền ngoài) thay vì
+   border-image. Nền trong hard-code #0a0a0a (≈ stone-900) vì kỹ thuật này thay thế luôn background,
+   không dùng chung được với class bg-stone-900 của Tailwind. */
+@utility border-gold-metallic-round {
+  border: 2px solid transparent;
+  background-image:
+    linear-gradient(#0a0a0a, #0a0a0a),
+    linear-gradient(135deg, #8a6d3a 0%, #e4d4a8 25%, #c6a664 50%, #f3e6c1 75%, #8a6d3a 100%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+/* (1) Đường kẻ ánh kim cho khung inset kiểu "góc cắt nhau" (frame lines vượt quá điểm giao ở góc thay
+   vì nối vuông vức) — border-image không làm được kiểu này (luôn khép góc vuông gọn), nên tách thành
+   4 đường kẻ riêng (top/bottom/left/right), mỗi đường kéo dài vượt ra ngoài khung 1 đoạn để đè lên
+   đường vuông góc với nó tại góc. Dùng chung bảng màu gradient với border-gold-metallic, chỉ đổi hướng
+   theo trục ngang/dọc. */
+.gold-metallic-h {
+  background-image: linear-gradient(90deg, #8a6d3a 0%, #e4d4a8 25%, #c6a664 50%, #f3e6c1 75%, #8a6d3a 100%);
+}
+.gold-metallic-v {
+  background-image: linear-gradient(180deg, #8a6d3a 0%, #e4d4a8 25%, #c6a664 50%, #f3e6c1 75%, #8a6d3a 100%);
+}
+
+/* Fade khi đổi filter ở ShopPage (remount theo key, lưới ảnh tải lại). Từ 0.5 -> 1 thay vì 0 -> 1 --
+   đi qua opacity 0 (trống hẳn) đúng lúc ảnh cũng đang tải lại tạo cảm giác "trắng xoá" rồi bừng sáng
+   đột ngột như flash; dao động nhẹ hơn (bắt đầu đã thấy mờ mờ nội dung) mượt hơn nhiều. */
+@keyframes page-fade-in {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
+.page-fade {
+  animation: page-fade-in 0.35s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-fade {
+    animation: none;
+  }
+}
+
+/* Fade + trượt nhẹ lên khi CHUYỂN TRANG THẬT (PageFade.tsx bọc quanh <Outlet />) -- tách riêng khỏi
+   .page-fade ở trên (dùng cho lưới sản phẩm khi lọc) vì đây là 2 tình huống khác nhau: chuyển trang
+   thật nên có cảm giác "sang trọng" hơn (dịch nhẹ lên kèm mờ dần), còn lọc sản phẩm nên nhẹ nhàng/nhanh,
+   không cần dịch chuyển. */
+@keyframes page-fade-slide-in {
+  from { opacity: 0.5; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-fade-slide {
+  animation: page-fade-slide-in 0.4s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-fade-slide {
+    animation: none;
+  }
+}
+
+/* Hoạ tiết herringbone THẬT -- file SVG bạn cung cấp, public/pattern.svg, đã đổi màu stroke sang đúng
+   gold token của site + stroke-opacity 0.18. Houndstooth (thử trước đó) bị chê "rõ quá" nên quay lại
+   herringbone -- nét mảnh hơn houndstooth (path đặc/fill) nên nhìn nhẹ nhàng hơn ở cùng mức opacity.
+   TĨNH HOÀN TOÀN, không animation (rút kinh nghiệm lần trước: hoạ tiết + animation phức tạp tốn nhiều
+   vòng chỉnh sửa) -- không cần kỹ thuật tách lớp ::before như .bg-pattern-glow/.bg-pattern-static cũ
+   vì không animate gì cả, background-image thường vẽ chồng lên background-color sẵn có là đủ. */
+.bg-herringbone {
+  /* 2 lớp cùng background-image, cách nhau bằng dấu phẩy -- lớp trước (hoạ tiết) vẽ TRÊN lớp sau
+     (gradient), nên phải khai đúng thứ tự này. Gradient dùng luôn --color-cream đã có sẵn (từ trang
+     chủ) để đồng bộ tông màu giữa các trang. */
+  background-image: url('/pattern.svg'), linear-gradient(180deg, #fafaf9 0%, var(--color-cream) 100%);
+  background-repeat: repeat, no-repeat;
+  background-size: 40px 20px, 100% 100%;
+}
+
+/* Bóng phát sáng ánh vàng quanh viền — tăng nhẹ khi hover. */
+.gold-glow {
+  box-shadow: 0 0 0 1px rgb(198 166 100 / 15%), 0 0 14px rgb(198 166 100 / 25%);
+  transition: box-shadow 0.3s ease;
+}
+.gold-glow:hover {
+  box-shadow: 0 0 0 1px rgb(198 166 100 / 35%), 0 0 20px rgb(198 166 100 / 45%);
+}
