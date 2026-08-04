@@ -12,11 +12,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 /**
- * Cầu nối DUY NHẤT giữa NovaCart và chatbot kit (Node.js, RAG độc lập -- xem
- * "D:/My Tech/Chatbot"). Nhiệm vụ: (1) gắn userId THẬT lấy từ JWT đã xác thực
- * (không bao giờ tin userId do client tự truyền lên -- tránh 1 user đọc được
- * lịch sử chat của người khác), (2) giấu X-API-Key của kit khỏi frontend --
- * React chỉ gọi vào Java, không bao giờ gọi thẳng sang kit.
+ * Cầu nối duy nhất giữa NovaCart và chatbot kit. Gắn userId thật từ JWT (không tin userId
+ * client tự truyền, tránh lộ lịch sử chat người khác) và giấu X-API-Key của kit khỏi frontend.
  */
 @Service
 public class ChatService {
@@ -51,8 +48,7 @@ public class ChatService {
                     .retrieve()
                     .body(KitAskResponse.class);
         } catch (RestClientResponseException e) {
-            // Kit trả lỗi có cấu trúc (vd 400 thiếu field, 401 sai key) -- vẫn có body JSON {ok:false,
-            // message}, đọc lại để trả thông điệp có ý nghĩa thay vì "lỗi không rõ".
+            // Kit trả lỗi có cấu trúc (body JSON {ok:false, message}) -- đọc lại để trả thông điệp rõ ràng.
             KitAskResponse errorBody = e.getResponseBodyAs(KitAskResponse.class);
             throw new ApiException(HttpStatus.BAD_GATEWAY, messageOrDefault(errorBody));
         } catch (Exception e) {

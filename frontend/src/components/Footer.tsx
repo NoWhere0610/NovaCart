@@ -14,9 +14,7 @@ interface FooterCategory {
  * Cố định về bố cục — không đổi theo từng trang.
  */
 export default function Footer() {
-  // Trước đây "DANH MỤC" hard-code 5 danh mục LÁ cũ, không khớp 4 nhóm CHA hiện tại ở mega-menu Header
-  // (Áo, Quần, Đồ mặc trong, Suit & Blazer) -- tải động từ cùng API Header đang dùng để 2 nơi luôn khớp
-  // nhau, không bị lệch lại nếu danh mục đổi sau này.
+  // Tải động từ cùng API Header dùng để 2 nơi luôn khớp nhau.
   const [categories, setCategories] = useState<FooterCategory[]>([])
 
   useEffect(() => {
@@ -24,8 +22,7 @@ export default function Footer() {
       .get<FooterCategory[]>('/home/categories')
       .then((res) => setCategories(res.data))
       .catch(() => {
-        /* Footer không phải chỗ quan trọng để báo lỗi -- để trống mục Danh mục nếu API lỗi, không chặn
-           phần còn lại của footer hiển thị. */
+        /* API lỗi thì để trống mục Danh mục, không chặn phần còn lại của footer. */
       })
   }, [])
 

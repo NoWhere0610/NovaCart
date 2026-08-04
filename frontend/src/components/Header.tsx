@@ -7,21 +7,14 @@ import { apiClient } from '../api/apiClient'
 import CategoryMegaMenu, { type MegaMenuCategory } from './CategoryMegaMenu'
 import { DEMO_CATEGORIES } from '../data/demoCategories'
 
-// Class dùng chung cho MỌI nút chỉ có icon (không có chữ) — nền tròn mờ hiện khi hover + đổi màu
-// icon sang gold, thay vì chỉ đổi màu chữ nhạt như trước (khó nhận ra đã hover hay chưa).
-// focus-visible: các nút chỉ có icon KHÔNG có state hover thay thế khi điều hướng bằng bàn phím -- nếu
-// không có ring riêng, người dùng Tab qua sẽ không thấy đang ở nút nào.
+// Class dùng chung cho mọi nút chỉ có icon.
+// focus-visible: cần ring riêng để nhận biết khi điều hướng bằng bàn phím (Tab).
 const ICON_BUTTON_CLASS =
   'p-2 -m-2 rounded-full text-stone-700 hover:text-gold-dark hover:bg-stone-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-dark'
 
 /**
- * Header dùng chung cho MỌI trang (trừ login/register và khu vực admin).
- * Cố định về bố cục — chỉ nội dung bên dưới header mới thay đổi theo từng trang.
- *
- * Dùng CategoryMegaMenu (danh mục cha -> con, load từ API /home/categories,
- * fallback DEMO_CATEGORIES nếu API lỗi) thay vì dropdown phẳng cũ, để khớp
- * với phần "Danh mục sản phẩm" từng có riêng ở LandingPage — giờ chỉ còn
- * MỘT header duy nhất, tránh trùng lặp.
+ * Header dùng chung cho mọi trang (trừ login/register và khu vực admin).
+ * CategoryMegaMenu load danh mục từ API /home/categories, fallback DEMO_CATEGORIES nếu lỗi.
  */
 export default function Header() {
   const navigate = useNavigate()
@@ -29,25 +22,17 @@ export default function Header() {
   const { cartCount } = useCart()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
   const [categories, setCategories] = useState<MegaMenuCategory[]>(DEMO_CATEGORIES)
-  // Ô tìm kiếm chính bị "hidden sm:block" -- trên mobile (đa số traffic mua sắm online) khách KHÔNG có
-  // cách nào tìm sản phẩm qua header. Thêm nút icon riêng cho mobile, bấm vào xổ ra 1 hàng tìm kiếm
-  // full-width ngay dưới header thay vì nhồi thêm input cố định (không đủ chỗ cạnh mega-menu + các icon
-  // khác trên màn hình hẹp).
+  // Ô tìm kiếm chính ẩn trên mobile -- thêm nút icon riêng, bấm vào xổ hàng tìm kiếm full-width dưới header.
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const mobileSearchInputRef = useRef<HTMLInputElement>(null)
-  // Ô tìm kiếm (desktop + mobile) dùng CHUNG 1 state -- không hiện cùng lúc (responsive ẩn/hiện theo
-  // breakpoint) nên chia sẻ state không gây xung đột, đỡ phải đồng bộ 2 state riêng.
+  // Desktop + mobile dùng chung 1 state vì không hiển thị cùng lúc.
   const [searchValue, setSearchValue] = useState('')
   const [searchParams] = useSearchParams()
-  // Chỉ true SAU KHI người dùng thật sự gõ vào ô (set trong onChange) -- searchValue rỗng lúc MỚI MOUNT
-  // (chưa gõ gì) và searchValue rỗng SAU KHI người dùng tự xoá hết đều khiến searchValue === '' như
-  // nhau, nhưng ý nghĩa khác hẳn: 1 cái là "chưa làm gì", 1 cái là "vừa xoá tìm kiếm, cần dọn keyword
-  // khỏi URL". Không có cờ này, effect bên dưới sẽ xoá nhầm keyword có sẵn trên URL (vd khách bấm link
-  // chia sẻ .../shop?keyword=X) ngay khi Header vừa mount, dù họ chưa đụng vào ô tìm kiếm.
+  // True chỉ sau khi user thật sự gõ -- tránh nhầm "chưa gõ gì" với "vừa xoá hết", nếu không effect
+  // dưới sẽ xoá nhầm keyword có sẵn trên URL ngay lúc mount.
   const hasTypedRef = useRef(false)
 
-  // Tự tìm sau khi ngừng gõ (debounce 450ms) thay vì bắt buộc bấm Enter -- huỷ hẹn giờ cũ mỗi lần gõ
-  // thêm ký tự (cleanup của useEffect), chỉ hẹn giờ MỚI chạy khi đã ngừng gõ đủ lâu.
+  // Tự tìm sau khi ngừng gõ (debounce 450ms) thay vì bắt buộc bấm Enter.
   useEffect(() => {
     if (!hasTypedRef.current) return
     const timer = setTimeout(() => {
@@ -55,8 +40,7 @@ export default function Header() {
       if (trimmed) {
         navigate(`/shop?keyword=${encodeURIComponent(trimmed)}`)
       } else if (searchParams.get('keyword')) {
-        // Ô tìm kiếm vừa bị xoá trắng TRONG LÚC url hiện tại đang có keyword (đang xem kết quả tìm
-        // kiếm) -- dọn luôn keyword khỏi URL, không để trang đứng yên với kết quả tìm kiếm cũ.
+        // Ô tìm kiếm vừa bị xoá trắng khi URL đang có keyword -- dọn luôn keyword khỏi URL.
         navigate('/shop')
       }
     }, 450)
@@ -69,15 +53,12 @@ export default function Header() {
   }
 
   function handleSearchEnter(e: KeyboardEvent<HTMLInputElement>) {
-    // Enter vẫn tìm NGAY, không đợi debounce -- cho khách quen gõ xong bấm Enter luôn thay vì chờ.
+    // Enter tìm ngay, không đợi debounce.
     if (e.key === 'Enter' && searchValue.trim()) {
       navigate(`/shop?keyword=${encodeURIComponent(searchValue.trim())}`)
       setMobileSearchOpen(false)
     }
   }
-  // "Đăng xuất" trước đây nằm rời ngoài nav dạng text link, dễ bấm nhầm và không theo pattern thường
-  // gặp (gộp vào menu con của icon Tài khoản) -- gộp vào đây, các icon khác (Yêu thích/Đơn hàng/Giỏ
-  // hàng) vẫn giữ nguyên rời như cũ theo đúng phạm vi đã thống nhất.
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
 
   useEffect(() => {
@@ -104,9 +85,7 @@ export default function Header() {
       <div className="max-w-[1600px] mx-auto px-6">
         <div className="flex items-center justify-between h-20">
           <div className="flex items-center gap-6">
-            {/* Danh mục sản phẩm — mega-menu 2 cấp: di chuột vào để xổ xuống
-                các nhóm danh mục, rồi di chuột vào 1 nhóm để hiện bên cạnh
-                các loại con thuộc nhóm đó. */}
+            {/* Mega-menu 2 cấp: hover nhóm cha để hiện các loại con. */}
             <CategoryMegaMenu
               categories={categories}
               onSelect={(c) => navigate(`/shop?category=${c.slug}`)}

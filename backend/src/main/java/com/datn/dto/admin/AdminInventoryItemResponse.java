@@ -6,9 +6,8 @@ import lombok.Getter;
 import java.math.BigDecimal;
 
 /**
- * 1 dòng trong màn "Kho tồn hàng" — tương ứng 1 biến thể (size/màu) của 1 sản phẩm.
- * Đây là DTO riêng cho màn Inventory (khác AdminProductResponse dùng cho màn Sản phẩm)
- * vì Inventory hiển thị phẳng theo variant kèm theo tên sản phẩm/danh mục để dễ tra cứu tồn kho.
+ * 1 dòng "Kho tồn hàng" -- tương ứng 1 biến thể (size/màu) của 1 sản phẩm.
+ * Riêng với AdminProductResponse vì Inventory hiển thị phẳng theo variant kèm tên sản phẩm/danh mục.
  */
 @Getter
 @Builder

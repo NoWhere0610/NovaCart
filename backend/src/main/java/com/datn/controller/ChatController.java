@@ -14,10 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Toàn bộ endpoint yêu cầu đăng nhập (không nằm trong PUBLIC_ENDPOINTS) --
- * chatbot tư vấn chỉ phục vụ khách đã đăng nhập. React KHÔNG gọi thẳng
- * chatbot kit (Node.js) -- luôn qua đây để Java gắn đúng userId thật + giấu
- * API key của kit, xem ChatService.
+ * Yêu cầu đăng nhập -- chatbot chỉ phục vụ khách đã đăng nhập. React không gọi thẳng
+ * chatbot kit, luôn qua đây để Java gắn đúng userId thật + giấu API key của kit (xem ChatService).
  */
 @RestController
 @RequestMapping("/api/chat")

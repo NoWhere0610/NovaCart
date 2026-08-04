@@ -16,13 +16,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 /**
- * Chạy 1 lần cho MỖI request (OncePerRequestFilter) trước khi request đi vào
- * Controller. Nhiệm vụ:
- *  1. Lấy token từ header "Authorization: Bearer <token>".
- *  2. Nếu token hợp lệ -> load user tương ứng và "đăng nhập" user đó vào
- *     SecurityContext của request hiện tại (để @PreAuthorize, hasRole()... hoạt động).
- *  3. Nếu không có token / token sai -> để trống, request đi tiếp như 1 người
- *     dùng ẩn danh (SecurityConfig sẽ quyết định endpoint đó có cần login hay không).
+ * Chạy 1 lần mỗi request, trước Controller: đọc JWT từ header Authorization,
+ * hợp lệ thì set Authentication vào SecurityContext; không có/sai thì bỏ qua, coi như ẩn danh.
  */
 @Component
 @RequiredArgsConstructor
@@ -49,24 +44,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = authHeader.substring(BEARER_PREFIX.length());
 
-        // QUAN TRỌNG: mọi lỗi khi giải mã token (hết hạn, sai chữ ký, hoặc user
-        // trong token không còn tồn tại trong DB — ví dụ sau khi reset DB nhưng
-        // trình duyệt vẫn còn giữ token cũ) chỉ được coi là "chưa đăng nhập",
-        // TUYỆT ĐỐI không được để lỗi này làm sập cả filter chain — nếu không,
-        // nó sẽ vô tình chặn luôn cả những API PUBLIC (permitAll) không liên
-        // quan gì tới token, vì lỗi xảy ra TRƯỚC khi request kịp tới bước kiểm
-        // tra permitAll/authenticated() của SecurityConfig.
+        // Lỗi giải mã token (hết hạn, sai chữ ký, user không còn tồn tại...) chỉ coi là chưa đăng nhập,
+        // không được ném lỗi -- nếu không sẽ chặn nhầm cả API public (lỗi xảy ra trước bước permitAll).
         try {
             String username = jwtService.extractUsername(token);
 
-            // Chỉ xử lý nếu: đọc được username từ token VÀ request này chưa được xác thực trước đó
-            // (tránh ghi đè lên context nếu đã có filter khác xử lý)
+            // Chỉ xử lý nếu đọc được username và request chưa được xác thực trước đó.
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                // isEnabled() phản ánh is_active hiện tại trong DB (KHÔNG phải lúc token được cấp) ->
-                // tài khoản bị khoá SAU KHI đã có JWT sẽ mất quyền truy cập ngay từ request tiếp theo,
-                // thay vì phải chờ token hết hạn (24h, xem app.jwt.expiration-ms).
+                // isEnabled() đọc is_active hiện tại trong DB -> tài khoản bị khoá mất quyền truy cập
+                // ngay, không cần chờ token hết hạn.
                 if (jwtService.isTokenValid(token, userDetails.getUsername()) && userDetails.isEnabled()) {
                     var authToken = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());
@@ -75,8 +63,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception ex) {
-            // Token hỏng / user không còn tồn tại -> bỏ qua, để request đi tiếp
-            // như 1 người dùng ẩn danh. KHÔNG set Authentication, KHÔNG throw lại.
+            // Token hỏng / user không tồn tại -> bỏ qua, coi như ẩn danh.
         }
 
         filterChain.doFilter(request, response);

@@ -28,8 +28,6 @@ const STATUS_COLOR: Record<OrderStatus, string> = {
   RETURNED: 'bg-red-100 text-red-700',
 }
 
-// Các tab hiển thị, đúng theo yêu cầu: Tất cả -> Chờ thanh toán -> Chờ vận
-// chuyển -> Chờ nhận hàng -> Cần đánh giá -> Hoàn thành -> Trả hàng -> Đã huỷ
 type TabKey = 'ALL' | 'RETURN' | OrderStatus
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'ALL', label: 'Tất cả' },
@@ -68,8 +66,7 @@ export default function OrdersPage() {
       const res = await getMyOrdersApi(0, 100)
       setOrders(res.content)
     } catch {
-      // Phải phân biệt rõ với "chưa có đơn hàng nào" (filtered.length === 0) -- lỗi tải khác hoàn
-      // toàn về ý nghĩa với 1 tài khoản thật sự chưa từng đặt đơn nào.
+      // Phân biệt với "chưa có đơn hàng nào" -- đây là lỗi tải, khác ý nghĩa với tài khoản chưa từng đặt đơn.
       setError('Không thể tải danh sách đơn hàng. Vui lòng thử lại.')
     } finally {
       setLoading(false)
@@ -97,9 +94,7 @@ export default function OrdersPage() {
         <BackButton />
         <h1 className="font-display text-2xl font-semibold text-stone-900 mb-6">Đơn hàng của tôi</h1>
 
-        {/* flex-wrap thay vì overflow-x-auto + min-w-max -- 7 tab với nhãn dài ("Chờ vận chuyển",
-            "Trả hàng/Hoàn tiền"...) không đủ chỗ trong max-w-3xl (768px) dù màn hình rộng thế nào, ép
-            cuộn ngang lúc nào cũng xảy ra. Cho tự xuống dòng thấy hết tab ngay, không cần cuộn. */}
+        {/* flex-wrap thay vì cuộn ngang -- 7 tab nhãn dài không đủ chỗ trong max-w-3xl, cho tự xuống dòng. */}
         <div className="bg-white border border-stone-200 mb-4">
           <div className="flex flex-wrap">
             {TABS.map((t) => {

@@ -51,10 +51,8 @@ public class HomeService {
     }
 
     /**
-     * Xem sản phẩm theo danh mục. Nếu categoryId là danh mục CHA (VD: "Áo"),
-     * gom luôn sản phẩm của các danh mục CON active bên trong (vì sản phẩm chỉ
-     * được gán trực tiếp vào danh mục lá) — tránh trang trống khi bấm vào 1
-     * nhóm cha ở mega-menu/CategoriesPage.
+     * Nếu categoryId là danh mục cha, gom luôn sản phẩm của các danh mục con active
+     * (sản phẩm chỉ gán trực tiếp vào danh mục lá) -- tránh trang trống khi bấm vào nhóm cha.
      */
     public PageResponse<ProductResponse> getProductsByCategory(Integer categoryId, Pageable pageable) {
         List<Integer> categoryIds = resolveCategoryIdsWithChildren(categoryId);
@@ -63,8 +61,8 @@ public class HomeService {
         return PageResponse.from(page.map(this::toProductResponse));
     }
 
-    /** Danh mục CHA -> gom thêm ID các danh mục CON active (sản phẩm chỉ gán trực tiếp vào danh mục lá).
-     * Dùng chung cho getProductsByCategory() và filterProducts() -- tách ra để không lặp logic này. */
+    /** Gom ID danh mục con active vào danh mục cha (sản phẩm chỉ gán vào danh mục lá) --
+     * dùng chung cho getProductsByCategory() và filterProducts(). */
     private List<Integer> resolveCategoryIdsWithChildren(Integer categoryId) {
         return categoryRepository.findById(categoryId)
                 .map(cat -> {
@@ -93,8 +91,7 @@ public class HomeService {
         return PageResponse.from(page.map(this::toProductResponse));
     }
 
-    /** "Đã xem gần đây" (LandingPage) -- trả về ĐÚNG THỨ TỰ ids truyền vào (mới xem nhất trước), vì
-     * IN (...) ở DB không đảm bảo giữ thứ tự danh sách truyền vào. */
+    /** "Đã xem gần đây" -- trả đúng thứ tự ids truyền vào vì IN (...) ở DB không giữ thứ tự. */
     public List<ProductResponse> getProductsByIds(List<Long> ids) {
         List<Product> products = productRepository.findByProductIdInAndStatus(ids, Product.Status.ACTIVE);
         Map<Long, Product> byId = products.stream()
@@ -177,9 +174,8 @@ public class HomeService {
     }
 
     /**
-     * Chuyển 1 Category thành CategoryResponse, kèm theo danh sách con (nếu có)
-     * đã lọc active + sắp xếp theo tên — dùng cho mega-menu (hover xổ danh mục
-     * cha rồi hiện danh mục con bên cạnh) và CategoriesPage (nhóm theo cha).
+     * Chuyển Category thành CategoryResponse kèm danh sách con đã lọc active + sắp xếp theo tên --
+     * dùng cho mega-menu và CategoriesPage.
      */
     private CategoryResponse toCategoryResponse(Category c) {
         List<CategoryResponse> children = c.getChildren() == null ? List.of() : c.getChildren().stream()

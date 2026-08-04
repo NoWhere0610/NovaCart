@@ -9,10 +9,8 @@ import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * Đánh giá sản phẩm. Ràng buộc nghiệp vụ (kiểm tra ở ReviewService, KHÔNG
- * phải ở entity): user chỉ được đánh giá 1 sản phẩm sau khi có ít nhất 1
- * đơn hàng chứa sản phẩm đó ở trạng thái COMPLETED — tránh review ảo/spam
- * từ người chưa từng mua hàng thật.
+ * Đánh giá sản phẩm. Ràng buộc nghiệp vụ (ở ReviewService, không phải entity): chỉ được đánh giá
+ * sau khi có đơn hàng COMPLETED chứa sản phẩm đó -- tránh review ảo.
  */
 @Entity
 @Table(
@@ -21,10 +19,8 @@ import java.time.LocalDateTime;
         name = "uq_review_user_product",
         columnNames = {"user_id", "product_id"}
     ),
-    // uq_review_user_product ở trên KHÔNG phục vụ được query lọc riêng theo product_id (composite unique
-    // bắt đầu bằng user_id -- không dùng được nếu thiếu user_id ở điều kiện WHERE). ReviewRepository lại
-    // gọi findByProduct_ProductId/countByProduct_ProductId riêng trên MỌI trang chi tiết sản phẩm -> cần
-    // thêm index riêng cho product_id.
+    // uq_review_user_product không phục vụ được query lọc riêng theo product_id (composite unique bắt
+    // đầu bằng user_id) -- cần thêm index riêng vì ReviewRepository query theo product_id trên mọi trang chi tiết.
     indexes = @Index(name = "idx_reviews_product_id", columnList = "product_id")
 )
 @Getter

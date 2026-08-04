@@ -1,8 +1,6 @@
 import type { MegaMenuCategory } from '../components/CategoryMegaMenu'
 
-// Cây danh mục dự phòng (offline/demo) — dùng khi chưa gọi được API
-// GET /api/home/categories, để mega-menu và CategoriesPage vẫn có nội dung
-// hiển thị thay vì trống trơn. Khớp với dữ liệu seed trong menswear_db_mssql.sql.
+// Cây danh mục dự phòng khi API /api/home/categories lỗi. Khớp dữ liệu seed trong menswear_db_mssql.sql.
 export const DEMO_CATEGORIES: MegaMenuCategory[] = [
   {
     categoryId: 1,
@@ -67,8 +65,7 @@ export const DEMO_CATEGORIES: MegaMenuCategory[] = [
   },
 ]
 
-// Danh mục cha + con, làm phẳng thành 1 mảng (dùng cho ShopPage lọc theo slug
-// và sidebar) — mỗi phần tử giữ nguyên parentId để có thể nhóm lại khi hiển thị.
+// Danh mục cha + con làm phẳng thành 1 mảng, dùng cho ShopPage lọc theo slug và sidebar.
 export const DEMO_CATEGORIES_FLAT: MegaMenuCategory[] = DEMO_CATEGORIES.flatMap((group) => [
   group,
   ...(group.children ?? []),

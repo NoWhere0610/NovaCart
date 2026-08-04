@@ -1,11 +1,3 @@
-HƯỚNG DẪN CÀI ĐẶT NOVACART (cho máy chưa từng chạy dự án này)
-
-Cần cài trước:
-- Java 17
-- Node.js 18 trở lên
-- SQL Server (bản Express miễn phí) + 1 công cụ quản lý DB (SSMS hoặc Azure Data Studio)
-- Git
-
 KHÔNG bắt buộc phải có Docker hay API key nào để chạy được trang web chính (bán hàng + quản trị).
 Chỉ phần CHATBOT TƯ VẤN (mục 4 bên dưới) mới cần — có thể bỏ qua phần đó, web vẫn chạy đầy đủ, chỉ
 riêng khung chat AI sẽ báo lỗi/không trả lời.

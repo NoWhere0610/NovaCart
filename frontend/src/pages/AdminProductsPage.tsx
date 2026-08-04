@@ -92,7 +92,6 @@ export default function AdminProductsPage() {
 
   async function handleSubmit() {
     setError(null)
-    // Loại bỏ ảnh rỗng / variant thiếu size-color trước khi gửi lên
     const payload: AdminProductPayload = {
       ...form,
       imageUrls: form.imageUrls.filter((u) => u.trim() !== ''),
@@ -219,7 +218,7 @@ export default function AdminProductsPage() {
         </div>
       )}
 
-      {/* Form thêm/sửa - hiện dạng panel trượt xuống thay vì modal riêng, đơn giản hoá cho đồ án */}
+      {/* Form thêm/sửa dạng overlay, không tách modal riêng */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-start justify-center overflow-y-auto py-10 z-50">
           <div className="bg-white w-full max-w-2xl p-6">

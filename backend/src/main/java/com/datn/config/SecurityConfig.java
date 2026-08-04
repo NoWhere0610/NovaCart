@@ -23,15 +23,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 /**
- * Cấu hình trung tâm của Spring Security cho toàn bộ backend.
- * Thay thế hoàn toàn CorsConfig cũ (đã xoá) vì khi có Security, CORS phải
- * được khai báo NGAY TRONG SecurityFilterChain, nếu không request preflight
- * (OPTIONS) sẽ bị Security chặn trước khi tới được CorsConfig kiểu cũ.
+ * Cấu hình trung tâm Spring Security. Thay CorsConfig cũ (đã xoá) vì CORS phải khai báo
+ * trong SecurityFilterChain, nếu không preflight (OPTIONS) sẽ bị chặn trước khi tới CorsConfig.
  */
 @Configuration
 @EnableWebSecurity
-// Cho phép dùng @PreAuthorize("hasRole('ADMIN')") ngay trên method của
-// Controller/Service
+// Cho phép @PreAuthorize("hasRole(...)") trên method của Controller/Service
 @EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
@@ -39,40 +36,29 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
 
-    /**
-     * Danh sách API KHÔNG cần đăng nhập (đăng ký, đăng nhập, xem trang chủ/sản
-     * phẩm...).
-     */
+    /** Danh sách API không cần đăng nhập (đăng ký, đăng nhập, trang chủ/sản phẩm...). */
      private static final String[] PUBLIC_ENDPOINTS = {
             "/api/auth/**",
             "/api/home/**",
-            // VNPay redirect thẳng TRÌNH DUYỆT của khách về endpoint này -> bắt buộc
-            // phải public. An toàn vẫn đảm bảo vì OrderService.handleVnpayReturn()
-            // luôn verify chữ ký HMAC-SHA512 trước khi tin bất kỳ tham số nào.
+            // VNPay redirect thẳng trình duyệt khách về đây nên phải public; an toàn nhờ
+            // OrderService.handleVnpayReturn() luôn verify chữ ký HMAC-SHA512 trước khi tin tham số.
             "/api/vnpay/**",
-            // Gọi server-to-server từ chatbot kit (Node.js) khi đồng bộ sản phẩm mỗi ngày -> không có
-            // JWT khách hàng để xác thực. An toàn vẫn đảm bảo vì InternalKbController tự verify header
-            // "X-Internal-Secret" khớp novacart.internal-secret trước khi trả dữ liệu (xem class đó).
+            // Gọi server-to-server từ chatbot kit, không có JWT khách hàng; an toàn nhờ
+            // InternalKbController tự verify header "X-Internal-Secret" trước khi trả dữ liệu.
             "/internal/**"
     };
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // API thuần REST dùng JWT -> không cần bảo vệ CSRF kiểu session/cookie truyền
-                // thống
+                // API thuần REST dùng JWT -> không cần CSRF kiểu session/cookie.
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                // Không dùng HttpSession để lưu trạng thái đăng nhập -> mỗi request tự chứng
-                // minh
-                // danh tính qua JWT (stateless, đúng chuẩn REST, dễ scale nhiều instance
-                // backend)
+                // Không dùng HttpSession -> mỗi request tự xác thực qua JWT (stateless, dễ scale).
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        // Toàn bộ API quản trị (CRUD sản phẩm, quản lý đơn hàng, quản lý user)
-                        // CHỈ user có role ADMIN mới gọi được — kiểm tra ngay ở tầng route,
-                        // trước khi request kịp chạm vào Controller/Service
+                        // API quản trị chỉ role ADMIN được gọi -- kiểm tra ngay ở tầng route.
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 // Chèn filter đọc JWT vào TRƯỚC filter login-form mặc định của Spring Security
@@ -81,9 +67,7 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * Mã hoá mật khẩu 1 chiều bằng BCrypt (đúng như comment sẵn trong entity User).
-     */
+    /** Mã hoá mật khẩu 1 chiều bằng BCrypt. */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -106,10 +90,7 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    /**
-     * Cấu hình CORS y hệt CorsConfig cũ: chỉ cho phép frontend chạy ở
-     * localhost:5173 gọi API.
-     */
+    /** Cấu hình CORS: chỉ cho phép frontend ở localhost:5173 gọi API. */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();

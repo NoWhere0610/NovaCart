@@ -5,8 +5,7 @@ import { apiClient } from '../api/apiClient'
 import { useWishlist } from '../contexts/WishlistContext'
 import { getRecentlyViewedIds } from '../utils/recentlyViewed'
 
-// Ảnh hero + ảnh danh mục đều là ảnh thật (Pexels, free-to-use) — không còn dùng picsum random nữa.
-// 3 ảnh luân phiên tự động ở nửa phải Hero, đa dạng phong cách (suit sáng/tối, smart-casual).
+// 3 ảnh Pexels luân phiên tự động ở nửa phải Hero.
 const HERO_IMAGES = [
   'https://images.pexels.com/photos/8052262/pexels-photo-8052262.jpeg?auto=compress&cs=tinysrgb&w=1200',
   'https://images.pexels.com/photos/1043474/pexels-photo-1043474.jpeg?auto=compress&cs=tinysrgb&w=1200',
@@ -68,8 +67,7 @@ function ProductCard({ product, dark = false }: { product: ProductDto; dark?: bo
         </button>
       </div>
       <p className={`text-[11px] uppercase tracking-widest mb-1 ${dark ? 'text-stone-400' : 'text-stone-500'}`}>
-        {/* "No Brand" là 1 giá trị thật trong bảng brands (gán cho sản phẩm không có thương hiệu cụ
-            thể) -- hiện nguyên văn trông như tên nhãn hàng thật, coi nó tương đương "chưa có brand". */}
+        {/* "No Brand" là giá trị thật trong DB -- coi tương đương "chưa có brand", không hiện nguyên văn. */}
         {product.brandName && product.brandName !== 'No Brand' ? product.brandName : product.categoryName}
       </p>
       <p className={`text-sm font-medium ${dark ? 'text-stone-50' : 'text-stone-900'}`}>{product.productName}</p>
@@ -125,13 +123,10 @@ export default function LandingPage() {
   const [sale, setSale] = useState<ProductDto[]>([])
   const [recentlyViewed, setRecentlyViewed] = useState<ProductDto[]>([])
   const [heroImageIndex, setHeroImageIndex] = useState(0)
-  // true nếu BẤT KỲ 1 trong 3 API trang chủ lỗi -- KHÔNG phân biệt lỗi API nào (chỉ cần báo cho khách
-  // biết trang có thể đang thiếu nội dung do lỗi tải, chứ không phải shop thật sự chưa có gì).
+  // true nếu bất kỳ API nào trong 3 API trang chủ lỗi -- báo trang có thể thiếu nội dung do lỗi tải.
   const [homeDataError, setHomeDataError] = useState(false)
 
-  // /home/categories trả về danh mục CHA (Áo, Quần...) — chỉ dùng để nhóm ở CategoriesPage, KHÔNG có
-  // ảnh riêng (ảnh gắn ở danh mục LÁ). Dải danh mục ở trang chủ cần ảnh nên làm phẳng ra danh mục lá
-  // (nhóm nào chưa có con thì giữ nguyên chính nó), giới hạn 10 mục đầu cho gọn 1 dải.
+  // /home/categories trả về danh mục cha, không có ảnh riêng (ảnh gắn ở danh mục lá) -- làm phẳng ra lá để có ảnh, giới hạn 10 mục.
   const displayCategories = categories
     .flatMap((c) => (c.children && c.children.length > 0 ? c.children : [c]))
     .slice(0, 10)
@@ -155,8 +150,7 @@ export default function LandingPage() {
   useEffect(() => {
     loadHomeData()
 
-    // "Đã xem gần đây" -- KHÔNG tính vào homeDataError nếu lỗi (chỉ là nội dung phụ, khách chưa xem
-    // sản phẩm nào cũng là tình huống bình thường, không phải lỗi tải trang).
+    // "Đã xem gần đây" -- lỗi ở đây không tính vào homeDataError, chỉ là nội dung phụ.
     const recentIds = getRecentlyViewedIds()
     if (recentIds.length > 0) {
       apiClient
@@ -273,9 +267,7 @@ export default function LandingPage() {
         </section>
       )}
 
-      {/* bg-cream -- xen kẽ với nền trắng của khối Danh mục phía trên/Đã xem gần đây phía dưới, tạo
-          nhịp khi cuộn qua các section mà KHÔNG đổi màu nền lưới sản phẩm sang tối (giá/chữ vẫn đọc rõ
-          như trên nền trắng, chỉ khác sắc độ). */}
+      {/* bg-cream xen kẽ nền trắng các section trên/dưới, tạo nhịp khi cuộn mà không đổi màu chữ. */}
       {newest.length > 0 && (
         <section className="bg-cream border-t border-stone-200">
           <div className="max-w-[1600px] mx-auto px-6 py-16">
@@ -289,8 +281,7 @@ export default function LandingPage() {
         </section>
       )}
 
-      {/* Banner lifestyle full-width -- "khoảng thở" giữa 2 lưới sản phẩm liên tiếp (Mới nhất/Đã xem
-          gần đây), chỉ 1 lần, không lặp lại nhiều lần trên trang. */}
+      {/* Banner lifestyle -- khoảng thở giữa 2 lưới sản phẩm liên tiếp. */}
       {newest.length > 0 && recentlyViewed.length > 0 && (
         <section className="relative h-80 md:h-105 overflow-hidden">
           <img

@@ -7,7 +7,7 @@ import java.util.Optional;
 
 public interface CartItemRepository extends JpaRepository<CartItem, Long> {
 
-    // Kiểm tra variant này đã có sẵn trong giỏ chưa -> nếu có thì cộng dồn quantity
-    // thay vì tạo dòng mới (tránh vi phạm unique constraint uq_cart_variant)
+    // Kiểm tra variant đã có trong giỏ chưa -> nếu có thì cộng dồn quantity thay vì tạo dòng mới
+    // (tránh vi phạm unique constraint uq_cart_variant).
     Optional<CartItem> findByCart_CartIdAndVariant_VariantId(Long cartId, Long variantId);
 }

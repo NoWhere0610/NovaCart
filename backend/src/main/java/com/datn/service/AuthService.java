@@ -43,8 +43,7 @@ public class AuthService {
         }
 
         Role customerRole = roleRepository.findByRoleName(DEFAULT_ROLE)
-                // Nếu bảng roles chưa có sẵn (lần đầu chạy DB mới) thì báo lỗi rõ ràng
-                // thay vì NullPointerException khó hiểu ở phía dưới
+                // Báo lỗi rõ ràng thay vì NullPointerException nếu role mặc định chưa có trong DB.
                 .orElseThrow(() -> ApiException.notFound(
                         "Chưa cấu hình role mặc định '" + DEFAULT_ROLE + "' trong hệ thống"));
 
@@ -63,9 +62,7 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
-        // AuthenticationManager sẽ tự gọi CustomUserDetailsService để load user,
-        // rồi so khớp password (đã hash) qua PasswordEncoder. Sai -> tự ném BadCredentialsException,
-        // GlobalExceptionHandler sẽ bắt và trả 401 cho client.
+        // AuthenticationManager tự load user + so khớp password; sai thì ném BadCredentialsException -> GlobalExceptionHandler trả 401.
         var authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getUsernameOrEmail(), request.getPassword()));

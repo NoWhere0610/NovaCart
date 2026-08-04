@@ -17,8 +17,7 @@ export default function CartPage() {
   const { applyCart } = useCart()
   const [cart, setCart] = useState<CartDto | null>(null)
   const [loading, setLoading] = useState(true)
-  // null = chưa biết / đang tải; '' KHÔNG được dùng làm "không lỗi" vì dễ nhầm với message rỗng -> dùng
-  // riêng 1 boolean ngầm qua giá trị null của error thay vì suy luận từ cart.
+  // null = chưa biết/đang tải; không dùng '' làm "không lỗi" vì dễ nhầm với message rỗng.
   const [error, setError] = useState<string | null>(null)
   // Theo dõi item nào đang gọi API để disable đúng nút đó (tránh double-click gây lỗi)
   const [busyId, setBusyId] = useState<number | null>(null)
@@ -35,8 +34,7 @@ export default function CartPage() {
       setCart(data)
       applyCart(data)
     } catch {
-      // Lỗi mạng/server phải hiển thị RÕ RÀNG khác với "giỏ hàng trống thật" — nếu không, người dùng
-      // tưởng giỏ hàng bị mất đồ trong khi thực ra chỉ là tải lỗi.
+      // Phải hiển thị rõ khác với "giỏ hàng trống thật", tránh hiểu nhầm là mất đồ.
       setError('Không thể tải giỏ hàng. Vui lòng thử lại.')
     } finally {
       setLoading(false)

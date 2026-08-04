@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { IconMenu2, IconChevronDown, IconChevronRight } from '@tabler/icons-react'
 
-// Kiểu dữ liệu danh mục dùng chung cho mega-menu — khớp với CategoryResponse
-// bên backend (children là mảng danh mục con, có thể rỗng với danh mục lá).
+// Khớp với CategoryResponse bên backend.
 export interface MegaMenuCategory {
   categoryId: number
   categoryName: string
@@ -14,21 +13,13 @@ export interface MegaMenuCategory {
 interface CategoryMegaMenuProps {
   categories: MegaMenuCategory[]
   onSelect: (category: MegaMenuCategory) => void
-  // Nhãn hiển thị trên nút kích hoạt menu
   label?: string
   className?: string
 }
 
 /**
- * Menu 2 cấp kiểu "mega menu":
- *  - BẤM vào nút "Danh mục sản phẩm" -> xổ xuống danh sách các nhóm danh mục
- *    cha (Áo, Quần, Đồ mặc trong, Suit & Blazer...). KHÔNG mở khi chỉ hover
- *    ngang qua (trước đây mở ngay khi hover, dễ bung nhầm khi rê chuột lướt
- *    qua header).
- *  - Di chuột vào 1 nhóm trong danh sách đó (SAU KHI đã bấm mở) -> hiện bảng
- *    bên cạnh liệt kê các loại con thuộc nhóm đó (áo thun, áo sơ mi...), bấm
- *    vào để đi tới trang shop lọc theo danh mục đó.
- *  - Rê chuột ra khỏi toàn bộ menu (sau khi đã mở) thì tự đóng lại.
+ * Menu 2 cấp: bấm nút để mở danh sách nhóm cha (không mở khi chỉ hover, tránh bung nhầm).
+ * Hover 1 nhóm (sau khi đã mở) để hiện danh mục con bên cạnh. Rê chuột ra ngoài thì tự đóng.
  */
 export default function CategoryMegaMenu({ categories, onSelect, label = 'Danh mục sản phẩm', className = '' }: CategoryMegaMenuProps) {
   const [open, setOpen] = useState(false)
@@ -68,13 +59,9 @@ export default function CategoryMegaMenu({ categories, onSelect, label = 'Danh m
             {categories.map((group) => {
               const hasChildren = Boolean(group.children && group.children.length > 0)
               const active = activeGroupId === group.categoryId
-              // Nhóm CÓ con chỉ dùng để gom nhóm hiển thị (tiêu đề), không phải 1 danh mục thật để lọc
-              // sản phẩm -> không cho bấm nữa, chỉ hover để xổ danh mục con bên cạnh. Nhóm KHÔNG có con
-              // (trường hợp hiếm, danh mục gốc không phân cấp) vẫn bấm được như trước.
+              // Nhóm có con chỉ để gom hiển thị, không phải danh mục lọc được -> không cho bấm chọn.
               return hasChildren ? (
-                // KHÔNG chỉ onMouseEnter -- thiết bị cảm ứng (mobile/tablet) không có hover, nên phải có
-                // thêm onClick để chuyển nhóm đang active, nếu không người dùng chạm màn hình sẽ bị kẹt
-                // mãi ở nhóm mặc định (categories[0]) và không bao giờ mở được nhóm khác.
+                // Cần thêm onClick vì thiết bị cảm ứng không có hover.
                 <button
                   key={group.categoryId}
                   type="button"

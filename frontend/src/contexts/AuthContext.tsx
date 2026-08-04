@@ -5,8 +5,7 @@ import { loginApi, registerApi } from '../api/authApi'
 interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
-  // true trong lúc đang đọc localStorage lần đầu -> tránh flash "chưa login"
-  // rồi mới nhảy sang "đã login" khi F5 trang
+  // true trong lúc đang đọc localStorage lần đầu -> tránh flash "chưa login" khi F5 trang
   isLoading: boolean
   login: (payload: LoginPayload) => Promise<void>
   register: (payload: RegisterPayload) => Promise<void>
@@ -22,8 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Khi app khởi động (F5, mở tab mới) -> khôi phục lại phiên đăng nhập từ
-  // localStorage thay vì bắt user login lại mỗi lần refresh trang
+  // Khôi phục phiên đăng nhập từ localStorage khi app khởi động.
   useEffect(() => {
     const savedUser = localStorage.getItem(STORAGE_USER_KEY)
     const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY)
@@ -68,7 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-/** Hook tiện dùng trong mọi component thay vì import useContext + AuthContext lặp lại. */
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) {

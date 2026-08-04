@@ -35,16 +35,14 @@ interface PageResponse<T> {
 
 const PAGE_SIZE = 24
 
-// Bộ size/màu chuẩn để chọn lọc — khớp với danh sách dùng ở ProductDetailPage (FULL_SIZES/FULL_COLORS),
-// không tách file dùng chung riêng vì đây là hằng số tĩnh đơn giản, trùng lặp 1 chỗ không đáng kể.
+// Bộ size/màu chuẩn để lọc — khớp danh sách ở ProductDetailPage (FULL_SIZES/FULL_COLORS).
 const FILTER_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL']
 const FILTER_COLORS = [
   'Đen', 'Trắng', 'Xám', 'Xanh Navy', 'Xanh Dương', 'Xanh Lá', 'Xanh Rêu',
   'Be', 'Nâu', 'Kem', 'Đỏ', 'Cam', 'Vàng', 'Hồng', 'Tím', 'Bạc',
 ]
 
-// Mốc giá chọn nhanh -- đa số khách lọc theo khoảng chung chung, không cần gõ số chính xác. min/max để
-// '' (rỗng) nghĩa là không giới hạn đầu đó (giống 2 ô nhập tay để trống).
+// Mốc giá chọn nhanh -- min/max rỗng nghĩa là không giới hạn đầu đó.
 const PRICE_PRESETS = [
   { label: 'Dưới 200k', min: '', max: '200000' },
   { label: '200k - 500k', min: '200000', max: '500000' },
@@ -81,8 +79,7 @@ export default function ShopPage() {
 
   // Cây danh mục 2 cấp như trả về từ API (nhóm cha + danh mục con)
   const [categoryTree, setCategoryTree] = useState<CategoryDto[]>([])
-  // Làm phẳng cây (cha + con) để tra cứu theo slug và để tương thích với
-  // các danh mục lá không có nhóm cha (VD: "Bộ đồ")
+  // Làm phẳng cây (cha + con) để tra cứu theo slug, kể cả danh mục lá không có nhóm cha
   const flatCategories: CategoryDto[] = categoryTree.flatMap((g) => [g, ...(g.children ?? [])])
 
   const [products, setProducts] = useState<ProductDto[]>([])
@@ -90,9 +87,7 @@ export default function ShopPage() {
   const [totalElements, setTotalElements] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  // Input giá là state RIÊNG (không đọc/ghi thẳng URL mỗi phím gõ) -- chỉ đẩy vào URL (kéo theo gọi
-  // API) khi bấm "Áp dụng", tránh spam request theo từng ký tự gõ. Đồng bộ lại từ URL khi filter đổi
-  // từ nơi khác (vd bấm "Xoá lọc", back/forward trình duyệt).
+  // State giá riêng, chỉ đẩy vào URL (gọi API) khi bấm "Áp dụng" -- tránh spam request theo từng ký tự gõ.
   const [minPriceInput, setMinPriceInput] = useState(minPriceParam)
   const [maxPriceInput, setMaxPriceInput] = useState(maxPriceParam)
   useEffect(() => {
@@ -110,8 +105,7 @@ export default function ShopPage() {
   }, [categorySlug, keyword, minPriceParam, maxPriceParam, sizeParam, colorParam, categoryTree, page])
 
   async function loadProducts() {
-    // Đợi danh mục load xong mới biết categorySlug ứng với categoryId nào -- gọi sớm hơn sẽ lọc sai
-    // (coi như "Tất cả") trong khoảnh khắc categoryTree còn rỗng.
+    // Đợi danh mục load xong mới biết categorySlug ứng với categoryId nào, tránh lọc sai thành "Tất cả".
     if (categorySlug && flatCategories.length === 0) return
     setLoading(true)
     try {
@@ -140,8 +134,7 @@ export default function ShopPage() {
     }
   }
 
-  // Cập nhật 1 phần bộ lọc, GIỮ NGUYÊN các phần còn lại đang có trên URL (trừ khi tự truyền đè) -- luôn
-  // quay về trang 1 (không giữ page cũ, tránh lọc xong rơi vào trang trống).
+  // Cập nhật 1 phần bộ lọc, giữ nguyên phần còn lại trên URL -- luôn quay về trang 1.
   function updateFilters(changes: {
     category?: string
     keyword?: string
@@ -211,19 +204,11 @@ export default function ShopPage() {
         </div>
 
         <div className="flex gap-8">
-          {/* sticky top-24 -- Header cũng sticky (h-20 + border ~ 81px), để hở 1 khoảng nhỏ bên dưới
-              header khi sidebar "dính" lại lúc cuộn. max-h + overflow-y-auto phòng trường hợp màn hình
-              thấp (laptop nhỏ) không đủ chỗ hiện hết bộ lọc mà vẫn giữ được vị trí dính. */}
+          {/* top-24 để hở khoảng nhỏ dưới Header (cũng sticky) khi cuộn. max-h + overflow-y-auto phòng màn hình thấp. */}
           <aside className="w-56 flex-shrink-0 hidden md:block bg-white border border-stone-200 p-4 self-start sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
             <p className="text-xs font-semibold text-stone-500 uppercase mb-3">Danh mục</p>
-            {/* Dropdown TỰ DỰNG thay vì <select> gốc -- hộp xổ ra của <select> do OS/trình duyệt vẽ,
-                không style được màu tô khi hover/chọn (luôn ra xanh mặc định bất kể CSS), lệch hẳn khỏi
-                theme đen-trắng-vàng. Tự dựng bằng button + panel như CategoryMegaMenu/dropdown Tài khoản
-                ở Header thì kiểm soát được toàn bộ màu sắc.
-                Đóng bằng click-ra-ngoài (xem useEffect bên dưới) thay vì onMouseLeave -- mở bằng CLICK
-                thì đóng cũng nên theo click, không phụ thuộc hover: khoảng cách (mt-1) giữa nút và bảng
-                dropdown là vùng KHÔNG thuộc phần tử nào, nếu đóng theo hover thì di chuột qua đúng
-                khoảng đó (lúc chuyển từ nút xuống bảng) sẽ bị coi là "rời" và tự đóng mất. */}
+            {/* Dropdown tự dựng thay vì <select> gốc -- không style được màu hover/chọn của select native.
+                Đóng bằng click-ra-ngoài chứ không phải onMouseLeave, tránh đóng nhầm khi rê chuột qua khoảng cách giữa nút và bảng. */}
             <div className="relative" ref={categoryDropdownRef}>
               <button
                 type="button"
@@ -258,9 +243,7 @@ export default function ShopPage() {
                     <div key={group.categoryId}>
                       {group.children && group.children.length > 0 ? (
                         <>
-                          {/* bg-stone-100 + font đậm hơn (bold) + padding riêng -- trước đây tiêu đề
-                              nhóm chỉ là chữ xám nhạt, nhìn gần giống các mục bấm được bên dưới, dễ
-                              nhầm là 1 lựa chọn. Thêm nền + border-b tách hẳn ra thành dải tiêu đề. */}
+                          {/* Nền + border-b tách tiêu đề nhóm ra khỏi các mục bấm được bên dưới. */}
                           <p className="text-xs font-bold uppercase tracking-wide px-3 py-1.5 mt-1 bg-stone-100 border-b border-stone-200 text-stone-600">
                             {group.categoryName}
                           </p>
@@ -283,8 +266,7 @@ export default function ShopPage() {
                           ))}
                         </>
                       ) : (
-                        // Nhóm KHÔNG có con (hiếm, danh mục gốc không phân cấp) -- vẫn phải chọn được,
-                        // khớp hành vi mega-menu ở Header (CategoryMegaMenu.tsx).
+                        // Nhóm không có con -- vẫn phải chọn được, khớp hành vi mega-menu ở Header.
                         <button
                           type="button"
                           onClick={() => {
@@ -321,8 +303,7 @@ export default function ShopPage() {
 
               <p className="text-xs text-stone-500 mb-1.5">Khoảng giá (đ)</p>
 
-              {/* Chọn nhanh -- đa số khách không cần gõ tay, bấm 1 phát là xong. Vẫn giữ 2 ô nhập tay
-                  bên dưới cho ai cần khoảng giá riêng không khớp mốc có sẵn. */}
+              {/* Mốc giá chọn nhanh -- vẫn giữ 2 ô nhập tay bên dưới cho khoảng giá tuỳ ý. */}
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {PRICE_PRESETS.map((preset) => {
                   const active = minPriceParam === preset.min && maxPriceParam === preset.max
@@ -344,10 +325,7 @@ export default function ShopPage() {
               </div>
 
               <div className="flex items-center gap-2 mb-2">
-                {/* type="text" + inputMode="numeric" thay vì type="number" -- number input không nhận
-                    được dấu chấm ngăn cách nghìn (100.000) mà chỉ nhận chuỗi số thuần, nên không tự
-                    format hiển thị được. Đổi sang text tự parse/format tay còn được luôn 1 lợi ích phụ:
-                    input text không có mũi tên tăng/giảm như number, khỏi cần CSS ẩn riêng. */}
+                {/* type="text" thay vì "number" -- number không tự format được dấu chấm ngăn cách nghìn. */}
                 <input
                   type="text"
                   inputMode="numeric"
@@ -388,8 +366,7 @@ export default function ShopPage() {
               <p className="text-xs text-stone-500 mb-1.5">
                 Màu sắc{colorParam ? `: ${colorParam}` : ''}
               </p>
-              {/* Ô màu thật (swatch) thay vì <select> chỉ đọc tên -- bấm lại đúng màu đang chọn để bỏ lọc
-                  màu đó (khớp hành vi "Tất cả" của select cũ khi chọn option rỗng). */}
+              {/* Bấm lại đúng màu đang chọn để bỏ lọc màu đó. */}
               <div className="flex gap-2 flex-wrap">
                 {FILTER_COLORS.map((c) => {
                   const selected = colorParam === c
@@ -412,11 +389,7 @@ export default function ShopPage() {
           </aside>
 
           <div className="flex-1">
-            {/* loading && products.length === 0 (KHÔNG chỉ "loading") -- y hệt lỗi review trước đó: nếu
-                cứ thấy loading là thay hẳn lưới bằng dòng "Đang tải..." thì MỖI LẦN đổi filter, lưới cũ
-                (đang hiện tốt) bị giật xoá đi rồi mới hiện lưới mới, co-giãn y hệt bug submit đánh giá.
-                Chỉ hiện "Đang tải..." lúc CHƯA có sản phẩm nào (lần đầu vào trang) -- các lần đổi filter
-                sau, giữ nguyên lưới cũ hiển thị cho tới khi có dữ liệu mới, không có khoảng trống ở giữa. */}
+            {/* Chỉ hiện "Đang tải..." khi chưa có sản phẩm nào -- đổi filter sau đó giữ nguyên lưới cũ, tránh giật khi load lại. */}
             {loading && products.length === 0 ? (
               <p className="text-stone-500">Đang tải sản phẩm...</p>
             ) : products.length === 0 ? (

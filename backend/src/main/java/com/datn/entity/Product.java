@@ -11,8 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
-// category_id/status đã có index sẵn (xem schema) -- brand_id thì chưa, dù lọc theo brand cũng là 1
-// trục filter trên trang Shop.
+// category_id/status đã có index, brand_id thì chưa dù cũng là 1 trục lọc ở trang Shop.
 @Table(name = "products", indexes = @Index(name = "idx_products_brand_id", columnList = "brand_id"))
 @Getter
 @Setter

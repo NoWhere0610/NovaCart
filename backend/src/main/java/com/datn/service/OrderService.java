@@ -74,11 +74,8 @@ public class OrderService {
                         "Sản phẩm \"" + variant.getProduct().getProductName() + "\" chỉ còn " + stock + " sản phẩm");
             }
 
-            // SỬA LỖI: KHÔNG trừ kho ở bước đặt hàng nữa. Đơn online chỉ thực sự trừ
-            // kho khi admin XÁC NHẬN đơn (PENDING -> CONFIRMED, xem
-            // AdminOrderService.updateStatus), đúng theo nghiệp vụ đã thống nhất —
-            // tránh giữ kho "ảo" cho các đơn PENDING mà khách/admin có thể huỷ bất
-            // cứ lúc nào. Ở đây chỉ KIỂM TRA còn đủ hàng hay không.
+            // Không trừ kho ở bước đặt hàng -- chỉ trừ khi admin xác nhận (PENDING -> CONFIRMED,
+            // AdminOrderService.updateStatus), tránh giữ kho ảo cho đơn PENDING có thể bị huỷ. Ở đây chỉ kiểm tra đủ hàng.
 
             BigDecimal unitPrice = CartService.effectivePrice(variant.getProduct());
             BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(cartItem.getQuantity()));
@@ -137,9 +134,7 @@ public class OrderService {
             throw ApiException.badRequest("Đơn hàng đang giao hoặc đã hoàn tất, không thể huỷ");
         }
 
-        // SỬA LỖI: chỉ hoàn kho nếu đơn ĐÃ được admin xác nhận (CONFIRMED) — vì
-        // chỉ lúc đó kho mới thực sự bị trừ (xem AdminOrderService.updateStatus).
-        // Đơn còn PENDING chưa hề đụng tới kho nên huỷ không cần hoàn gì cả.
+        // Chỉ hoàn kho nếu đơn đã CONFIRMED (lúc đó kho mới thực sự bị trừ) -- PENDING chưa đụng kho.
         if (order.getStatus() == Order.Status.CONFIRMED) {
             for (OrderItem item : order.getItems()) {
                 ProductVariant variant = item.getVariant();
@@ -155,10 +150,7 @@ public class OrderService {
         return toResponse(orderRepository.save(order), true);
     }
 
-    /**
-     * Khách bấm "Hoàn thành" ở tab Cần đánh giá (sau khi đã đánh giá xong, hoặc
-     * chủ động bỏ qua đánh giá) — chỉ cho phép chuyển từ DELIVERED -> COMPLETED.
-     */
+    /** Khách bấm "Hoàn thành" -- chỉ cho phép chuyển DELIVERED -> COMPLETED. */
     @Transactional
     public OrderResponse completeMyOrder(Long userId, Long orderId) {
         Order order = orderRepository.findByOrderIdAndUser_UserId(orderId, userId)
@@ -172,11 +164,7 @@ public class OrderService {
         return toResponse(orderRepository.save(order), true);
     }
 
-    /**
-     * Khách bấm "Yêu cầu trả hàng/hoàn tiền" — chỉ áp dụng khi đơn đã giao tới
-     * tay khách (DELIVERED - đang chờ đánh giá) hoặc đã hoàn thành (COMPLETED).
-     * Đơn chuyển sang RETURN_REQUESTED và chờ admin duyệt (xem AdminOrderService).
-     */
+    /** Yêu cầu trả hàng -- áp dụng khi đơn DELIVERED hoặc COMPLETED, chuyển sang RETURN_REQUESTED chờ admin duyệt. */
     @Transactional
     public OrderResponse requestReturn(Long userId, Long orderId, RequestReturnRequest request) {
         Order order = orderRepository.findByOrderIdAndUser_UserId(orderId, userId)
@@ -255,10 +243,7 @@ public class OrderService {
                 .build();
     }
 
-    /**
-     * Lấy link chuyển hướng sang VNPay để thanh toán 1 đơn đã đặt trước đó
-     * (paymentMethod = VNPAY, còn UNPAID). Đơn phải thuộc đúng người gọi API.
-     */
+    /** Lấy link thanh toán VNPay cho đơn đã đặt (paymentMethod=VNPAY, còn UNPAID), phải thuộc đúng người gọi. */
     public String getVnpayPaymentUrl(Long userId, Long orderId, jakarta.servlet.http.HttpServletRequest request) {
         Order order = orderRepository.findByOrderIdAndUser_UserId(orderId, userId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
@@ -272,10 +257,7 @@ public class OrderService {
         return vnPayService.buildPaymentUrl(order, request);
     }
 
-    /**
-     * Xử lý VNPay redirect khách VỀ sau khi thanh toán. Chỉ cập nhật
-     * paymentStatus khi chữ ký hợp lệ VÀ vnp_ResponseCode = "00" (thành công).
-     */
+    /** Xử lý VNPay redirect sau thanh toán -- chỉ cập nhật paymentStatus khi chữ ký hợp lệ và mã trả về là "00". */
     @Transactional
     public boolean handleVnpayReturn(java.util.Map<String, String> params) {
         if (!vnPayService.verifyReturn(params)) {

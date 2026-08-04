@@ -64,15 +64,13 @@ public class HomeController {
         return homeService.searchProducts(keyword, pageable);
     }
 
-    // "Đã xem gần đây" -- FE đọc danh sách productId từ localStorage rồi gọi 1 lần lấy đủ thông tin
-    // hiển thị, thay vì gọi GET /products/{id} lặp lại N lần.
+    // "Đã xem gần đây" -- FE gọi 1 lần lấy đủ thông tin thay vì gọi lặp GET /products/{id} N lần.
     @GetMapping("/products/by-ids")
     public List<ProductResponse> getProductsByIds(@RequestParam List<Long> ids) {
         return homeService.getProductsByIds(ids);
     }
 
-    // Trang Shop: hợp nhất lọc danh mục/từ khoá/khoảng giá/size/màu vào 1 endpoint duy nhất -- mọi tham
-    // số đều optional, không truyền = không lọc theo tiêu chí đó.
+    // Trang Shop: gộp lọc danh mục/từ khoá/giá/size/màu vào 1 endpoint, mọi tham số đều optional.
     @GetMapping("/products/filter")
     public PageResponse<ProductResponse> filterProducts(
             @RequestParam(required = false) Integer categoryId,

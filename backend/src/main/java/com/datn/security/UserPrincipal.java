@@ -11,13 +11,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Adapter giữa entity {@link User} (mô hình dữ liệu của mình) và
- * {@link UserDetails} (interface mà Spring Security bắt buộc phải có để
- * biết "ai đang đăng nhập, quyền gì, tài khoản có bị khoá không...").
- *
- * Tách riêng ra thay vì cho User implements UserDetails trực tiếp để:
- *  - Entity không bị phụ thuộc vào Spring Security (dễ test/tái sử dụng hơn).
- *  - Không lộ toàn bộ field của User (vd password) ra ngoài 1 cách khó kiểm soát.
+ * Adapter giữa {@link User} và {@link UserDetails} (Spring Security yêu cầu).
+ * Tách riêng để entity không phụ thuộc Spring Security và không lộ field nhạy cảm ra ngoài.
  */
 @Getter
 public class UserPrincipal implements UserDetails {

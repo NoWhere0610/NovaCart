@@ -15,14 +15,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Thống kê doanh thu / đơn hàng / sản phẩm bán chạy, gộp chung cả đơn ONLINE
- * và POS (Order.orderType) vì cả 2 đều là 1 bảng orders duy nhất.
- *
- * Quy ước tính doanh thu: chỉ tính đơn COMPLETED (đã bán/giao xong, khách đã
- * xác nhận hoặc đã đánh giá). Đơn RETURNED bị trừ lại đúng giá trị đơn đó
- * khỏi doanh thu (đã bán rồi nhưng khách trả lại). Đơn PENDING/CONFIRMED/
- * SHIPPING/DELIVERED/RETURN_REQUESTED/CANCELLED không tính vào doanh thu vì
- * chưa phải giao dịch đã hoàn tất chắc chắn.
+ * Thống kê doanh thu/đơn hàng/sản phẩm bán chạy, gộp cả ONLINE và POS (cùng bảng orders).
+ * Doanh thu chỉ tính đơn COMPLETED; RETURNED bị trừ lại; các trạng thái khác không tính.
  */
 @Service
 @RequiredArgsConstructor

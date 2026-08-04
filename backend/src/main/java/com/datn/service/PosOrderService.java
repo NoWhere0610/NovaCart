@@ -22,15 +22,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Bán hàng tại quầy (POS). Khác với đơn ONLINE (chỉ trừ kho lúc admin xác
- * nhận PENDING -> CONFIRMED), đơn POS TRỪ KHO NGAY khi nhân viên thêm sản
- * phẩm vào hoá đơn — vì quầy bán trực tiếp, sản phẩm đã thực sự rời khỏi kho
- * ngay lúc đó.
+ * Bán hàng tại quầy (POS). Khác đơn ONLINE (trừ kho lúc admin xác nhận),
+ * đơn POS trừ kho ngay khi thêm sản phẩm vào hoá đơn.
  *
- * 1 hoá đơn POS chỉ dùng 3 trạng thái có sẵn trong Order.Status:
- *  - PENDING   : hoá đơn CHỜ — đang thêm/bớt sản phẩm, có thể lưu dở quay lại sau
- *  - COMPLETED : đã thanh toán xong tại quầy (checkout())
- *  - CANCELLED : huỷ hoá đơn chờ (hoàn kho + hoàn lượt dùng voucher nếu có)
+ * Dùng 3 trạng thái của Order.Status: PENDING (đang tạo), COMPLETED (đã thanh toán),
+ * CANCELLED (đã huỷ, hoàn kho + hoàn voucher).
  */
 @Service
 @RequiredArgsConstructor

@@ -30,8 +30,7 @@ public class AddressService {
         address.setUser(userRef(userId));
         applyRequest(address, request);
 
-        // Nếu đây là địa chỉ ĐẦU TIÊN của user -> tự động set làm mặc định luôn,
-        // để khi checkout luôn có sẵn 1 địa chỉ default cho user mới
+        // Địa chỉ đầu tiên của user -> tự động set làm mặc định.
         boolean isFirstAddress = addressRepository.findByUser_UserId(userId).isEmpty();
         if (isFirstAddress || Boolean.TRUE.equals(request.getIsDefault())) {
             unsetCurrentDefault(userId);
@@ -62,8 +61,7 @@ public class AddressService {
 
     // ----- helper nội bộ -----
 
-    /** Kiểm tra địa chỉ có tồn tại VÀ đúng là của user đang đăng nhập hay không
-     *  (chặn user A sửa/xoá địa chỉ của user B chỉ bằng cách đổi addressId trên URL). */
+    /** Kiểm tra địa chỉ tồn tại và thuộc đúng user đang đăng nhập, chặn sửa/xoá địa chỉ người khác. */
     private Address getOwnedAddressOrThrow(Long userId, Long addressId) {
         Address address = addressRepository.findById(addressId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy địa chỉ"));

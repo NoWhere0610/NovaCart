@@ -1,8 +1,8 @@
 -- =====================================================
 -- DATABASE: Website bán quần áo nam (JavaWeb + SQL + React)
 -- DBMS: Microsoft SQL Server (T-SQL)
--- Bản đầy đủ cho TOÀN BỘ dự án (Sprint 1: Auth/Address,
--- Sprint 2: Cart/Order, Sprint 3: Admin, Sprint 4: Review/Voucher)
+-- Xuất trực tiếp từ database dev đang chạy thật (mssql-scripter) -- khớp chính xác
+-- toàn bộ danh mục/sản phẩm/ảnh/biến thể hiện có, thay cho bản sinh dữ liệu mẫu cũ.
 -- =====================================================
 
 IF DB_ID('menswear_shop') IS NOT NULL
@@ -18,1374 +18,3806 @@ GO
 USE menswear_shop;
 GO
 
--- =====================================================
--- 1. PHÂN QUYỀN (ROLE) + TÀI KHOẢN (USER)
--- =====================================================
-
-CREATE TABLE roles (
-    role_id     INT IDENTITY(1,1) PRIMARY KEY,
-    role_name   NVARCHAR(50) NOT NULL UNIQUE   -- ADMIN, CUSTOMER, STAFF...
-);
+SET ANSI_NULLS ON
 GO
-
-INSERT INTO roles (role_name) VALUES (N'ADMIN'), (N'CUSTOMER'), (N'STAFF');
+SET QUOTED_IDENTIFIER ON
 GO
-
-CREATE TABLE users (
-    user_id         BIGINT IDENTITY(1,1) PRIMARY KEY,
-    username        NVARCHAR(50)  NOT NULL UNIQUE,
-    password        NVARCHAR(255) NOT NULL,        -- lưu hash (BCrypt)
-    email           NVARCHAR(100) NOT NULL UNIQUE,
-    full_name       NVARCHAR(100),
-    phone           NVARCHAR(20),
-    avatar_url      NVARCHAR(255),
-    is_active       BIT DEFAULT 1,                  -- khóa/mở tài khoản
-    created_at      DATETIME2 DEFAULT SYSDATETIME(),
-    updated_at      DATETIME2 DEFAULT SYSDATETIME()
-);
+CREATE TABLE [dbo].[addresses](
+	[address_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[receiver_name] [nvarchar](100) NOT NULL,
+	[phone] [nvarchar](20) NOT NULL,
+	[province] [nvarchar](100) NULL,
+	[district] [nvarchar](100) NULL,
+	[ward] [nvarchar](100) NULL,
+	[detail_address] [nvarchar](255) NULL,
+	[is_default] [bit] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[address_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- Một user có thể có nhiều role (thiết kế linh hoạt, dù thường chỉ 1)
-CREATE TABLE user_roles (
-    user_id     BIGINT NOT NULL,
-    role_id     INT NOT NULL,
-    PRIMARY KEY (user_id, role_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (role_id) REFERENCES roles(role_id) ON DELETE CASCADE
-);
+/****** Object:  Table [dbo].[brands]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- Địa chỉ giao hàng của khách hàng (1 user có nhiều địa chỉ)
-CREATE TABLE addresses (
-    address_id      BIGINT IDENTITY(1,1) PRIMARY KEY,
-    user_id         BIGINT NOT NULL,
-    receiver_name   NVARCHAR(100) NOT NULL,
-    phone           NVARCHAR(20) NOT NULL,
-    province        NVARCHAR(100),
-    district        NVARCHAR(100),
-    ward            NVARCHAR(100),
-    detail_address  NVARCHAR(255),
-    is_default      BIT DEFAULT 0,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- =====================================================
--- 2. LOẠI QUẦN ÁO (CATEGORY) - hỗ trợ danh mục cha/con
--- =====================================================
-
-CREATE TABLE categories (
-    category_id     INT IDENTITY(1,1) PRIMARY KEY,
-    category_name   NVARCHAR(100) NOT NULL,        -- Áo thun, Quần jean, Áo sơ mi...
-    parent_id       INT NULL,                       -- danh mục cha (NULL nếu là gốc)
-    slug            NVARCHAR(150) UNIQUE,
-    description     NVARCHAR(MAX),
-    -- Mới thêm: ảnh đại diện danh mục (dùng cho CategoriesPage + mega menu ở trang chủ)
-    image_url       NVARCHAR(255) NULL,
-    is_active       BIT DEFAULT 1,
-    FOREIGN KEY (parent_id) REFERENCES categories(category_id)
-);
+CREATE TABLE [dbo].[brands](
+	[brand_id] [int] IDENTITY(1,1) NOT NULL,
+	[brand_name] [nvarchar](100) NOT NULL,
+	[logo_url] [nvarchar](255) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[brand_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- =====================================================
--- 3. THƯƠNG HIỆU (gợi ý thêm - nhiều shop quần áo cần)
--- =====================================================
-
-CREATE TABLE brands (
-    brand_id    INT IDENTITY(1,1) PRIMARY KEY,
-    brand_name  NVARCHAR(100) NOT NULL UNIQUE,
-    logo_url    NVARCHAR(255)
-);
+/****** Object:  Table [dbo].[cart_items]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- =====================================================
--- 4. SẢN PHẨM (PRODUCT)
--- =====================================================
-
-CREATE TABLE products (
-    product_id      BIGINT IDENTITY(1,1) PRIMARY KEY,
-    product_name    NVARCHAR(200) NOT NULL,
-    slug            NVARCHAR(220) UNIQUE,
-    description     NVARCHAR(MAX),
-    category_id     INT NOT NULL,
-    brand_id        INT NULL,
-    price           DECIMAL(12,2) NOT NULL,         -- giá gốc
-    sale_price      DECIMAL(12,2) NULL,             -- giá khuyến mãi (nếu có)
-    material        NVARCHAR(100),                  -- chất liệu: cotton, kaki...
-    status          NVARCHAR(20) DEFAULT 'ACTIVE'
-                        CHECK (status IN ('ACTIVE','INACTIVE','OUT_OF_STOCK')),
-    created_at      DATETIME2 DEFAULT SYSDATETIME(),
-    updated_at      DATETIME2 DEFAULT SYSDATETIME(),
-    created_by      BIGINT NULL,                    -- admin nào tạo sản phẩm
-    FOREIGN KEY (category_id) REFERENCES categories(category_id),
-    FOREIGN KEY (brand_id) REFERENCES brands(brand_id),
-    FOREIGN KEY (created_by) REFERENCES users(user_id)
-);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- Ảnh sản phẩm: 1 sản phẩm có nhiều ảnh
-CREATE TABLE product_images (
-    image_id        BIGINT IDENTITY(1,1) PRIMARY KEY,
-    product_id      BIGINT NOT NULL,
-    image_url       NVARCHAR(255) NOT NULL,
-    is_thumbnail    BIT DEFAULT 0,                  -- ảnh đại diện hiển thị ở danh sách
-    display_order   INT DEFAULT 0,
-    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
-);
+CREATE TABLE [dbo].[cart_items](
+	[cart_item_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[cart_id] [bigint] NOT NULL,
+	[variant_id] [bigint] NOT NULL,
+	[quantity] [int] NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[cart_item_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- Biến thể sản phẩm: size + màu + số lượng tồn kho riêng (gợi ý quan trọng cho shop quần áo)
-CREATE TABLE product_variants (
-    variant_id      BIGINT IDENTITY(1,1) PRIMARY KEY,
-    product_id      BIGINT NOT NULL,
-    size            NVARCHAR(20) NOT NULL,          -- S, M, L, XL, XXL...
-    color           NVARCHAR(50) NOT NULL,           -- Đen, Trắng, Xanh...
-    sku             NVARCHAR(100) UNIQUE,            -- mã quản lý kho
-    stock_quantity  INT DEFAULT 0,
-    CONSTRAINT uq_product_size_color UNIQUE (product_id, size, color),
-    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
-);
+/****** Object:  Table [dbo].[carts]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- =====================================================
--- 5. GIỎ HÀNG (CART)
--- =====================================================
-
-CREATE TABLE carts (
-    cart_id     BIGINT IDENTITY(1,1) PRIMARY KEY,
-    user_id     BIGINT NOT NULL UNIQUE,
-    updated_at  DATETIME2 DEFAULT SYSDATETIME(),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-);
+SET QUOTED_IDENTIFIER ON
 GO
-
-CREATE TABLE cart_items (
-    cart_item_id    BIGINT IDENTITY(1,1) PRIMARY KEY,
-    cart_id         BIGINT NOT NULL,
-    variant_id      BIGINT NOT NULL,
-    quantity        INT NOT NULL DEFAULT 1,
-    FOREIGN KEY (cart_id) REFERENCES carts(cart_id) ON DELETE CASCADE,
-    FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id) ON DELETE CASCADE
-);
+CREATE TABLE [dbo].[carts](
+	[cart_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[updated_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[cart_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- =====================================================
--- 6. ĐƠN HÀNG (ORDER)
--- =====================================================
-
-CREATE TABLE orders (
-    order_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
-    user_id             BIGINT NOT NULL,
-    address_id          BIGINT NULL,
-    order_code          NVARCHAR(50) UNIQUE,
-    total_amount        DECIMAL(14,2) NOT NULL,
-    -- Sprint 4: chi tiết áp mã giảm giá (mới thêm so với bản gốc)
-    subtotal_amount     DECIMAL(14,2) NULL,                  -- tổng tiền hàng TRƯỚC khi giảm giá
-    discount_amount     DECIMAL(14,2) NOT NULL DEFAULT 0,    -- số tiền đã giảm nhờ voucher
-    voucher_code        NVARCHAR(50) NULL,                   -- snapshot mã đã dùng
-    status              NVARCHAR(20) DEFAULT 'PENDING'
-                            CHECK (status IN ('PENDING','CONFIRMED','SHIPPING','COMPLETED','CANCELLED')),
-    payment_method      NVARCHAR(20) DEFAULT 'COD'
-                            CHECK (payment_method IN ('COD','BANK_TRANSFER','MOMO','VNPAY')),
-    payment_status      NVARCHAR(20) DEFAULT 'UNPAID'
-                            CHECK (payment_status IN ('UNPAID','PAID','REFUNDED')),
-    note                NVARCHAR(255),
-    created_at          DATETIME2 DEFAULT SYSDATETIME(),
-    updated_at          DATETIME2 DEFAULT SYSDATETIME(),
-    FOREIGN KEY (user_id) REFERENCES users(user_id),
-    FOREIGN KEY (address_id) REFERENCES addresses(address_id)
-);
+/****** Object:  Table [dbo].[categories]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
-CREATE TABLE order_items (
-    order_item_id   BIGINT IDENTITY(1,1) PRIMARY KEY,
-    order_id        BIGINT NOT NULL,
-    variant_id      BIGINT NOT NULL,
-    product_name    NVARCHAR(200) NOT NULL,  -- lưu lại tên tại thời điểm mua
-    size            NVARCHAR(20),
-    color           NVARCHAR(50),
-    unit_price      DECIMAL(12,2) NOT NULL,  -- giá tại thời điểm mua
-    quantity        INT NOT NULL,
-    -- Mới thêm: OrderItem.java (Sprint 2) tính subtotal = unit_price * quantity
-    -- ngay lúc đặt hàng rồi lưu lại (không tính động mỗi lần xem), nên bảng cần cột này
-    subtotal        DECIMAL(12,2) NOT NULL DEFAULT 0,
-    FOREIGN KEY (order_id) REFERENCES orders(order_id) ON DELETE CASCADE,
-    FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id)
-);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- =====================================================
--- 7. ĐÁNH GIÁ SẢN PHẨM (REVIEW)
--- =====================================================
-
-CREATE TABLE reviews (
-    review_id   BIGINT IDENTITY(1,1) PRIMARY KEY,
-    product_id  BIGINT NOT NULL,
-    user_id     BIGINT NOT NULL,
-    rating      TINYINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
-    comment     NVARCHAR(MAX),
-    created_at  DATETIME2 DEFAULT SYSDATETIME(),
-    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    -- Mới thêm: chặn 1 user đánh giá trùng 1 sản phẩm ngay ở tầng DB
-    -- (trước đó chỉ được chặn ở tầng code, không an toàn tuyệt đối)
-    CONSTRAINT uq_review_user_product UNIQUE (user_id, product_id)
-);
+CREATE TABLE [dbo].[categories](
+	[category_id] [int] IDENTITY(1,1) NOT NULL,
+	[category_name] [nvarchar](100) NOT NULL,
+	[parent_id] [int] NULL,
+	[slug] [nvarchar](150) NULL,
+	[description] [nvarchar](max) NULL,
+	[is_active] [bit] NULL,
+	[image_url] [varchar](255) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[category_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
-
--- =====================================================
--- 8. MÃ GIẢM GIÁ (VOUCHER)
--- =====================================================
-
-CREATE TABLE vouchers (
-    voucher_id          INT IDENTITY(1,1) PRIMARY KEY,
-    code                NVARCHAR(50) UNIQUE NOT NULL,
-    discount_type       NVARCHAR(10) NOT NULL CHECK (discount_type IN ('PERCENT','AMOUNT')),
-    discount_value      DECIMAL(12,2) NOT NULL,
-    min_order_value     DECIMAL(12,2) DEFAULT 0,
-    -- Sprint 4: 2 cột dưới đây mới thêm so với bản gốc
-    max_discount_amount DECIMAL(12,2) NULL,          -- chỉ dùng cho loại PERCENT, chặn giảm quá nhiều
-    used_count          INT NOT NULL DEFAULT 0,      -- đếm số lượt đã dùng, so sánh với usage_limit
-    start_date          DATE,
-    end_date            DATE,
-    usage_limit         INT DEFAULT 0,
-    is_active           BIT DEFAULT 1
-);
+/****** Object:  Table [dbo].[order_items]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- =====================================================
--- INDEX để tăng tốc truy vấn thường dùng
--- =====================================================
-
-CREATE INDEX idx_products_category ON products(category_id);
-CREATE INDEX idx_products_status   ON products(status);
-CREATE INDEX idx_variants_product  ON product_variants(product_id);
-CREATE INDEX idx_orders_user       ON orders(user_id);
-CREATE INDEX idx_orders_status     ON orders(status);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- =====================================================
--- DỮ LIỆU MẪU (SEED DATA)
--- =====================================================
-
--- Admin mặc định — mật khẩu: Admin@123
--- (hash BCrypt THẬT tạo bằng bcrypt rounds=10, KHÔNG còn là chuỗi placeholder
--- giả '$2a$10$hashedpasswordplaceholder' như bản gốc — chuỗi đó không đăng
--- nhập được vì không phải hash hợp lệ)
-INSERT INTO users (username, password, email, full_name, is_active)
-VALUES (N'admin', N'$2b$10$PhCqGHhTMbwMYDVpp3AegO48UpBVOo8u69UdfhCaVnR/0kTKxXkIK', N'admin@menswear.com', N'Quản trị viên', 1);
+CREATE TABLE [dbo].[order_items](
+	[order_item_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[order_id] [bigint] NOT NULL,
+	[variant_id] [bigint] NOT NULL,
+	[product_name] [nvarchar](200) NOT NULL,
+	[size] [nvarchar](20) NULL,
+	[color] [nvarchar](50) NULL,
+	[unit_price] [decimal](12, 2) NOT NULL,
+	[quantity] [int] NOT NULL,
+	[subtotal] [decimal](12, 2) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[order_item_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
-INSERT INTO user_roles (user_id, role_id)
-SELECT user_id, role_id FROM users, roles WHERE username = N'admin' AND role_name = N'ADMIN';
+/****** Object:  Table [dbo].[orders]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- Thương hiệu mẫu
-INSERT INTO brands (brand_name) VALUES (N'Local Brand'), (N'No Brand');
+SET QUOTED_IDENTIFIER ON
 GO
-
--- Sản phẩm mẫu: danh mục 2 cấp (Áo / Quần / Đồ mặc trong / Suit & Blazer / Bộ đồ)
--- + hàng trăm sản phẩm mẫu để trang chủ, shop, mega-menu có dữ liệu thật ngay khi chạy script.
--- =====================================================
--- DANH MỤC + SẢN PHẨM MỞ RỘNG (sinh tự động — xem gen_seed.py)
--- =====================================================
-
--- ---- Danh mục cấp 1 (nhóm cha) ----
-INSERT INTO categories (category_name, slug, image_url, is_active) VALUES
-(N'Áo', N'ao', N'https://picsum.photos/seed/cat-ao/700/900', 1),
-(N'Quần', N'quan', N'https://picsum.photos/seed/cat-quan/700/900', 1),
-(N'Đồ mặc trong', N'do-mac-trong', N'https://picsum.photos/seed/cat-do-mac-trong/700/900', 1),
-(N'Suit & Blazer', N'suit-blazer', N'https://picsum.photos/seed/cat-suit-blazer/700/900', 1),
-(N'Bộ đồ', N'bo-do', N'https://picsum.photos/seed/cat-bo-do/700/900', 1);
+CREATE TABLE [dbo].[orders](
+	[order_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NULL,
+	[address_id] [bigint] NULL,
+	[order_code] [nvarchar](50) NULL,
+	[total_amount] [numeric](12, 2) NULL,
+	[subtotal_amount] [numeric](12, 2) NULL,
+	[discount_amount] [decimal](14, 2) NOT NULL,
+	[voucher_code] [nvarchar](50) NULL,
+	[status] [nvarchar](20) NULL,
+	[payment_method] [nvarchar](20) NULL,
+	[payment_status] [nvarchar](20) NULL,
+	[note] [varchar](500) NULL,
+	[created_at] [datetime2](7) NULL,
+	[updated_at] [datetime2](7) NULL,
+	[return_reason] [nvarchar](500) NULL,
+	[order_type] [nvarchar](10) NOT NULL,
+	[cashier_id] [bigint] NULL,
+	[shipping_fee] [decimal](12, 2) NOT NULL,
+	[phone] [varchar](20) NULL,
+	[receiver_name] [varchar](100) NULL,
+	[shipping_address] [varchar](500) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[order_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ---- Danh mục con của nhóm 'ao' ----
-DECLARE @parent_ao INT = (SELECT category_id FROM categories WHERE slug = N'ao');
-INSERT INTO categories (category_name, slug, parent_id, image_url, is_active) VALUES
-(N'Áo thun', N'ao-thun', @parent_ao, N'https://picsum.photos/seed/cat-ao-thun/700/900', 1),
-(N'Áo sơ mi', N'ao-so-mi', @parent_ao, N'https://picsum.photos/seed/cat-ao-so-mi/700/900', 1),
-(N'Áo khoác', N'ao-khoac', @parent_ao, N'https://picsum.photos/seed/cat-ao-khoac/700/900', 1),
-(N'Áo dài', N'ao-dai', @parent_ao, N'https://picsum.photos/seed/cat-ao-dai/700/900', 1),
-(N'Áo tanktop', N'ao-tanktop', @parent_ao, N'https://picsum.photos/seed/cat-ao-tanktop/700/900', 1),
-(N'Áo polo', N'ao-polo', @parent_ao, N'https://picsum.photos/seed/cat-ao-polo/700/900', 1);
+/****** Object:  Table [dbo].[product_images]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ---- Danh mục con của nhóm 'quan' ----
-DECLARE @parent_quan INT = (SELECT category_id FROM categories WHERE slug = N'quan');
-INSERT INTO categories (category_name, slug, parent_id, image_url, is_active) VALUES
-(N'Quần tây', N'quan-tay', @parent_quan, N'https://picsum.photos/seed/cat-quan-tay/700/900', 1),
-(N'Quần jeans', N'quan-jeans', @parent_quan, N'https://picsum.photos/seed/cat-quan-jeans/700/900', 1),
-(N'Quần short', N'quan-short', @parent_quan, N'https://picsum.photos/seed/cat-quan-short/700/900', 1),
-(N'Quần thể thao', N'quan-the-thao', @parent_quan, N'https://picsum.photos/seed/cat-quan-the-thao/700/900', 1),
-(N'Quần slim fit', N'quan-slim-fit', @parent_quan, N'https://picsum.photos/seed/cat-quan-slim-fit/700/900', 1),
-(N'Quần kaki', N'quan-kaki', @parent_quan, N'https://picsum.photos/seed/cat-quan-kaki/700/900', 1),
-(N'Quần âu', N'quan-au', @parent_quan, N'https://picsum.photos/seed/cat-quan-au/700/900', 1),
-(N'Quần regular fit', N'quan-regular-fit', @parent_quan, N'https://picsum.photos/seed/cat-quan-regular-fit/700/900', 1),
-(N'Quần fiero', N'quan-fiero', @parent_quan, N'https://picsum.photos/seed/cat-quan-fiero/700/900', 1),
-(N'Quần cropped', N'quan-cropped', @parent_quan, N'https://picsum.photos/seed/cat-quan-cropped/700/900', 1);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ---- Danh mục con của nhóm 'do-mac-trong' ----
-DECLARE @parent_do_mac_trong INT = (SELECT category_id FROM categories WHERE slug = N'do-mac-trong');
-INSERT INTO categories (category_name, slug, parent_id, image_url, is_active) VALUES
-(N'Quần boxer', N'quan-boxer', @parent_do_mac_trong, N'https://picsum.photos/seed/cat-quan-boxer/700/900', 1),
-(N'Áo lót', N'ao-lot', @parent_do_mac_trong, N'https://picsum.photos/seed/cat-ao-lot/700/900', 1),
-(N'Quần brief', N'quan-brief', @parent_do_mac_trong, N'https://picsum.photos/seed/cat-quan-brief/700/900', 1),
-(N'Đồ giữ nhiệt', N'do-giu-nhiet', @parent_do_mac_trong, N'https://picsum.photos/seed/cat-do-giu-nhiet/700/900', 1);
+CREATE TABLE [dbo].[product_images](
+	[image_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[product_id] [bigint] NOT NULL,
+	[image_url] [nvarchar](255) NOT NULL,
+	[is_thumbnail] [bit] NULL,
+	[display_order] [int] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[image_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ---- Danh mục con của nhóm 'suit-blazer' ----
-DECLARE @parent_suit_blazer INT = (SELECT category_id FROM categories WHERE slug = N'suit-blazer');
-INSERT INTO categories (category_name, slug, parent_id, image_url, is_active) VALUES
-(N'Bộ suit', N'bo-suit', @parent_suit_blazer, N'https://picsum.photos/seed/cat-bo-suit/700/900', 1),
-(N'Blazer', N'blazer', @parent_suit_blazer, N'https://picsum.photos/seed/cat-blazer/700/900', 1);
+/****** Object:  Table [dbo].[product_variants]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- =====================================================
--- SẢN PHẨM THEO TỪNG DANH MỤC CON
--- =====================================================
-
--- ===== Áo thun (ao-thun) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_thun INT = (SELECT category_id FROM categories WHERE slug = N'ao-thun');
-DECLARE @new_ao_thun TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_thun(product_id, slug)
-VALUES
-(N'Áo thun form rộng oversize - Cotton 4 chiều', N'ao-thun-form-rong-oversize-cotton-4-chieu-01', N'Áo thun form rộng oversize - Cotton 4 chiều, màu xanh navy, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 149000, NULL, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo thun cổ tim - Cotton Compact', N'ao-thun-co-tim-cotton-compact-02', N'Áo thun cổ tim - Cotton Compact, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton compact, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 169000, NULL, N'Cotton Compact', N'ACTIVE'),
-(N'Áo thun in họa tiết - Cotton 100%', N'ao-thun-in-hoa-tiet-cotton-100-03', N'Áo thun in họa tiết - Cotton 100%, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 189000, 155000, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun form rộng oversize - Cotton Compact', N'ao-thun-form-rong-oversize-cotton-compact-04', N'Áo thun form rộng oversize - Cotton Compact, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton compact, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 209000, NULL, N'Cotton Compact', N'ACTIVE'),
-(N'Áo thun form ôm - Polyester', N'ao-thun-form-om-polyester-05', N'Áo thun form ôm - Polyester, màu đen, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 229000, NULL, N'Polyester', N'ACTIVE'),
-(N'Áo thun phối màu tay - Cotton lạnh', N'ao-thun-phoi-mau-tay-cotton-lanh-06', N'Áo thun phối màu tay - Cotton lạnh, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 259000, 212000, N'Cotton lạnh', N'ACTIVE'),
-(N'Áo thun form rộng oversize - Cotton 100%', N'ao-thun-form-rong-oversize-cotton-100-07', N'Áo thun form rộng oversize - Cotton 100%, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 279000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun form rộng oversize - Polyester', N'ao-thun-form-rong-oversize-polyester-08', N'Áo thun form rộng oversize - Polyester, màu be, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 299000, NULL, N'Polyester', N'ACTIVE'),
-(N'Áo thun tay lỡ - Cotton 100%', N'ao-thun-tay-lo-cotton-100-09', N'Áo thun tay lỡ - Cotton 100%, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 349000, 286000, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun sọc ngang - Cotton 100%', N'ao-thun-soc-ngang-cotton-100-10', N'Áo thun sọc ngang - Cotton 100%, màu trắng, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 129000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun cổ tròn - Cotton 100%', N'ao-thun-co-tron-cotton-100-11', N'Áo thun cổ tròn - Cotton 100%, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 149000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun cổ tròn - Polyester', N'ao-thun-co-tron-polyester-12', N'Áo thun cổ tròn - Polyester, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 169000, 139000, N'Polyester', N'ACTIVE'),
-(N'Áo thun tay lỡ - Cotton Compact', N'ao-thun-tay-lo-cotton-compact-13', N'Áo thun tay lỡ - Cotton Compact, màu xám, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton compact, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 189000, NULL, N'Cotton Compact', N'ACTIVE'),
-(N'Áo thun form ôm - Cotton 100%', N'ao-thun-form-om-cotton-100-14', N'Áo thun form ôm - Cotton 100%, màu be, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 209000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun cổ tròn - Cotton 100%', N'ao-thun-co-tron-cotton-100-15', N'Áo thun cổ tròn - Cotton 100%, màu đen, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 229000, 188000, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun cổ tròn - Cotton 4 chiều', N'ao-thun-co-tron-cotton-4-chieu-16', N'Áo thun cổ tròn - Cotton 4 chiều, màu đen, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 259000, NULL, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo thun in họa tiết - Cotton Compact', N'ao-thun-in-hoa-tiet-cotton-compact-17', N'Áo thun in họa tiết - Cotton Compact, màu xanh rêu, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton compact, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 279000, NULL, N'Cotton Compact', N'ACTIVE'),
-(N'Áo thun form rộng oversize - Polyester', N'ao-thun-form-rong-oversize-polyester-18', N'Áo thun form rộng oversize - Polyester, màu đen, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 299000, 245000, N'Polyester', N'ACTIVE'),
-(N'Áo thun cổ tròn - Cotton Compact', N'ao-thun-co-tron-cotton-compact-19', N'Áo thun cổ tròn - Cotton Compact, màu xám, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton compact, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 349000, NULL, N'Cotton Compact', N'ACTIVE'),
-(N'Áo thun trơn basic - Cotton Compact', N'ao-thun-tron-basic-cotton-compact-20', N'Áo thun trơn basic - Cotton Compact, màu xám, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton compact, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 129000, NULL, N'Cotton Compact', N'ACTIVE'),
-(N'Áo thun cổ tim - Cotton 4 chiều', N'ao-thun-co-tim-cotton-4-chieu-21', N'Áo thun cổ tim - Cotton 4 chiều, màu đen, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 149000, 122000, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo thun tay lỡ - Cotton 100%', N'ao-thun-tay-lo-cotton-100-22', N'Áo thun tay lỡ - Cotton 100%, màu trắng, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 169000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun trơn basic - Cotton 4 chiều', N'ao-thun-tron-basic-cotton-4-chieu-23', N'Áo thun trơn basic - Cotton 4 chiều, màu trắng, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 189000, NULL, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo thun cổ tim - Polyester', N'ao-thun-co-tim-polyester-24', N'Áo thun cổ tim - Polyester, màu xanh navy, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 209000, 171000, N'Polyester', N'ACTIVE'),
-(N'Áo thun in họa tiết - Cotton 100%', N'ao-thun-in-hoa-tiet-cotton-100-25', N'Áo thun in họa tiết - Cotton 100%, màu xám, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 229000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun form ôm - Cotton 100%', N'ao-thun-form-om-cotton-100-26', N'Áo thun form ôm - Cotton 100%, màu xám, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 259000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun form ôm - Cotton 100%', N'ao-thun-form-om-cotton-100-27', N'Áo thun form ôm - Cotton 100%, màu trắng, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 279000, 229000, N'Cotton 100%', N'ACTIVE'),
-(N'Áo thun form ôm - Cotton 4 chiều', N'ao-thun-form-om-cotton-4-chieu-28', N'Áo thun form ôm - Cotton 4 chiều, màu xanh navy, phù hợp mặc hằng ngày, đi chơi, đi học. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_thun, @brandLocal, 299000, NULL, N'Cotton 4 chiều', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_thun
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_thun;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_thun n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Trắng'), (N'L', N'Đen'), (N'XL', N'Trắng')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Áo sơ mi (ao-so-mi) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_so_mi INT = (SELECT category_id FROM categories WHERE slug = N'ao-so-mi');
-DECLARE @new_ao_so_mi TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_so_mi(product_id, slug)
-VALUES
-(N'Áo sơ mi tay ngắn basic - Kate Ford', N'ao-so-mi-tay-ngan-basic-kate-ford-01', N'Áo sơ mi tay ngắn basic - Kate Ford, màu be, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 289000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi linen mùa hè - Kate Ford', N'ao-so-mi-linen-mua-he-kate-ford-02', N'Áo sơ mi linen mùa hè - Kate Ford, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 319000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi caro flannel - Cotton cao cấp', N'ao-so-mi-caro-flannel-cotton-cao-cap-03', N'Áo sơ mi caro flannel - Cotton cao cấp, màu be, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 349000, 286000, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi caro flannel - Kate lụa', N'ao-so-mi-caro-flannel-kate-lua-04', N'Áo sơ mi caro flannel - Kate lụa, màu xanh navy, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 379000, NULL, N'Kate lụa', N'ACTIVE'),
-(N'Áo sơ mi tay ngắn basic - Cotton cao cấp', N'ao-so-mi-tay-ngan-basic-cotton-cao-cap-05', N'Áo sơ mi tay ngắn basic - Cotton cao cấp, màu xanh nhạt, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 399000, NULL, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi vải lụa cao cấp - Kate Ford', N'ao-so-mi-vai-lua-cao-cap-kate-ford-06', N'Áo sơ mi vải lụa cao cấp - Kate Ford, màu be, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 449000, 368000, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi tay ngắn basic - Linen', N'ao-so-mi-tay-ngan-basic-linen-07', N'Áo sơ mi tay ngắn basic - Linen, màu đen, phù hợp đi làm, đi học, dự tiệc. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 489000, NULL, N'Linen', N'ACTIVE'),
-(N'Áo sơ mi form slim - Kate Ford', N'ao-so-mi-form-slim-kate-ford-08', N'Áo sơ mi form slim - Kate Ford, màu trắng, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 529000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi caro flannel - Cotton cao cấp', N'ao-so-mi-caro-flannel-cotton-cao-cap-09', N'Áo sơ mi caro flannel - Cotton cao cấp, màu đen, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 599000, 491000, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi công sở tay dài - Cotton cao cấp', N'ao-so-mi-cong-so-tay-dai-cotton-cao-cap-10', N'Áo sơ mi công sở tay dài - Cotton cao cấp, màu xanh nhạt, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 259000, NULL, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi linen mùa hè - Linen', N'ao-so-mi-linen-mua-he-linen-11', N'Áo sơ mi linen mùa hè - Linen, màu xanh navy, phù hợp đi làm, đi học, dự tiệc. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 289000, NULL, N'Linen', N'ACTIVE'),
-(N'Áo sơ mi form slim - Oxford', N'ao-so-mi-form-slim-oxford-12', N'Áo sơ mi form slim - Oxford, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu oxford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 319000, 262000, N'Oxford', N'ACTIVE'),
-(N'Áo sơ mi chống nhăn - Linen', N'ao-so-mi-chong-nhan-linen-13', N'Áo sơ mi chống nhăn - Linen, màu xanh navy, phù hợp đi làm, đi học, dự tiệc. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 349000, NULL, N'Linen', N'ACTIVE'),
-(N'Áo sơ mi caro flannel - Kate Ford', N'ao-so-mi-caro-flannel-kate-ford-14', N'Áo sơ mi caro flannel - Kate Ford, màu trắng, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 379000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi sọc kẻ lịch lãm - Kate Ford', N'ao-so-mi-soc-ke-lich-lam-kate-ford-15', N'Áo sơ mi sọc kẻ lịch lãm - Kate Ford, màu xanh navy, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 399000, 327000, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi chống nhăn - Oxford', N'ao-so-mi-chong-nhan-oxford-16', N'Áo sơ mi chống nhăn - Oxford, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu oxford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 449000, NULL, N'Oxford', N'ACTIVE'),
-(N'Áo sơ mi công sở tay dài - Cotton cao cấp', N'ao-so-mi-cong-so-tay-dai-cotton-cao-cap-17', N'Áo sơ mi công sở tay dài - Cotton cao cấp, màu đen, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 489000, NULL, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi tay ngắn basic - Linen', N'ao-so-mi-tay-ngan-basic-linen-18', N'Áo sơ mi tay ngắn basic - Linen, màu xanh nhạt, phù hợp đi làm, đi học, dự tiệc. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 529000, 434000, N'Linen', N'ACTIVE'),
-(N'Áo sơ mi sọc kẻ lịch lãm - Kate Ford', N'ao-so-mi-soc-ke-lich-lam-kate-ford-19', N'Áo sơ mi sọc kẻ lịch lãm - Kate Ford, màu be, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 599000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi tay ngắn basic - Kate Ford', N'ao-so-mi-tay-ngan-basic-kate-ford-20', N'Áo sơ mi tay ngắn basic - Kate Ford, màu xanh navy, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 259000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi caro flannel - Oxford', N'ao-so-mi-caro-flannel-oxford-21', N'Áo sơ mi caro flannel - Oxford, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu oxford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 289000, 237000, N'Oxford', N'ACTIVE'),
-(N'Áo sơ mi vải lụa cao cấp - Kate Ford', N'ao-so-mi-vai-lua-cao-cap-kate-ford-22', N'Áo sơ mi vải lụa cao cấp - Kate Ford, màu xanh navy, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate ford, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 319000, NULL, N'Kate Ford', N'ACTIVE'),
-(N'Áo sơ mi phối túi ngực - Cotton cao cấp', N'ao-so-mi-phoi-tui-nguc-cotton-cao-cap-23', N'Áo sơ mi phối túi ngực - Cotton cao cấp, màu trắng, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 349000, NULL, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi linen mùa hè - Cotton cao cấp', N'ao-so-mi-linen-mua-he-cotton-cao-cap-24', N'Áo sơ mi linen mùa hè - Cotton cao cấp, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 379000, 311000, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi form slim - Cotton cao cấp', N'ao-so-mi-form-slim-cotton-cao-cap-25', N'Áo sơ mi form slim - Cotton cao cấp, màu đen, phù hợp đi làm, đi học, dự tiệc. Chất liệu cotton cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 399000, NULL, N'Cotton cao cấp', N'ACTIVE'),
-(N'Áo sơ mi vải lụa cao cấp - Kate lụa', N'ao-so-mi-vai-lua-cao-cap-kate-lua-26', N'Áo sơ mi vải lụa cao cấp - Kate lụa, màu xanh nhạt, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 449000, NULL, N'Kate lụa', N'ACTIVE'),
-(N'Áo sơ mi chống nhăn - Linen', N'ao-so-mi-chong-nhan-linen-27', N'Áo sơ mi chống nhăn - Linen, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 489000, 401000, N'Linen', N'ACTIVE'),
-(N'Áo sơ mi form slim - Kate lụa', N'ao-so-mi-form-slim-kate-lua-28', N'Áo sơ mi form slim - Kate lụa, màu xám, phù hợp đi làm, đi học, dự tiệc. Chất liệu kate lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_so_mi, @brandLocal, 529000, NULL, N'Kate lụa', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_so_mi
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_so_mi;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_so_mi n
-CROSS APPLY (VALUES (N'S', N'Trắng'), (N'M', N'Xanh nhạt'), (N'L', N'Trắng'), (N'XL', N'Xanh nhạt')) AS x(size, color);
+CREATE TABLE [dbo].[product_variants](
+	[variant_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[product_id] [bigint] NOT NULL,
+	[size] [nvarchar](20) NOT NULL,
+	[color] [nvarchar](50) NOT NULL,
+	[sku] [nvarchar](100) NULL,
+	[stock_quantity] [int] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[variant_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ===== Áo khoác (ao-khoac) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_khoac INT = (SELECT category_id FROM categories WHERE slug = N'ao-khoac');
-DECLARE @new_ao_khoac TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_khoac(product_id, slug)
-VALUES
-(N'Áo khoác phao siêu nhẹ - Da PU', N'ao-khoac-phao-sieu-nhe-da-pu-01', N'Áo khoác phao siêu nhẹ - Da PU, màu nâu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 449000, NULL, N'Da PU', N'ACTIVE'),
-(N'Áo khoác form oversize - Da PU', N'ao-khoac-form-oversize-da-pu-02', N'Áo khoác form oversize - Da PU, màu xám, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 499000, NULL, N'Da PU', N'ACTIVE'),
-(N'Áo khoác da lộn phối - Polyester chống nước', N'ao-khoac-da-lon-phoi-polyester-chong-nuoc-03', N'Áo khoác da lộn phối - Polyester chống nước, màu xám, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu polyester chống nước, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 549000, 450000, N'Polyester chống nước', N'ACTIVE'),
-(N'Áo khoác denim phối túi - Da PU', N'ao-khoac-denim-phoi-tui-da-pu-04', N'Áo khoác denim phối túi - Da PU, màu rêu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 599000, NULL, N'Da PU', N'ACTIVE'),
-(N'Áo khoác bomber cá tính - Denim', N'ao-khoac-bomber-ca-tinh-denim-05', N'Áo khoác bomber cá tính - Denim, màu rêu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 649000, NULL, N'Denim', N'ACTIVE'),
-(N'Áo khoác kaki basic - Dạ nỉ', N'ao-khoac-kaki-basic-da-ni-06', N'Áo khoác kaki basic - Dạ nỉ, màu đen, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 699000, 573000, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác phao siêu nhẹ - Polyester chống nước', N'ao-khoac-phao-sieu-nhe-polyester-chong-nuoc-07', N'Áo khoác phao siêu nhẹ - Polyester chống nước, màu rêu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu polyester chống nước, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 749000, NULL, N'Polyester chống nước', N'ACTIVE'),
-(N'Áo khoác denim phối túi - Polyester chống nước', N'ao-khoac-denim-phoi-tui-polyester-chong-nuoc-08', N'Áo khoác denim phối túi - Polyester chống nước, màu xanh navy, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu polyester chống nước, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 799000, NULL, N'Polyester chống nước', N'ACTIVE'),
-(N'Áo khoác gió chống nắng - Dạ nỉ', N'ao-khoac-gio-chong-nang-da-ni-09', N'Áo khoác gió chống nắng - Dạ nỉ, màu đen, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 899000, 737000, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác gió chống nắng - Denim', N'ao-khoac-gio-chong-nang-denim-10', N'Áo khoác gió chống nắng - Denim, màu xanh navy, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 399000, NULL, N'Denim', N'ACTIVE'),
-(N'Áo khoác hoodie zip - Dạ nỉ', N'ao-khoac-hoodie-zip-da-ni-11', N'Áo khoác hoodie zip - Dạ nỉ, màu xám, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 449000, NULL, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác nỉ zip form rộng - Kaki', N'ao-khoac-ni-zip-form-rong-kaki-12', N'Áo khoác nỉ zip form rộng - Kaki, màu đen, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 499000, 409000, N'Kaki', N'ACTIVE'),
-(N'Áo khoác da lộn phối - Da PU', N'ao-khoac-da-lon-phoi-da-pu-13', N'Áo khoác da lộn phối - Da PU, màu nâu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 549000, NULL, N'Da PU', N'ACTIVE'),
-(N'Áo khoác dù 2 lớp chống nước - Da PU', N'ao-khoac-du-2-lop-chong-nuoc-da-pu-14', N'Áo khoác dù 2 lớp chống nước - Da PU, màu xanh navy, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 599000, NULL, N'Da PU', N'ACTIVE'),
-(N'Áo khoác bomber cá tính - Dạ nỉ', N'ao-khoac-bomber-ca-tinh-da-ni-15', N'Áo khoác bomber cá tính - Dạ nỉ, màu xanh navy, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 649000, 532000, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác phao siêu nhẹ - Da PU', N'ao-khoac-phao-sieu-nhe-da-pu-16', N'Áo khoác phao siêu nhẹ - Da PU, màu rêu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 699000, NULL, N'Da PU', N'ACTIVE'),
-(N'Áo khoác da lộn phối - Dạ nỉ', N'ao-khoac-da-lon-phoi-da-ni-17', N'Áo khoác da lộn phối - Dạ nỉ, màu be, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 749000, NULL, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác dù 2 lớp chống nước - Da PU', N'ao-khoac-du-2-lop-chong-nuoc-da-pu-18', N'Áo khoác dù 2 lớp chống nước - Da PU, màu xám, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu da pu, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 799000, 655000, N'Da PU', N'ACTIVE'),
-(N'Áo khoác da lộn phối - Denim', N'ao-khoac-da-lon-phoi-denim-19', N'Áo khoác da lộn phối - Denim, màu xám, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 899000, NULL, N'Denim', N'ACTIVE'),
-(N'Áo khoác denim phối túi - Denim', N'ao-khoac-denim-phoi-tui-denim-20', N'Áo khoác denim phối túi - Denim, màu đen, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 399000, NULL, N'Denim', N'ACTIVE'),
-(N'Áo khoác denim phối túi - Dạ nỉ', N'ao-khoac-denim-phoi-tui-da-ni-21', N'Áo khoác denim phối túi - Dạ nỉ, màu nâu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 449000, 368000, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác dù 2 lớp chống nước - Polyester chống nước', N'ao-khoac-du-2-lop-chong-nuoc-polyester-chong-nuoc-22', N'Áo khoác dù 2 lớp chống nước - Polyester chống nước, màu xanh navy, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu polyester chống nước, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 499000, NULL, N'Polyester chống nước', N'ACTIVE'),
-(N'Áo khoác kaki basic - Denim', N'ao-khoac-kaki-basic-denim-23', N'Áo khoác kaki basic - Denim, màu xanh navy, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 549000, NULL, N'Denim', N'ACTIVE'),
-(N'Áo khoác denim phối túi - Kaki', N'ao-khoac-denim-phoi-tui-kaki-24', N'Áo khoác denim phối túi - Kaki, màu đen, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 599000, 491000, N'Kaki', N'ACTIVE'),
-(N'Áo khoác hoodie zip - Dạ nỉ', N'ao-khoac-hoodie-zip-da-ni-25', N'Áo khoác hoodie zip - Dạ nỉ, màu nâu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 649000, NULL, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác hoodie zip - Dạ nỉ', N'ao-khoac-hoodie-zip-da-ni-26', N'Áo khoác hoodie zip - Dạ nỉ, màu đen, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu dạ nỉ, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 699000, NULL, N'Dạ nỉ', N'ACTIVE'),
-(N'Áo khoác phao siêu nhẹ - Denim', N'ao-khoac-phao-sieu-nhe-denim-27', N'Áo khoác phao siêu nhẹ - Denim, màu rêu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 749000, 614000, N'Denim', N'ACTIVE'),
-(N'Áo khoác nỉ zip form rộng - Polyester chống nước', N'ao-khoac-ni-zip-form-rong-polyester-chong-nuoc-28', N'Áo khoác nỉ zip form rộng - Polyester chống nước, màu rêu, phù hợp đi học, đi làm, đi chơi mùa lạnh. Chất liệu polyester chống nước, form dáng chuẩn, dễ phối đồ.', @cat_ao_khoac, @brandLocal, 799000, NULL, N'Polyester chống nước', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_khoac
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_khoac;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_khoac n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Xanh navy'), (N'L', N'Đen'), (N'XL', N'Xanh navy')) AS x(size, color);
+/****** Object:  Table [dbo].[products]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Áo dài (ao-dai) — 26 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_dai INT = (SELECT category_id FROM categories WHERE slug = N'ao-dai');
-DECLARE @new_ao_dai TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_dai(product_id, slug)
-VALUES
-(N'Áo dài họa tiết hoa văn - Gấm', N'ao-dai-hoa-tiet-hoa-van-gam-01', N'Áo dài họa tiết hoa văn - Gấm, màu xanh dương, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu gấm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 650000, NULL, N'Gấm', N'ACTIVE'),
-(N'Áo dài truyền thống gấm - The đũi', N'ao-dai-truyen-thong-gam-the-dui-02', N'Áo dài truyền thống gấm - The đũi, màu đen, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu the đũi, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 750000, NULL, N'The đũi', N'ACTIVE'),
-(N'Áo dài form rộng thoải mái - The đũi', N'ao-dai-form-rong-thoai-mai-the-dui-03', N'Áo dài form rộng thoải mái - The đũi, màu trắng ngà, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu the đũi, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 850000, 697000, N'The đũi', N'ACTIVE'),
-(N'Áo dài lụa cao cấp - Cotton lụa', N'ao-dai-lua-cao-cap-cotton-lua-04', N'Áo dài lụa cao cấp - Cotton lụa, màu trắng ngà, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 990000, NULL, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài the đũi mộc mạc - Lụa satin', N'ao-dai-the-dui-moc-mac-lua-satin-05', N'Áo dài the đũi mộc mạc - Lụa satin, màu xanh ngọc, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1090000, NULL, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài lụa satin bóng - Lụa satin', N'ao-dai-lua-satin-bong-lua-satin-06', N'Áo dài lụa satin bóng - Lụa satin, màu vàng đồng, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1190000, 976000, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài tay raglan - Gấm', N'ao-dai-tay-raglan-gam-07', N'Áo dài tay raglan - Gấm, màu trắng ngà, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu gấm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1290000, NULL, N'Gấm', N'ACTIVE'),
-(N'Áo dài form rộng thoải mái - Lụa satin', N'ao-dai-form-rong-thoai-mai-lua-satin-08', N'Áo dài form rộng thoải mái - Lụa satin, màu xanh ngọc, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1450000, NULL, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài dự lễ trang trọng - Gấm', N'ao-dai-du-le-trang-trong-gam-09', N'Áo dài dự lễ trang trọng - Gấm, màu đen, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu gấm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1590000, 1304000, N'Gấm', N'ACTIVE'),
-(N'Áo dài lụa satin bóng - Lụa satin', N'ao-dai-lua-satin-bong-lua-satin-10', N'Áo dài lụa satin bóng - Lụa satin, màu đỏ đô, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 550000, NULL, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài tay raglan - Gấm', N'ao-dai-tay-raglan-gam-11', N'Áo dài tay raglan - Gấm, màu xanh ngọc, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu gấm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 650000, NULL, N'Gấm', N'ACTIVE'),
-(N'Áo dài tay raglan - Cotton lụa', N'ao-dai-tay-raglan-cotton-lua-12', N'Áo dài tay raglan - Cotton lụa, màu xanh dương, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 750000, 615000, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài lụa cao cấp - Lụa satin', N'ao-dai-lua-cao-cap-lua-satin-13', N'Áo dài lụa cao cấp - Lụa satin, màu trắng ngà, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 850000, NULL, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài cách tân hiện đại - Lụa tơ tằm', N'ao-dai-cach-tan-hien-dai-lua-to-tam-14', N'Áo dài cách tân hiện đại - Lụa tơ tằm, màu xanh dương, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa tơ tằm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 990000, NULL, N'Lụa tơ tằm', N'ACTIVE'),
-(N'Áo dài lụa cao cấp - Cotton lụa', N'ao-dai-lua-cao-cap-cotton-lua-15', N'Áo dài lụa cao cấp - Cotton lụa, màu xanh dương, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1090000, 894000, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài họa tiết hoa văn - Gấm', N'ao-dai-hoa-tiet-hoa-van-gam-16', N'Áo dài họa tiết hoa văn - Gấm, màu trắng ngà, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu gấm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1190000, NULL, N'Gấm', N'ACTIVE'),
-(N'Áo dài lụa cao cấp - The đũi', N'ao-dai-lua-cao-cap-the-dui-17', N'Áo dài lụa cao cấp - The đũi, màu đen, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu the đũi, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1290000, NULL, N'The đũi', N'ACTIVE'),
-(N'Áo dài cách tân hiện đại - Lụa tơ tằm', N'ao-dai-cach-tan-hien-dai-lua-to-tam-18', N'Áo dài cách tân hiện đại - Lụa tơ tằm, màu trắng ngà, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa tơ tằm, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1450000, 1189000, N'Lụa tơ tằm', N'ACTIVE'),
-(N'Áo dài the đũi mộc mạc - The đũi', N'ao-dai-the-dui-moc-mac-the-dui-19', N'Áo dài the đũi mộc mạc - The đũi, màu vàng đồng, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu the đũi, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1590000, NULL, N'The đũi', N'ACTIVE'),
-(N'Áo dài form rộng thoải mái - Lụa satin', N'ao-dai-form-rong-thoai-mai-lua-satin-20', N'Áo dài form rộng thoải mái - Lụa satin, màu vàng đồng, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 550000, NULL, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài dự lễ trang trọng - Cotton lụa', N'ao-dai-du-le-trang-trong-cotton-lua-21', N'Áo dài dự lễ trang trọng - Cotton lụa, màu vàng đồng, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 650000, 533000, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài cách tân hiện đại - Lụa satin', N'ao-dai-cach-tan-hien-dai-lua-satin-22', N'Áo dài cách tân hiện đại - Lụa satin, màu xanh ngọc, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu lụa satin, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 750000, NULL, N'Lụa satin', N'ACTIVE'),
-(N'Áo dài form rộng thoải mái - Cotton lụa', N'ao-dai-form-rong-thoai-mai-cotton-lua-23', N'Áo dài form rộng thoải mái - Cotton lụa, màu đỏ đô, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 850000, NULL, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài truyền thống gấm - Cotton lụa', N'ao-dai-truyen-thong-gam-cotton-lua-24', N'Áo dài truyền thống gấm - Cotton lụa, màu đỏ đô, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 990000, 812000, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài lụa cao cấp - Cotton lụa', N'ao-dai-lua-cao-cap-cotton-lua-25', N'Áo dài lụa cao cấp - Cotton lụa, màu đen, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1090000, NULL, N'Cotton lụa', N'ACTIVE'),
-(N'Áo dài lụa cao cấp - Cotton lụa', N'ao-dai-lua-cao-cap-cotton-lua-26', N'Áo dài lụa cao cấp - Cotton lụa, màu đỏ đô, phù hợp lễ, tết, cưới hỏi, sự kiện truyền thống. Chất liệu cotton lụa, form dáng chuẩn, dễ phối đồ.', @cat_ao_dai, @brandLocal, 1190000, NULL, N'Cotton lụa', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_dai
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_dai;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_dai n
-CROSS APPLY (VALUES (N'S', N'Đỏ đô'), (N'M', N'Vàng đồng'), (N'L', N'Đỏ đô'), (N'XL', N'Vàng đồng')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Áo tanktop (ao-tanktop) — 26 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_tanktop INT = (SELECT category_id FROM categories WHERE slug = N'ao-tanktop');
-DECLARE @new_ao_tanktop TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_tanktop(product_id, slug)
-VALUES
-(N'Áo tanktop gân thun ôm dáng - Cotton 100%', N'ao-tanktop-gan-thun-om-dang-cotton-100-01', N'Áo tanktop gân thun ôm dáng - Cotton 100%, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 119000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo tanktop gym thể thao - Thun lạnh', N'ao-tanktop-gym-the-thao-thun-lanh-02', N'Áo tanktop gym thể thao - Thun lạnh, màu xám, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 139000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop cotton co giãn - Thun gân', N'ao-tanktop-cotton-co-gian-thun-gan-03', N'Áo tanktop cotton co giãn - Thun gân, màu rêu, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 159000, 130000, N'Thun gân', N'ACTIVE'),
-(N'Áo tanktop gân thun ôm dáng - Cotton 100%', N'ao-tanktop-gan-thun-om-dang-cotton-100-04', N'Áo tanktop gân thun ôm dáng - Cotton 100%, màu đen, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 179000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo tanktop cotton co giãn - Polyester lưới', N'ao-tanktop-cotton-co-gian-polyester-luoi-05', N'Áo tanktop cotton co giãn - Polyester lưới, màu xám, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu polyester lưới, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 199000, NULL, N'Polyester lưới', N'ACTIVE'),
-(N'Áo tanktop form ôm cơ bắp - Cotton 100%', N'ao-tanktop-form-om-co-bap-cotton-100-06', N'Áo tanktop form ôm cơ bắp - Cotton 100%, màu xám, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 219000, 180000, N'Cotton 100%', N'ACTIVE'),
-(N'Áo tanktop tập gym năng động - Polyester lưới', N'ao-tanktop-tap-gym-nang-dong-polyester-luoi-07', N'Áo tanktop tập gym năng động - Polyester lưới, màu xám, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu polyester lưới, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 229000, NULL, N'Polyester lưới', N'ACTIVE'),
-(N'Áo tanktop basic trơn - Cotton 100%', N'ao-tanktop-basic-tron-cotton-100-08', N'Áo tanktop basic trơn - Cotton 100%, màu trắng, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 239000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo tanktop gym thể thao - Polyester lưới', N'ao-tanktop-gym-the-thao-polyester-luoi-09', N'Áo tanktop gym thể thao - Polyester lưới, màu đen, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu polyester lưới, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 249000, 204000, N'Polyester lưới', N'ACTIVE'),
-(N'Áo tanktop tập gym năng động - Thun lạnh', N'ao-tanktop-tap-gym-nang-dong-thun-lanh-10', N'Áo tanktop tập gym năng động - Thun lạnh, màu rêu, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 99000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop form ôm cơ bắp - Polyester lưới', N'ao-tanktop-form-om-co-bap-polyester-luoi-11', N'Áo tanktop form ôm cơ bắp - Polyester lưới, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu polyester lưới, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 119000, NULL, N'Polyester lưới', N'ACTIVE'),
-(N'Áo tanktop cotton co giãn - Cotton co giãn', N'ao-tanktop-cotton-co-gian-cotton-co-gian-12', N'Áo tanktop cotton co giãn - Cotton co giãn, màu đen, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 139000, 114000, N'Cotton co giãn', N'ACTIVE'),
-(N'Áo tanktop thấm hút mồ hôi - Thun lạnh', N'ao-tanktop-tham-hut-mo-hoi-thun-lanh-13', N'Áo tanktop thấm hút mồ hôi - Thun lạnh, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 159000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop basic trơn - Cotton co giãn', N'ao-tanktop-basic-tron-cotton-co-gian-14', N'Áo tanktop basic trơn - Cotton co giãn, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 179000, NULL, N'Cotton co giãn', N'ACTIVE'),
-(N'Áo tanktop in họa tiết thể thao - Thun gân', N'ao-tanktop-in-hoa-tiet-the-thao-thun-gan-15', N'Áo tanktop in họa tiết thể thao - Thun gân, màu trắng, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 199000, 163000, N'Thun gân', N'ACTIVE'),
-(N'Áo tanktop tập gym năng động - Thun gân', N'ao-tanktop-tap-gym-nang-dong-thun-gan-16', N'Áo tanktop tập gym năng động - Thun gân, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 219000, NULL, N'Thun gân', N'ACTIVE'),
-(N'Áo tanktop gân thun ôm dáng - Thun lạnh', N'ao-tanktop-gan-thun-om-dang-thun-lanh-17', N'Áo tanktop gân thun ôm dáng - Thun lạnh, màu xám, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 229000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop basic trơn - Thun gân', N'ao-tanktop-basic-tron-thun-gan-18', N'Áo tanktop basic trơn - Thun gân, màu rêu, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 239000, 196000, N'Thun gân', N'ACTIVE'),
-(N'Áo tanktop basic trơn - Thun lạnh', N'ao-tanktop-basic-tron-thun-lanh-19', N'Áo tanktop basic trơn - Thun lạnh, màu đen, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 249000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop form ôm cơ bắp - Thun lạnh', N'ao-tanktop-form-om-co-bap-thun-lanh-20', N'Áo tanktop form ôm cơ bắp - Thun lạnh, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 99000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop raw-cut không viền - Cotton co giãn', N'ao-tanktop-raw-cut-khong-vien-cotton-co-gian-21', N'Áo tanktop raw-cut không viền - Cotton co giãn, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 119000, 98000, N'Cotton co giãn', N'ACTIVE'),
-(N'Áo tanktop thấm hút mồ hôi - Cotton 100%', N'ao-tanktop-tham-hut-mo-hoi-cotton-100-22', N'Áo tanktop thấm hút mồ hôi - Cotton 100%, màu trắng, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu cotton 100%, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 139000, NULL, N'Cotton 100%', N'ACTIVE'),
-(N'Áo tanktop basic trơn - Thun lạnh', N'ao-tanktop-basic-tron-thun-lanh-23', N'Áo tanktop basic trơn - Thun lạnh, màu trắng, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 159000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Áo tanktop form ôm cơ bắp - Thun gân', N'ao-tanktop-form-om-co-bap-thun-gan-24', N'Áo tanktop form ôm cơ bắp - Thun gân, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 179000, 147000, N'Thun gân', N'ACTIVE'),
-(N'Áo tanktop cotton co giãn - Thun gân', N'ao-tanktop-cotton-co-gian-thun-gan-25', N'Áo tanktop cotton co giãn - Thun gân, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 199000, NULL, N'Thun gân', N'ACTIVE'),
-(N'Áo tanktop raw-cut không viền - Thun gân', N'ao-tanktop-raw-cut-khong-vien-thun-gan-26', N'Áo tanktop raw-cut không viền - Thun gân, màu xanh navy, phù hợp tập gym, chơi thể thao, mặc nhà. Chất liệu thun gân, form dáng chuẩn, dễ phối đồ.', @cat_ao_tanktop, @brandLocal, 219000, NULL, N'Thun gân', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_tanktop
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_tanktop;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_tanktop n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Trắng'), (N'L', N'Đen'), (N'XL', N'Trắng')) AS x(size, color);
+CREATE TABLE [dbo].[products](
+	[product_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[product_name] [nvarchar](200) NOT NULL,
+	[slug] [nvarchar](220) NULL,
+	[description] [nvarchar](max) NULL,
+	[category_id] [int] NOT NULL,
+	[brand_id] [int] NULL,
+	[price] [decimal](12, 2) NOT NULL,
+	[sale_price] [decimal](12, 2) NULL,
+	[material] [nvarchar](100) NULL,
+	[status] [nvarchar](20) NULL,
+	[created_at] [datetime2](7) NULL,
+	[updated_at] [datetime2](7) NULL,
+	[created_by] [bigint] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[product_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
 GO
-
--- ===== Áo polo (ao-polo) — 26 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_polo INT = (SELECT category_id FROM categories WHERE slug = N'ao-polo');
-DECLARE @new_ao_polo TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_polo(product_id, slug)
-VALUES
-(N'Áo polo tay ngắn thể thao - Pique Cotton', N'ao-polo-tay-ngan-the-thao-pique-cotton-01', N'Áo polo tay ngắn thể thao - Pique Cotton, màu trắng, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 249000, NULL, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo cotton lạnh mềm mại - Polyester thể thao', N'ao-polo-cotton-lanh-mem-mai-polyester-the-thao-02', N'Áo polo cotton lạnh mềm mại - Polyester thể thao, màu trắng, phù hợp đi làm, đi chơi, chơi golf. Chất liệu polyester thể thao, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 269000, NULL, N'Polyester thể thao', N'ACTIVE'),
-(N'Áo polo thêu logo ngực - Cotton lạnh', N'ao-polo-theu-logo-nguc-cotton-lanh-03', N'Áo polo thêu logo ngực - Cotton lạnh, màu đen, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 289000, 237000, N'Cotton lạnh', N'ACTIVE'),
-(N'Áo polo form slim ôm dáng - Cá sấu Cotton', N'ao-polo-form-slim-om-dang-ca-sau-cotton-04', N'Áo polo form slim ôm dáng - Cá sấu Cotton, màu đen, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cá sấu cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 319000, NULL, N'Cá sấu Cotton', N'ACTIVE'),
-(N'Áo polo form slim ôm dáng - Cotton 4 chiều', N'ao-polo-form-slim-om-dang-cotton-4-chieu-05', N'Áo polo form slim ôm dáng - Cotton 4 chiều, màu xanh navy, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 349000, NULL, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo polo tay ngắn thể thao - Pique Cotton', N'ao-polo-tay-ngan-the-thao-pique-cotton-06', N'Áo polo tay ngắn thể thao - Pique Cotton, màu be, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 379000, 311000, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo vải cá sấu - Cotton lạnh', N'ao-polo-vai-ca-sau-cotton-lanh-07', N'Áo polo vải cá sấu - Cotton lạnh, màu xám, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 399000, NULL, N'Cotton lạnh', N'ACTIVE'),
-(N'Áo polo form slim ôm dáng - Cotton lạnh', N'ao-polo-form-slim-om-dang-cotton-lanh-08', N'Áo polo form slim ôm dáng - Cotton lạnh, màu xanh navy, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 429000, NULL, N'Cotton lạnh', N'ACTIVE'),
-(N'Áo polo thêu logo ngực - Pique Cotton', N'ao-polo-theu-logo-nguc-pique-cotton-09', N'Áo polo thêu logo ngực - Pique Cotton, màu trắng, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 459000, 376000, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo pique basic - Pique Cotton', N'ao-polo-pique-basic-pique-cotton-10', N'Áo polo pique basic - Pique Cotton, màu đỏ đô, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 219000, NULL, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo form regular - Pique Cotton', N'ao-polo-form-regular-pique-cotton-11', N'Áo polo form regular - Pique Cotton, màu be, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 249000, NULL, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo tay ngắn thể thao - Cotton lạnh', N'ao-polo-tay-ngan-the-thao-cotton-lanh-12', N'Áo polo tay ngắn thể thao - Cotton lạnh, màu đen, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 269000, 221000, N'Cotton lạnh', N'ACTIVE'),
-(N'Áo polo phối viền cổ - Cá sấu Cotton', N'ao-polo-phoi-vien-co-ca-sau-cotton-13', N'Áo polo phối viền cổ - Cá sấu Cotton, màu trắng, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cá sấu cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 289000, NULL, N'Cá sấu Cotton', N'ACTIVE'),
-(N'Áo polo kẻ sọc lịch lãm - Cotton 4 chiều', N'ao-polo-ke-soc-lich-lam-cotton-4-chieu-14', N'Áo polo kẻ sọc lịch lãm - Cotton 4 chiều, màu xanh navy, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 319000, NULL, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo polo form regular - Cá sấu Cotton', N'ao-polo-form-regular-ca-sau-cotton-15', N'Áo polo form regular - Cá sấu Cotton, màu đỏ đô, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cá sấu cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 349000, 286000, N'Cá sấu Cotton', N'ACTIVE'),
-(N'Áo polo pique basic - Cotton 4 chiều', N'ao-polo-pique-basic-cotton-4-chieu-16', N'Áo polo pique basic - Cotton 4 chiều, màu xanh navy, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 379000, NULL, N'Cotton 4 chiều', N'ACTIVE'),
-(N'Áo polo kẻ sọc lịch lãm - Polyester thể thao', N'ao-polo-ke-soc-lich-lam-polyester-the-thao-17', N'Áo polo kẻ sọc lịch lãm - Polyester thể thao, màu trắng, phù hợp đi làm, đi chơi, chơi golf. Chất liệu polyester thể thao, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 399000, NULL, N'Polyester thể thao', N'ACTIVE'),
-(N'Áo polo kẻ sọc lịch lãm - Pique Cotton', N'ao-polo-ke-soc-lich-lam-pique-cotton-18', N'Áo polo kẻ sọc lịch lãm - Pique Cotton, màu trắng, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 429000, 352000, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo kẻ sọc lịch lãm - Cá sấu Cotton', N'ao-polo-ke-soc-lich-lam-ca-sau-cotton-19', N'Áo polo kẻ sọc lịch lãm - Cá sấu Cotton, màu xám, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cá sấu cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 459000, NULL, N'Cá sấu Cotton', N'ACTIVE'),
-(N'Áo polo form slim ôm dáng - Polyester thể thao', N'ao-polo-form-slim-om-dang-polyester-the-thao-20', N'Áo polo form slim ôm dáng - Polyester thể thao, màu xám, phù hợp đi làm, đi chơi, chơi golf. Chất liệu polyester thể thao, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 219000, NULL, N'Polyester thể thao', N'ACTIVE'),
-(N'Áo polo phối màu năng động - Cá sấu Cotton', N'ao-polo-phoi-mau-nang-dong-ca-sau-cotton-21', N'Áo polo phối màu năng động - Cá sấu Cotton, màu đỏ đô, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cá sấu cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 249000, 204000, N'Cá sấu Cotton', N'ACTIVE'),
-(N'Áo polo vải cá sấu - Cotton lạnh', N'ao-polo-vai-ca-sau-cotton-lanh-22', N'Áo polo vải cá sấu - Cotton lạnh, màu xanh navy, phù hợp đi làm, đi chơi, chơi golf. Chất liệu cotton lạnh, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 269000, NULL, N'Cotton lạnh', N'ACTIVE'),
-(N'Áo polo kẻ sọc lịch lãm - Polyester thể thao', N'ao-polo-ke-soc-lich-lam-polyester-the-thao-23', N'Áo polo kẻ sọc lịch lãm - Polyester thể thao, màu be, phù hợp đi làm, đi chơi, chơi golf. Chất liệu polyester thể thao, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 289000, NULL, N'Polyester thể thao', N'ACTIVE'),
-(N'Áo polo thêu logo ngực - Pique Cotton', N'ao-polo-theu-logo-nguc-pique-cotton-24', N'Áo polo thêu logo ngực - Pique Cotton, màu đen, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 319000, 262000, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo form regular - Pique Cotton', N'ao-polo-form-regular-pique-cotton-25', N'Áo polo form regular - Pique Cotton, màu đỏ đô, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 349000, NULL, N'Pique Cotton', N'ACTIVE'),
-(N'Áo polo vải cá sấu - Pique Cotton', N'ao-polo-vai-ca-sau-pique-cotton-26', N'Áo polo vải cá sấu - Pique Cotton, màu đen, phù hợp đi làm, đi chơi, chơi golf. Chất liệu pique cotton, form dáng chuẩn, dễ phối đồ.', @cat_ao_polo, @brandLocal, 379000, NULL, N'Pique Cotton', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_polo
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_polo;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_polo n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Trắng'), (N'L', N'Đen'), (N'XL', N'Trắng')) AS x(size, color);
+/****** Object:  Table [dbo].[reviews]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Quần tây (quan-tay) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_tay INT = (SELECT category_id FROM categories WHERE slug = N'quan-tay');
-DECLARE @new_quan_tay TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_tay(product_id, slug)
-VALUES
-(N'Quần tây basic một màu - Wool pha', N'quan-tay-basic-mot-mau-wool-pha-01', N'Quần tây basic một màu - Wool pha, màu đen, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 329000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần tây không ly hiện đại - Polyester cao cấp', N'quan-tay-khong-ly-hien-dai-polyester-cao-cap-02', N'Quần tây không ly hiện đại - Polyester cao cấp, màu be, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 359000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây họa tiết caro nhẹ - Wool pha', N'quan-tay-hoa-tiet-caro-nhe-wool-pha-03', N'Quần tây họa tiết caro nhẹ - Wool pha, màu nâu, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 399000, 327000, N'Wool pha', N'ACTIVE'),
-(N'Quần tây không ly hiện đại - Wool pha', N'quan-tay-khong-ly-hien-dai-wool-pha-04', N'Quần tây không ly hiện đại - Wool pha, màu xám, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 429000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần tây xếp ly cổ điển - Wool pha', N'quan-tay-xep-ly-co-dien-wool-pha-05', N'Quần tây xếp ly cổ điển - Wool pha, màu xanh navy, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 459000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần tây co giãn 4 chiều - Wool pha', N'quan-tay-co-gian-4-chieu-wool-pha-06', N'Quần tây co giãn 4 chiều - Wool pha, màu xanh navy, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 499000, 409000, N'Wool pha', N'ACTIVE'),
-(N'Quần tây form slim - Polyester cao cấp', N'quan-tay-form-slim-polyester-cao-cap-07', N'Quần tây form slim - Polyester cao cấp, màu be, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 549000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây ống suông công sở - Polyester cao cấp', N'quan-tay-ong-suong-cong-so-polyester-cao-cap-08', N'Quần tây ống suông công sở - Polyester cao cấp, màu nâu, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 599000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây form slim - Kaki cao cấp', N'quan-tay-form-slim-kaki-cao-cap-09', N'Quần tây form slim - Kaki cao cấp, màu đen, phù hợp đi làm công sở. Chất liệu kaki cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 650000, 533000, N'Kaki cao cấp', N'ACTIVE'),
-(N'Quần tây form slim - Cotton pha spandex', N'quan-tay-form-slim-cotton-pha-spandex-10', N'Quần tây form slim - Cotton pha spandex, màu xám, phù hợp đi làm công sở. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 299000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần tây xếp ly cổ điển - Cotton pha spandex', N'quan-tay-xep-ly-co-dien-cotton-pha-spandex-11', N'Quần tây xếp ly cổ điển - Cotton pha spandex, màu be, phù hợp đi làm công sở. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 329000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần tây xếp ly cổ điển - Wool pha', N'quan-tay-xep-ly-co-dien-wool-pha-12', N'Quần tây xếp ly cổ điển - Wool pha, màu be, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 359000, 294000, N'Wool pha', N'ACTIVE'),
-(N'Quần tây co giãn 4 chiều - Polyester cao cấp', N'quan-tay-co-gian-4-chieu-polyester-cao-cap-13', N'Quần tây co giãn 4 chiều - Polyester cao cấp, màu be, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 399000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây basic một màu - Kaki cao cấp', N'quan-tay-basic-mot-mau-kaki-cao-cap-14', N'Quần tây basic một màu - Kaki cao cấp, màu xanh navy, phù hợp đi làm công sở. Chất liệu kaki cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 429000, NULL, N'Kaki cao cấp', N'ACTIVE'),
-(N'Quần tây họa tiết caro nhẹ - Cotton pha spandex', N'quan-tay-hoa-tiet-caro-nhe-cotton-pha-spandex-15', N'Quần tây họa tiết caro nhẹ - Cotton pha spandex, màu xám, phù hợp đi làm công sở. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 459000, 376000, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần tây basic một màu - Polyester cao cấp', N'quan-tay-basic-mot-mau-polyester-cao-cap-16', N'Quần tây basic một màu - Polyester cao cấp, màu nâu, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 499000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây không ly hiện đại - Polyester cao cấp', N'quan-tay-khong-ly-hien-dai-polyester-cao-cap-17', N'Quần tây không ly hiện đại - Polyester cao cấp, màu xanh navy, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 549000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây ống suông công sở - Cotton pha spandex', N'quan-tay-ong-suong-cong-so-cotton-pha-spandex-18', N'Quần tây ống suông công sở - Cotton pha spandex, màu nâu, phù hợp đi làm công sở. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 599000, 491000, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần tây form slim - Polyester cao cấp', N'quan-tay-form-slim-polyester-cao-cap-19', N'Quần tây form slim - Polyester cao cấp, màu xanh navy, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 650000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây họa tiết caro nhẹ - Kaki cao cấp', N'quan-tay-hoa-tiet-caro-nhe-kaki-cao-cap-20', N'Quần tây họa tiết caro nhẹ - Kaki cao cấp, màu xanh navy, phù hợp đi làm công sở. Chất liệu kaki cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 299000, NULL, N'Kaki cao cấp', N'ACTIVE'),
-(N'Quần tây basic một màu - Cotton pha spandex', N'quan-tay-basic-mot-mau-cotton-pha-spandex-21', N'Quần tây basic một màu - Cotton pha spandex, màu be, phù hợp đi làm công sở. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 329000, 270000, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần tây vải cao cấp Hàn Quốc - Kaki cao cấp', N'quan-tay-vai-cao-cap-han-quoc-kaki-cao-cap-22', N'Quần tây vải cao cấp Hàn Quốc - Kaki cao cấp, màu đen, phù hợp đi làm công sở. Chất liệu kaki cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 359000, NULL, N'Kaki cao cấp', N'ACTIVE'),
-(N'Quần tây xếp ly cổ điển - Kaki cao cấp', N'quan-tay-xep-ly-co-dien-kaki-cao-cap-23', N'Quần tây xếp ly cổ điển - Kaki cao cấp, màu be, phù hợp đi làm công sở. Chất liệu kaki cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 399000, NULL, N'Kaki cao cấp', N'ACTIVE'),
-(N'Quần tây vải cao cấp Hàn Quốc - Wool pha', N'quan-tay-vai-cao-cap-han-quoc-wool-pha-24', N'Quần tây vải cao cấp Hàn Quốc - Wool pha, màu be, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 429000, 352000, N'Wool pha', N'ACTIVE'),
-(N'Quần tây co giãn 4 chiều - Wool pha', N'quan-tay-co-gian-4-chieu-wool-pha-25', N'Quần tây co giãn 4 chiều - Wool pha, màu đen, phù hợp đi làm công sở. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 459000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần tây basic một màu - Polyester cao cấp', N'quan-tay-basic-mot-mau-polyester-cao-cap-26', N'Quần tây basic một màu - Polyester cao cấp, màu xám, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 499000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần tây không ly hiện đại - Kaki cao cấp', N'quan-tay-khong-ly-hien-dai-kaki-cao-cap-27', N'Quần tây không ly hiện đại - Kaki cao cấp, màu xanh navy, phù hợp đi làm công sở. Chất liệu kaki cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 549000, 450000, N'Kaki cao cấp', N'ACTIVE'),
-(N'Quần tây basic một màu - Polyester cao cấp', N'quan-tay-basic-mot-mau-polyester-cao-cap-28', N'Quần tây basic một màu - Polyester cao cấp, màu đen, phù hợp đi làm công sở. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_tay, @brandLocal, 599000, NULL, N'Polyester cao cấp', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_tay
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_tay;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_tay n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Xám'), (N'31', N'Đen'), (N'32', N'Xám')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Quần jeans (quan-jeans) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_jeans INT = (SELECT category_id FROM categories WHERE slug = N'quan-jeans');
-DECLARE @new_quan_jeans TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_jeans(product_id, slug)
-VALUES
-(N'Quần jeans wash sáng - Denim cotton', N'quan-jeans-wash-sang-denim-cotton-01', N'Quần jeans wash sáng - Denim cotton, màu xanh đậm, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 379000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans ống suông regular - Denim cotton', N'quan-jeans-ong-suong-regular-denim-cotton-02', N'Quần jeans ống suông regular - Denim cotton, màu đen, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 419000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans ống suông regular - Denim raw', N'quan-jeans-ong-suong-regular-denim-raw-03', N'Quần jeans ống suông regular - Denim raw, màu xám khói, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 449000, 368000, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans ống loe retro - Denim raw', N'quan-jeans-ong-loe-retro-denim-raw-04', N'Quần jeans ống loe retro - Denim raw, màu xanh nhạt, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 489000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans ống suông regular - Denim co giãn', N'quan-jeans-ong-suong-regular-denim-co-gian-05', N'Quần jeans ống suông regular - Denim co giãn, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 529000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần jeans ống loe retro - Denim cotton', N'quan-jeans-ong-loe-retro-denim-cotton-06', N'Quần jeans ống loe retro - Denim cotton, màu xám khói, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 569000, 467000, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans wash sáng - Denim cotton', N'quan-jeans-wash-sang-denim-cotton-07', N'Quần jeans wash sáng - Denim cotton, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 599000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans ống suông regular - Denim cotton', N'quan-jeans-ong-suong-regular-denim-cotton-08', N'Quần jeans ống suông regular - Denim cotton, màu xám khói, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 649000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans wash sáng - Denim co giãn', N'quan-jeans-wash-sang-denim-co-gian-09', N'Quần jeans wash sáng - Denim co giãn, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 699000, 573000, N'Denim co giãn', N'ACTIVE'),
-(N'Quần jeans skinny ôm dáng - Denim cotton', N'quan-jeans-skinny-om-dang-denim-cotton-10', N'Quần jeans skinny ôm dáng - Denim cotton, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 349000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans denim co giãn thoải mái - Denim cotton', N'quan-jeans-denim-co-gian-thoai-mai-denim-cotton-11', N'Quần jeans denim co giãn thoải mái - Denim cotton, màu xanh đậm, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 379000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans form baggy hiện đại - Denim raw', N'quan-jeans-form-baggy-hien-dai-denim-raw-12', N'Quần jeans form baggy hiện đại - Denim raw, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 419000, 344000, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans form baggy hiện đại - Denim raw', N'quan-jeans-form-baggy-hien-dai-denim-raw-13', N'Quần jeans form baggy hiện đại - Denim raw, màu đen, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 449000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans slimfit trẻ trung - Denim cotton', N'quan-jeans-slimfit-tre-trung-denim-cotton-14', N'Quần jeans slimfit trẻ trung - Denim cotton, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 489000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans denim co giãn thoải mái - Denim raw', N'quan-jeans-denim-co-gian-thoai-mai-denim-raw-15', N'Quần jeans denim co giãn thoải mái - Denim raw, màu đen, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 529000, 434000, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans wash sáng - Denim raw', N'quan-jeans-wash-sang-denim-raw-16', N'Quần jeans wash sáng - Denim raw, màu xanh đậm, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 569000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans rách gối cá tính - Denim raw', N'quan-jeans-rach-goi-ca-tinh-denim-raw-17', N'Quần jeans rách gối cá tính - Denim raw, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 599000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans wash tối - Denim raw', N'quan-jeans-wash-toi-denim-raw-18', N'Quần jeans wash tối - Denim raw, màu đen, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 649000, 532000, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans form baggy hiện đại - Denim co giãn', N'quan-jeans-form-baggy-hien-dai-denim-co-gian-19', N'Quần jeans form baggy hiện đại - Denim co giãn, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 699000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần jeans ống suông regular - Denim cotton', N'quan-jeans-ong-suong-regular-denim-cotton-20', N'Quần jeans ống suông regular - Denim cotton, màu xanh đậm, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 349000, NULL, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans ống suông regular - Denim co giãn', N'quan-jeans-ong-suong-regular-denim-co-gian-21', N'Quần jeans ống suông regular - Denim co giãn, màu xanh nhạt, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 379000, 311000, N'Denim co giãn', N'ACTIVE'),
-(N'Quần jeans ống loe retro - Denim raw', N'quan-jeans-ong-loe-retro-denim-raw-22', N'Quần jeans ống loe retro - Denim raw, màu xanh đậm, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 419000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans form baggy hiện đại - Denim co giãn', N'quan-jeans-form-baggy-hien-dai-denim-co-gian-23', N'Quần jeans form baggy hiện đại - Denim co giãn, màu xanh nhạt, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 449000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần jeans rách gối cá tính - Denim cotton', N'quan-jeans-rach-goi-ca-tinh-denim-cotton-24', N'Quần jeans rách gối cá tính - Denim cotton, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 489000, 401000, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans skinny ôm dáng - Denim raw', N'quan-jeans-skinny-om-dang-denim-raw-25', N'Quần jeans skinny ôm dáng - Denim raw, màu xanh rêu, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 529000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans skinny ôm dáng - Denim raw', N'quan-jeans-skinny-om-dang-denim-raw-26', N'Quần jeans skinny ôm dáng - Denim raw, màu đen, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim raw, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 569000, NULL, N'Denim raw', N'ACTIVE'),
-(N'Quần jeans slimfit trẻ trung - Denim cotton', N'quan-jeans-slimfit-tre-trung-denim-cotton-27', N'Quần jeans slimfit trẻ trung - Denim cotton, màu xám khói, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 599000, 491000, N'Denim cotton', N'ACTIVE'),
-(N'Quần jeans ống loe retro - Denim cotton', N'quan-jeans-ong-loe-retro-denim-cotton-28', N'Quần jeans ống loe retro - Denim cotton, màu xanh nhạt, phù hợp đi chơi, đi học hằng ngày. Chất liệu denim cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_jeans, @brandLocal, 649000, NULL, N'Denim cotton', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_jeans
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_jeans;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_jeans n
-CROSS APPLY (VALUES (N'29', N'Xanh đậm'), (N'30', N'Xanh nhạt'), (N'31', N'Xanh đậm'), (N'32', N'Xanh nhạt')) AS x(size, color);
+CREATE TABLE [dbo].[reviews](
+	[review_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[product_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[rating] [tinyint] NOT NULL,
+	[comment] [varchar](1000) NULL,
+	[created_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[review_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ===== Quần short (quan-short) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_short INT = (SELECT category_id FROM categories WHERE slug = N'quan-short');
-DECLARE @new_quan_short TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_short(product_id, slug)
-VALUES
-(N'Quần short đi biển mát mẻ - Denim', N'quan-short-di-bien-mat-me-denim-01', N'Quần short đi biển mát mẻ - Denim, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 179000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần short thun form rộng - Kaki', N'quan-short-thun-form-rong-kaki-02', N'Quần short thun form rộng - Kaki, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 199000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần short basic trơn - Denim', N'quan-short-basic-tron-denim-03', N'Quần short basic trơn - Denim, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 219000, 180000, N'Denim', N'ACTIVE'),
-(N'Quần short thun form rộng - Cotton thun', N'quan-short-thun-form-rong-cotton-thun-04', N'Quần short thun form rộng - Cotton thun, màu be, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 239000, NULL, N'Cotton thun', N'ACTIVE'),
-(N'Quần short jean cá tính - Polyester', N'quan-short-jean-ca-tinh-polyester-05', N'Quần short jean cá tính - Polyester, màu be, phù hợp đi biển, đi chơi mùa hè. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 259000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần short kaki túi hộp - Polyester', N'quan-short-kaki-tui-hop-polyester-06', N'Quần short kaki túi hộp - Polyester, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 279000, 229000, N'Polyester', N'ACTIVE'),
-(N'Quần short đi biển mát mẻ - Cotton thun', N'quan-short-di-bien-mat-me-cotton-thun-07', N'Quần short đi biển mát mẻ - Cotton thun, màu xanh navy, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 299000, NULL, N'Cotton thun', N'ACTIVE'),
-(N'Quần short basic trơn - Polyester', N'quan-short-basic-tron-polyester-08', N'Quần short basic trơn - Polyester, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 329000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần short thun form rộng - Denim', N'quan-short-thun-form-rong-denim-09', N'Quần short thun form rộng - Denim, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 349000, 286000, N'Denim', N'ACTIVE'),
-(N'Quần short denim basic - Kaki', N'quan-short-denim-basic-kaki-10', N'Quần short denim basic - Kaki, màu xám, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 159000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần short kaki túi hộp - Cotton thun', N'quan-short-kaki-tui-hop-cotton-thun-11', N'Quần short kaki túi hộp - Cotton thun, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 179000, NULL, N'Cotton thun', N'ACTIVE'),
-(N'Quần short đi biển mát mẻ - Denim', N'quan-short-di-bien-mat-me-denim-12', N'Quần short đi biển mát mẻ - Denim, màu xanh navy, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 199000, 163000, N'Denim', N'ACTIVE'),
-(N'Quần short basic trơn - Polyester', N'quan-short-basic-tron-polyester-13', N'Quần short basic trơn - Polyester, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 219000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần short đi biển mát mẻ - Cotton thun', N'quan-short-di-bien-mat-me-cotton-thun-14', N'Quần short đi biển mát mẻ - Cotton thun, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 239000, NULL, N'Cotton thun', N'ACTIVE'),
-(N'Quần short đi biển mát mẻ - Kaki', N'quan-short-di-bien-mat-me-kaki-15', N'Quần short đi biển mát mẻ - Kaki, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 259000, 212000, N'Kaki', N'ACTIVE'),
-(N'Quần short basic trơn - Kaki', N'quan-short-basic-tron-kaki-16', N'Quần short basic trơn - Kaki, màu be, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 279000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần short thể thao năng động - Denim', N'quan-short-the-thao-nang-dong-denim-17', N'Quần short thể thao năng động - Denim, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 299000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần short thun form rộng - Kaki', N'quan-short-thun-form-rong-kaki-18', N'Quần short thun form rộng - Kaki, màu be, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 329000, 270000, N'Kaki', N'ACTIVE'),
-(N'Quần short basic trơn - Kaki', N'quan-short-basic-tron-kaki-19', N'Quần short basic trơn - Kaki, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 349000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần short denim basic - Denim', N'quan-short-denim-basic-denim-20', N'Quần short denim basic - Denim, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 159000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần short ống rộng thoải mái - Cotton thun', N'quan-short-ong-rong-thoai-mai-cotton-thun-21', N'Quần short ống rộng thoải mái - Cotton thun, màu xanh navy, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 179000, 147000, N'Cotton thun', N'ACTIVE'),
-(N'Quần short thun form rộng - Denim', N'quan-short-thun-form-rong-denim-22', N'Quần short thun form rộng - Denim, màu be, phù hợp đi biển, đi chơi mùa hè. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 199000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần short kaki túi hộp - Kaki', N'quan-short-kaki-tui-hop-kaki-23', N'Quần short kaki túi hộp - Kaki, màu xám, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 219000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần short thun form rộng - Cotton thun', N'quan-short-thun-form-rong-cotton-thun-24', N'Quần short thun form rộng - Cotton thun, màu rêu, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 239000, 196000, N'Cotton thun', N'ACTIVE'),
-(N'Quần short thun form rộng - Cotton thun', N'quan-short-thun-form-rong-cotton-thun-25', N'Quần short thun form rộng - Cotton thun, màu xanh navy, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 259000, NULL, N'Cotton thun', N'ACTIVE'),
-(N'Quần short đi biển mát mẻ - Cotton thun', N'quan-short-di-bien-mat-me-cotton-thun-26', N'Quần short đi biển mát mẻ - Cotton thun, màu xám, phù hợp đi biển, đi chơi mùa hè. Chất liệu cotton thun, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 279000, NULL, N'Cotton thun', N'ACTIVE'),
-(N'Quần short denim basic - Kaki', N'quan-short-denim-basic-kaki-27', N'Quần short denim basic - Kaki, màu be, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 299000, 245000, N'Kaki', N'ACTIVE'),
-(N'Quần short thể thao năng động - Kaki', N'quan-short-the-thao-nang-dong-kaki-28', N'Quần short thể thao năng động - Kaki, màu đen, phù hợp đi biển, đi chơi mùa hè. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_short, @brandLocal, 329000, NULL, N'Kaki', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_short
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_short;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_short n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Be'), (N'31', N'Đen'), (N'32', N'Be')) AS x(size, color);
+/****** Object:  Table [dbo].[roles]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Quần thể thao (quan-the-thao) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_the_thao INT = (SELECT category_id FROM categories WHERE slug = N'quan-the-thao');
-DECLARE @new_quan_the_thao TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_the_thao(product_id, slug)
-VALUES
-(N'Quần thể thao training năng động - Polyester gió', N'quan-the-thao-training-nang-dong-polyester-gio-01', N'Quần thể thao training năng động - Polyester gió, màu xám, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 199000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Quần thể thao phối sọc thể thao - Thun co giãn 4 chiều', N'quan-the-thao-phoi-soc-the-thao-thun-co-gian-4-chieu-02', N'Quần thể thao phối sọc thể thao - Thun co giãn 4 chiều, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 219000, NULL, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao chạy bộ thoáng khí - Thun co giãn 4 chiều', N'quan-the-thao-chay-bo-thoang-khi-thun-co-gian-4-chieu-03', N'Quần thể thao chạy bộ thoáng khí - Thun co giãn 4 chiều, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 239000, 196000, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao gió thể thao nhẹ - Thun co giãn 4 chiều', N'quan-the-thao-gio-the-thao-nhe-thun-co-gian-4-chieu-04', N'Quần thể thao gió thể thao nhẹ - Thun co giãn 4 chiều, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 259000, NULL, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao jogger bo gấu - Polyester gió', N'quan-the-thao-jogger-bo-gau-polyester-gio-05', N'Quần thể thao jogger bo gấu - Polyester gió, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 279000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Quần thể thao phối sọc thể thao - Thun lạnh', N'quan-the-thao-phoi-soc-the-thao-thun-lanh-06', N'Quần thể thao phối sọc thể thao - Thun lạnh, màu xám, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 299000, 245000, N'Thun lạnh', N'ACTIVE'),
-(N'Quần thể thao jogger bo gấu - Thun co giãn 4 chiều', N'quan-the-thao-jogger-bo-gau-thun-co-gian-4-chieu-07', N'Quần thể thao jogger bo gấu - Thun co giãn 4 chiều, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 329000, NULL, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao jogger bo gấu - Thun lạnh', N'quan-the-thao-jogger-bo-gau-thun-lanh-08', N'Quần thể thao jogger bo gấu - Thun lạnh, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 359000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Quần thể thao training năng động - Thun co giãn 4 chiều', N'quan-the-thao-training-nang-dong-thun-co-gian-4-chieu-09', N'Quần thể thao training năng động - Thun co giãn 4 chiều, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 399000, 327000, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao jogger bo gấu - Thun co giãn 4 chiều', N'quan-the-thao-jogger-bo-gau-thun-co-gian-4-chieu-10', N'Quần thể thao jogger bo gấu - Thun co giãn 4 chiều, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 179000, NULL, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao phối sọc thể thao - Cotton nỉ', N'quan-the-thao-phoi-soc-the-thao-cotton-ni-11', N'Quần thể thao phối sọc thể thao - Cotton nỉ, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 199000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao gió thể thao nhẹ - Thun co giãn 4 chiều', N'quan-the-thao-gio-the-thao-nhe-thun-co-gian-4-chieu-12', N'Quần thể thao gió thể thao nhẹ - Thun co giãn 4 chiều, màu xám, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 219000, 180000, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao túi khóa kéo tiện lợi - Cotton nỉ', N'quan-the-thao-tui-khoa-keo-tien-loi-cotton-ni-13', N'Quần thể thao túi khóa kéo tiện lợi - Cotton nỉ, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 239000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao jogger bo gấu - Cotton nỉ', N'quan-the-thao-jogger-bo-gau-cotton-ni-14', N'Quần thể thao jogger bo gấu - Cotton nỉ, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 259000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao chạy bộ thoáng khí - Polyester gió', N'quan-the-thao-chay-bo-thoang-khi-polyester-gio-15', N'Quần thể thao chạy bộ thoáng khí - Polyester gió, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 279000, 229000, N'Polyester gió', N'ACTIVE'),
-(N'Quần thể thao form suông basic - Thun lạnh', N'quan-the-thao-form-suong-basic-thun-lanh-16', N'Quần thể thao form suông basic - Thun lạnh, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 299000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Quần thể thao chạy bộ thoáng khí - Cotton nỉ', N'quan-the-thao-chay-bo-thoang-khi-cotton-ni-17', N'Quần thể thao chạy bộ thoáng khí - Cotton nỉ, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 329000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao chạy bộ thoáng khí - Cotton nỉ', N'quan-the-thao-chay-bo-thoang-khi-cotton-ni-18', N'Quần thể thao chạy bộ thoáng khí - Cotton nỉ, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 359000, 294000, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao gió thể thao nhẹ - Polyester gió', N'quan-the-thao-gio-the-thao-nhe-polyester-gio-19', N'Quần thể thao gió thể thao nhẹ - Polyester gió, màu xám, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 399000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Quần thể thao chạy bộ thoáng khí - Thun co giãn 4 chiều', N'quan-the-thao-chay-bo-thoang-khi-thun-co-gian-4-chieu-20', N'Quần thể thao chạy bộ thoáng khí - Thun co giãn 4 chiều, màu xám, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 179000, NULL, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao jogger bo gấu - Polyester gió', N'quan-the-thao-jogger-bo-gau-polyester-gio-21', N'Quần thể thao jogger bo gấu - Polyester gió, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 199000, 163000, N'Polyester gió', N'ACTIVE'),
-(N'Quần thể thao gió thể thao nhẹ - Cotton nỉ', N'quan-the-thao-gio-the-thao-nhe-cotton-ni-22', N'Quần thể thao gió thể thao nhẹ - Cotton nỉ, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 219000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao thun lạnh co giãn - Thun co giãn 4 chiều', N'quan-the-thao-thun-lanh-co-gian-thun-co-gian-4-chieu-23', N'Quần thể thao thun lạnh co giãn - Thun co giãn 4 chiều, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun co giãn 4 chiều, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 239000, NULL, N'Thun co giãn 4 chiều', N'ACTIVE'),
-(N'Quần thể thao túi khóa kéo tiện lợi - Thun lạnh', N'quan-the-thao-tui-khoa-keo-tien-loi-thun-lanh-24', N'Quần thể thao túi khóa kéo tiện lợi - Thun lạnh, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 259000, 212000, N'Thun lạnh', N'ACTIVE'),
-(N'Quần thể thao thun lạnh co giãn - Cotton nỉ', N'quan-the-thao-thun-lanh-co-gian-cotton-ni-25', N'Quần thể thao thun lạnh co giãn - Cotton nỉ, màu rêu, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 279000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao gió thể thao nhẹ - Cotton nỉ', N'quan-the-thao-gio-the-thao-nhe-cotton-ni-26', N'Quần thể thao gió thể thao nhẹ - Cotton nỉ, màu xanh navy, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu cotton nỉ, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 299000, NULL, N'Cotton nỉ', N'ACTIVE'),
-(N'Quần thể thao phối sọc thể thao - Polyester gió', N'quan-the-thao-phoi-soc-the-thao-polyester-gio-27', N'Quần thể thao phối sọc thể thao - Polyester gió, màu đen, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 329000, 270000, N'Polyester gió', N'ACTIVE'),
-(N'Quần thể thao túi khóa kéo tiện lợi - Polyester gió', N'quan-the-thao-tui-khoa-keo-tien-loi-polyester-gio-28', N'Quần thể thao túi khóa kéo tiện lợi - Polyester gió, màu xám, phù hợp chơi thể thao, tập gym, mặc nhà. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_quan_the_thao, @brandLocal, 359000, NULL, N'Polyester gió', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_the_thao
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_the_thao;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_the_thao n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Xám'), (N'31', N'Đen'), (N'32', N'Xám')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Quần slim fit (quan-slim-fit) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_slim_fit INT = (SELECT category_id FROM categories WHERE slug = N'quan-slim-fit');
-DECLARE @new_quan_slim_fit TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_slim_fit(product_id, slug)
-VALUES
-(N'Quần slim fit co giãn thoải mái - Denim co giãn', N'quan-slim-fit-co-gian-thoai-mai-denim-co-gian-01', N'Quần slim fit co giãn thoải mái - Denim co giãn, màu nâu, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 319000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit form ôm nhẹ - Denim co giãn', N'quan-slim-fit-form-om-nhe-denim-co-gian-02', N'Quần slim fit form ôm nhẹ - Denim co giãn, màu xám, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 349000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit ống côn hiện đại - Kaki co giãn', N'quan-slim-fit-ong-con-hien-dai-kaki-co-gian-03', N'Quần slim fit ống côn hiện đại - Kaki co giãn, màu xám, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 379000, 311000, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit vải Tencel mềm mại - Denim co giãn', N'quan-slim-fit-vai-tencel-mem-mai-denim-co-gian-04', N'Quần slim fit vải Tencel mềm mại - Denim co giãn, màu đen, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 409000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit denim slimfit - Cotton pha spandex', N'quan-slim-fit-denim-slimfit-cotton-pha-spandex-05', N'Quần slim fit denim slimfit - Cotton pha spandex, màu nâu, phù hợp đi làm, đi chơi. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 439000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần slim fit âu slimfit lịch lãm - Cotton pha spandex', N'quan-slim-fit-au-slimfit-lich-lam-cotton-pha-spandex-06', N'Quần slim fit âu slimfit lịch lãm - Cotton pha spandex, màu xám, phù hợp đi làm, đi chơi. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 469000, 385000, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần slim fit form ôm nhẹ - Tencel', N'quan-slim-fit-form-om-nhe-tencel-07', N'Quần slim fit form ôm nhẹ - Tencel, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu tencel, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 499000, NULL, N'Tencel', N'ACTIVE'),
-(N'Quần slim fit âu slimfit lịch lãm - Kaki co giãn', N'quan-slim-fit-au-slimfit-lich-lam-kaki-co-gian-08', N'Quần slim fit âu slimfit lịch lãm - Kaki co giãn, màu xám, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 549000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit kaki slimfit - Kaki co giãn', N'quan-slim-fit-kaki-slimfit-kaki-co-gian-09', N'Quần slim fit kaki slimfit - Kaki co giãn, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 599000, 491000, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit denim slimfit - Kaki co giãn', N'quan-slim-fit-denim-slimfit-kaki-co-gian-10', N'Quần slim fit denim slimfit - Kaki co giãn, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 289000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit denim slimfit - Kaki co giãn', N'quan-slim-fit-denim-slimfit-kaki-co-gian-11', N'Quần slim fit denim slimfit - Kaki co giãn, màu nâu, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 319000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit basic một màu - Denim co giãn', N'quan-slim-fit-basic-mot-mau-denim-co-gian-12', N'Quần slim fit basic một màu - Denim co giãn, màu nâu, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 349000, 286000, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit form ôm nhẹ - Cotton pha spandex', N'quan-slim-fit-form-om-nhe-cotton-pha-spandex-13', N'Quần slim fit form ôm nhẹ - Cotton pha spandex, màu nâu, phù hợp đi làm, đi chơi. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 379000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần slim fit co giãn thoải mái - Tencel', N'quan-slim-fit-co-gian-thoai-mai-tencel-14', N'Quần slim fit co giãn thoải mái - Tencel, màu xám, phù hợp đi làm, đi chơi. Chất liệu tencel, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 409000, NULL, N'Tencel', N'ACTIVE'),
-(N'Quần slim fit ống côn hiện đại - Cotton pha spandex', N'quan-slim-fit-ong-con-hien-dai-cotton-pha-spandex-15', N'Quần slim fit ống côn hiện đại - Cotton pha spandex, màu nâu, phù hợp đi làm, đi chơi. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 439000, 360000, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần slim fit basic một màu - Denim co giãn', N'quan-slim-fit-basic-mot-mau-denim-co-gian-16', N'Quần slim fit basic một màu - Denim co giãn, màu đen, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 469000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit vải Tencel mềm mại - Kaki co giãn', N'quan-slim-fit-vai-tencel-mem-mai-kaki-co-gian-17', N'Quần slim fit vải Tencel mềm mại - Kaki co giãn, màu đen, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 499000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit kaki slimfit - Denim co giãn', N'quan-slim-fit-kaki-slimfit-denim-co-gian-18', N'Quần slim fit kaki slimfit - Denim co giãn, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 549000, 450000, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit form ôm nhẹ - Kaki co giãn', N'quan-slim-fit-form-om-nhe-kaki-co-gian-19', N'Quần slim fit form ôm nhẹ - Kaki co giãn, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 599000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần slim fit âu slimfit lịch lãm - Cotton pha spandex', N'quan-slim-fit-au-slimfit-lich-lam-cotton-pha-spandex-20', N'Quần slim fit âu slimfit lịch lãm - Cotton pha spandex, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 289000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần slim fit ống côn hiện đại - Tencel', N'quan-slim-fit-ong-con-hien-dai-tencel-21', N'Quần slim fit ống côn hiện đại - Tencel, màu đen, phù hợp đi làm, đi chơi. Chất liệu tencel, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 319000, 262000, N'Tencel', N'ACTIVE'),
-(N'Quần slim fit kaki slimfit - Tencel', N'quan-slim-fit-kaki-slimfit-tencel-22', N'Quần slim fit kaki slimfit - Tencel, màu nâu, phù hợp đi làm, đi chơi. Chất liệu tencel, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 349000, NULL, N'Tencel', N'ACTIVE'),
-(N'Quần slim fit vải Tencel mềm mại - Denim co giãn', N'quan-slim-fit-vai-tencel-mem-mai-denim-co-gian-23', N'Quần slim fit vải Tencel mềm mại - Denim co giãn, màu xanh navy, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 379000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit ống côn hiện đại - Denim co giãn', N'quan-slim-fit-ong-con-hien-dai-denim-co-gian-24', N'Quần slim fit ống côn hiện đại - Denim co giãn, màu nâu, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 409000, 335000, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit denim slimfit - Denim co giãn', N'quan-slim-fit-denim-slimfit-denim-co-gian-25', N'Quần slim fit denim slimfit - Denim co giãn, màu nâu, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 439000, NULL, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit kaki slimfit - Cotton pha spandex', N'quan-slim-fit-kaki-slimfit-cotton-pha-spandex-26', N'Quần slim fit kaki slimfit - Cotton pha spandex, màu xám, phù hợp đi làm, đi chơi. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 469000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Quần slim fit denim slimfit - Denim co giãn', N'quan-slim-fit-denim-slimfit-denim-co-gian-27', N'Quần slim fit denim slimfit - Denim co giãn, màu đen, phù hợp đi làm, đi chơi. Chất liệu denim co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 499000, 409000, N'Denim co giãn', N'ACTIVE'),
-(N'Quần slim fit basic một màu - Tencel', N'quan-slim-fit-basic-mot-mau-tencel-28', N'Quần slim fit basic một màu - Tencel, màu xám, phù hợp đi làm, đi chơi. Chất liệu tencel, form dáng chuẩn, dễ phối đồ.', @cat_quan_slim_fit, @brandLocal, 549000, NULL, N'Tencel', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_slim_fit
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_slim_fit;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_slim_fit n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Xám'), (N'31', N'Đen'), (N'32', N'Xám')) AS x(size, color);
+CREATE TABLE [dbo].[roles](
+	[role_id] [int] IDENTITY(1,1) NOT NULL,
+	[role_name] [nvarchar](50) NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[role_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ===== Quần kaki (quan-kaki) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_kaki INT = (SELECT category_id FROM categories WHERE slug = N'quan-kaki');
-DECLARE @new_quan_kaki TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_kaki(product_id, slug)
-VALUES
-(N'Quần kaki ống suông cổ điển - Kaki dày dặn', N'quan-kaki-ong-suong-co-dien-kaki-day-dan-01', N'Quần kaki ống suông cổ điển - Kaki dày dặn, màu xám, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 279000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki phối túi hông - Kaki cotton', N'quan-kaki-phoi-tui-hong-kaki-cotton-02', N'Quần kaki phối túi hông - Kaki cotton, màu xám, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 299000, NULL, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki form slim hiện đại - Kaki cotton', N'quan-kaki-form-slim-hien-dai-kaki-cotton-03', N'Quần kaki form slim hiện đại - Kaki cotton, màu xám, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 329000, 270000, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki ống suông cổ điển - Kaki co giãn', N'quan-kaki-ong-suong-co-dien-kaki-co-gian-04', N'Quần kaki ống suông cổ điển - Kaki co giãn, màu be, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 359000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần kaki túi hộp cargo - Kaki dày dặn', N'quan-kaki-tui-hop-cargo-kaki-day-dan-05', N'Quần kaki túi hộp cargo - Kaki dày dặn, màu xanh rêu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 389000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki chinos trẻ trung - Kaki cotton', N'quan-kaki-chinos-tre-trung-kaki-cotton-06', N'Quần kaki chinos trẻ trung - Kaki cotton, màu xanh rêu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 419000, 344000, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki cotton', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-cotton-07', N'Quần kaki co giãn nhẹ thoải mái - Kaki cotton, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 449000, NULL, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki basic công sở - Kaki dày dặn', N'quan-kaki-basic-cong-so-kaki-day-dan-08', N'Quần kaki basic công sở - Kaki dày dặn, màu đen, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 469000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki cotton', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-cotton-09', N'Quần kaki co giãn nhẹ thoải mái - Kaki cotton, màu xám, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 499000, 409000, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki màu trơn basic - Kaki dày dặn', N'quan-kaki-mau-tron-basic-kaki-day-dan-10', N'Quần kaki màu trơn basic - Kaki dày dặn, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 259000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki túi hộp cargo - Kaki dày dặn', N'quan-kaki-tui-hop-cargo-kaki-day-dan-11', N'Quần kaki túi hộp cargo - Kaki dày dặn, màu đen, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 279000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki túi hộp cargo - Kaki dày dặn', N'quan-kaki-tui-hop-cargo-kaki-day-dan-12', N'Quần kaki túi hộp cargo - Kaki dày dặn, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 299000, 245000, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki phối túi hông - Kaki cotton', N'quan-kaki-phoi-tui-hong-kaki-cotton-13', N'Quần kaki phối túi hông - Kaki cotton, màu be, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 329000, NULL, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki basic công sở - Kaki dày dặn', N'quan-kaki-basic-cong-so-kaki-day-dan-14', N'Quần kaki basic công sở - Kaki dày dặn, màu xám, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 359000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki dày dặn', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-day-dan-15', N'Quần kaki co giãn nhẹ thoải mái - Kaki dày dặn, màu be, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 389000, 319000, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki chinos trẻ trung - Kaki dày dặn', N'quan-kaki-chinos-tre-trung-kaki-day-dan-16', N'Quần kaki chinos trẻ trung - Kaki dày dặn, màu xám, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 419000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki màu trơn basic - Kaki co giãn', N'quan-kaki-mau-tron-basic-kaki-co-gian-17', N'Quần kaki màu trơn basic - Kaki co giãn, màu đen, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 449000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki co giãn', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-co-gian-18', N'Quần kaki co giãn nhẹ thoải mái - Kaki co giãn, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 469000, 385000, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần kaki chinos trẻ trung - Kaki dày dặn', N'quan-kaki-chinos-tre-trung-kaki-day-dan-19', N'Quần kaki chinos trẻ trung - Kaki dày dặn, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 499000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki chinos trẻ trung - Kaki cotton', N'quan-kaki-chinos-tre-trung-kaki-cotton-20', N'Quần kaki chinos trẻ trung - Kaki cotton, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 259000, NULL, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki ống suông cổ điển - Kaki cotton', N'quan-kaki-ong-suong-co-dien-kaki-cotton-21', N'Quần kaki ống suông cổ điển - Kaki cotton, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 279000, 229000, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki basic công sở - Kaki dày dặn', N'quan-kaki-basic-cong-so-kaki-day-dan-22', N'Quần kaki basic công sở - Kaki dày dặn, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 299000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki dày dặn', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-day-dan-23', N'Quần kaki co giãn nhẹ thoải mái - Kaki dày dặn, màu nâu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 329000, NULL, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki dày dặn', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-day-dan-24', N'Quần kaki co giãn nhẹ thoải mái - Kaki dày dặn, màu xanh rêu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 359000, 294000, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki túi hộp cargo - Kaki cotton', N'quan-kaki-tui-hop-cargo-kaki-cotton-25', N'Quần kaki túi hộp cargo - Kaki cotton, màu xanh rêu, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 389000, NULL, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki co giãn nhẹ thoải mái - Kaki cotton', N'quan-kaki-co-gian-nhe-thoai-mai-kaki-cotton-26', N'Quần kaki co giãn nhẹ thoải mái - Kaki cotton, màu be, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 419000, NULL, N'Kaki cotton', N'ACTIVE'),
-(N'Quần kaki màu trơn basic - Kaki dày dặn', N'quan-kaki-mau-tron-basic-kaki-day-dan-27', N'Quần kaki màu trơn basic - Kaki dày dặn, màu đen, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki dày dặn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 449000, 368000, N'Kaki dày dặn', N'ACTIVE'),
-(N'Quần kaki form slim hiện đại - Kaki co giãn', N'quan-kaki-form-slim-hien-dai-kaki-co-gian-28', N'Quần kaki form slim hiện đại - Kaki co giãn, màu be, phù hợp đi làm, đi học, đi chơi. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_kaki, @brandLocal, 469000, NULL, N'Kaki co giãn', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_kaki
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_kaki;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_kaki n
-CROSS APPLY (VALUES (N'29', N'Be'), (N'30', N'Xanh rêu'), (N'31', N'Be'), (N'32', N'Xanh rêu')) AS x(size, color);
+/****** Object:  Table [dbo].[user_roles]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Quần âu (quan-au) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_au INT = (SELECT category_id FROM categories WHERE slug = N'quan-au');
-DECLARE @new_quan_au TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_au(product_id, slug)
-VALUES
-(N'Quần âu công sở vest lịch lãm - Wool pha', N'quan-au-cong-so-vest-lich-lam-wool-pha-01', N'Quần âu công sở vest lịch lãm - Wool pha, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 429000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần âu phối lưng liền - Tuyết mưa cao cấp', N'quan-au-phoi-lung-lien-tuyet-mua-cao-cap-02', N'Quần âu phối lưng liền - Tuyết mưa cao cấp, màu xám nhạt, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 459000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu phối lưng liền - Wool pha', N'quan-au-phoi-lung-lien-wool-pha-03', N'Quần âu phối lưng liền - Wool pha, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 499000, 409000, N'Wool pha', N'ACTIVE'),
-(N'Quần âu không ly hiện đại - Wool pha', N'quan-au-khong-ly-hien-dai-wool-pha-04', N'Quần âu không ly hiện đại - Wool pha, màu xám nhạt, phù hợp đi làm công sở, dự tiệc. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 539000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần âu không ly hiện đại - Tuyết mưa cao cấp', N'quan-au-khong-ly-hien-dai-tuyet-mua-cao-cap-05', N'Quần âu không ly hiện đại - Tuyết mưa cao cấp, màu xám nhạt, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 579000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu phối lưng liền - Tuyết mưa cao cấp', N'quan-au-phoi-lung-lien-tuyet-mua-cao-cap-06', N'Quần âu phối lưng liền - Tuyết mưa cao cấp, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 619000, 508000, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu phối lưng liền - Kaki Âu', N'quan-au-phoi-lung-lien-kaki-au-07', N'Quần âu phối lưng liền - Kaki Âu, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 659000, NULL, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu xếp ly cao cấp - Polyester cao cấp', N'quan-au-xep-ly-cao-cap-polyester-cao-cap-08', N'Quần âu xếp ly cao cấp - Polyester cao cấp, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 719000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần âu không ly hiện đại - Kaki Âu', N'quan-au-khong-ly-hien-dai-kaki-au-09', N'Quần âu không ly hiện đại - Kaki Âu, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 799000, 655000, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu công sở vest lịch lãm - Tuyết mưa cao cấp', N'quan-au-cong-so-vest-lich-lam-tuyet-mua-cao-cap-10', N'Quần âu công sở vest lịch lãm - Tuyết mưa cao cấp, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 399000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu ống đứng chuẩn form - Polyester cao cấp', N'quan-au-ong-dung-chuan-form-polyester-cao-cap-11', N'Quần âu ống đứng chuẩn form - Polyester cao cấp, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 429000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần âu vải Ý cao cấp - Tuyết mưa cao cấp', N'quan-au-vai-y-cao-cap-tuyet-mua-cao-cap-12', N'Quần âu vải Ý cao cấp - Tuyết mưa cao cấp, màu xám nhạt, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 459000, 376000, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu phối lưng liền - Wool pha', N'quan-au-phoi-lung-lien-wool-pha-13', N'Quần âu phối lưng liền - Wool pha, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 499000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần âu wool pha sang trọng - Tuyết mưa cao cấp', N'quan-au-wool-pha-sang-trong-tuyet-mua-cao-cap-14', N'Quần âu wool pha sang trọng - Tuyết mưa cao cấp, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 539000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu ống đứng chuẩn form - Kaki Âu', N'quan-au-ong-dung-chuan-form-kaki-au-15', N'Quần âu ống đứng chuẩn form - Kaki Âu, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 579000, 475000, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu basic một màu - Kaki Âu', N'quan-au-basic-mot-mau-kaki-au-16', N'Quần âu basic một màu - Kaki Âu, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 619000, NULL, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu basic một màu - Kaki Âu', N'quan-au-basic-mot-mau-kaki-au-17', N'Quần âu basic một màu - Kaki Âu, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 659000, NULL, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu vải Ý cao cấp - Wool pha', N'quan-au-vai-y-cao-cap-wool-pha-18', N'Quần âu vải Ý cao cấp - Wool pha, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 719000, 590000, N'Wool pha', N'ACTIVE'),
-(N'Quần âu ống đứng chuẩn form - Polyester cao cấp', N'quan-au-ong-dung-chuan-form-polyester-cao-cap-19', N'Quần âu ống đứng chuẩn form - Polyester cao cấp, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 799000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần âu vải Ý cao cấp - Tuyết mưa cao cấp', N'quan-au-vai-y-cao-cap-tuyet-mua-cao-cap-20', N'Quần âu vải Ý cao cấp - Tuyết mưa cao cấp, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 399000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu ống đứng chuẩn form - Kaki Âu', N'quan-au-ong-dung-chuan-form-kaki-au-21', N'Quần âu ống đứng chuẩn form - Kaki Âu, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 429000, 352000, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu ống đứng chuẩn form - Tuyết mưa cao cấp', N'quan-au-ong-dung-chuan-form-tuyet-mua-cao-cap-22', N'Quần âu ống đứng chuẩn form - Tuyết mưa cao cấp, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 459000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu ống đứng chuẩn form - Polyester cao cấp', N'quan-au-ong-dung-chuan-form-polyester-cao-cap-23', N'Quần âu ống đứng chuẩn form - Polyester cao cấp, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 499000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần âu xếp ly cao cấp - Kaki Âu', N'quan-au-xep-ly-cao-cap-kaki-au-24', N'Quần âu xếp ly cao cấp - Kaki Âu, màu xám nhạt, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 539000, 442000, N'Kaki Âu', N'ACTIVE'),
-(N'Quần âu wool pha sang trọng - Tuyết mưa cao cấp', N'quan-au-wool-pha-sang-trong-tuyet-mua-cao-cap-25', N'Quần âu wool pha sang trọng - Tuyết mưa cao cấp, màu xám than, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 579000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu wool pha sang trọng - Wool pha', N'quan-au-wool-pha-sang-trong-wool-pha-26', N'Quần âu wool pha sang trọng - Wool pha, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 619000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Quần âu xếp ly cao cấp - Tuyết mưa cao cấp', N'quan-au-xep-ly-cao-cap-tuyet-mua-cao-cap-27', N'Quần âu xếp ly cao cấp - Tuyết mưa cao cấp, màu xanh navy, phù hợp đi làm công sở, dự tiệc. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 659000, 540000, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Quần âu xếp ly cao cấp - Kaki Âu', N'quan-au-xep-ly-cao-cap-kaki-au-28', N'Quần âu xếp ly cao cấp - Kaki Âu, màu đen, phù hợp đi làm công sở, dự tiệc. Chất liệu kaki âu, form dáng chuẩn, dễ phối đồ.', @cat_quan_au, @brandLocal, 719000, NULL, N'Kaki Âu', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_au
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_au;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_au n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Xám than'), (N'31', N'Đen'), (N'32', N'Xám than')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Quần regular fit (quan-regular-fit) — 28 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_regular_fit INT = (SELECT category_id FROM categories WHERE slug = N'quan-regular-fit');
-DECLARE @new_quan_regular_fit TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_regular_fit(product_id, slug)
-VALUES
-(N'Quần regular fit vải cao cấp bền màu - Cotton pha', N'quan-regular-fit-vai-cao-cap-ben-mau-cotton-pha-01', N'Quần regular fit vải cao cấp bền màu - Cotton pha, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 299000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit phối túi sau - Cotton pha', N'quan-regular-fit-phoi-tui-sau-cotton-pha-02', N'Quần regular fit phối túi sau - Cotton pha, màu đen, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 329000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit form vừa vặn thoải mái - Cotton pha', N'quan-regular-fit-form-vua-van-thoai-mai-cotton-pha-03', N'Quần regular fit form vừa vặn thoải mái - Cotton pha, màu xám, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 359000, 294000, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit kaki regular - Cotton pha', N'quan-regular-fit-kaki-regular-cotton-pha-04', N'Quần regular fit kaki regular - Cotton pha, màu xám, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 389000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit basic một màu - Polyester', N'quan-regular-fit-basic-mot-mau-polyester-05', N'Quần regular fit basic một màu - Polyester, màu xám, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 419000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit âu regular lịch lãm - Cotton pha', N'quan-regular-fit-au-regular-lich-lam-cotton-pha-06', N'Quần regular fit âu regular lịch lãm - Cotton pha, màu đen, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 449000, 368000, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit kaki regular - Kaki', N'quan-regular-fit-kaki-regular-kaki-07', N'Quần regular fit kaki regular - Kaki, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 479000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần regular fit kaki regular - Denim', N'quan-regular-fit-kaki-regular-denim-08', N'Quần regular fit kaki regular - Denim, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 509000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần regular fit denim regular - Polyester', N'quan-regular-fit-denim-regular-polyester-09', N'Quần regular fit denim regular - Polyester, màu đen, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 549000, 450000, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit denim regular - Denim', N'quan-regular-fit-denim-regular-denim-10', N'Quần regular fit denim regular - Denim, màu be, phù hợp đi làm, đi học hằng ngày. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 279000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần regular fit phối túi sau - Denim', N'quan-regular-fit-phoi-tui-sau-denim-11', N'Quần regular fit phối túi sau - Denim, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 299000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần regular fit basic một màu - Polyester', N'quan-regular-fit-basic-mot-mau-polyester-12', N'Quần regular fit basic một màu - Polyester, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 329000, 270000, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit âu regular lịch lãm - Cotton pha', N'quan-regular-fit-au-regular-lich-lam-cotton-pha-13', N'Quần regular fit âu regular lịch lãm - Cotton pha, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 359000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit ống đứng basic - Denim', N'quan-regular-fit-ong-dung-basic-denim-14', N'Quần regular fit ống đứng basic - Denim, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 389000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần regular fit phối túi sau - Cotton pha', N'quan-regular-fit-phoi-tui-sau-cotton-pha-15', N'Quần regular fit phối túi sau - Cotton pha, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 419000, 344000, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit âu regular lịch lãm - Polyester', N'quan-regular-fit-au-regular-lich-lam-polyester-16', N'Quần regular fit âu regular lịch lãm - Polyester, màu xám, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 449000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit basic một màu - Polyester', N'quan-regular-fit-basic-mot-mau-polyester-17', N'Quần regular fit basic một màu - Polyester, màu đen, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 479000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit basic một màu - Kaki', N'quan-regular-fit-basic-mot-mau-kaki-18', N'Quần regular fit basic một màu - Kaki, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 509000, 417000, N'Kaki', N'ACTIVE'),
-(N'Quần regular fit form vừa vặn thoải mái - Kaki', N'quan-regular-fit-form-vua-van-thoai-mai-kaki-19', N'Quần regular fit form vừa vặn thoải mái - Kaki, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu kaki, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 549000, NULL, N'Kaki', N'ACTIVE'),
-(N'Quần regular fit form vừa vặn thoải mái - Cotton pha', N'quan-regular-fit-form-vua-van-thoai-mai-cotton-pha-20', N'Quần regular fit form vừa vặn thoải mái - Cotton pha, màu be, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 279000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit ống đứng basic - Cotton pha', N'quan-regular-fit-ong-dung-basic-cotton-pha-21', N'Quần regular fit ống đứng basic - Cotton pha, màu be, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 299000, 245000, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit ống đứng basic - Cotton pha', N'quan-regular-fit-ong-dung-basic-cotton-pha-22', N'Quần regular fit ống đứng basic - Cotton pha, màu xám, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 329000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần regular fit form vừa vặn thoải mái - Denim', N'quan-regular-fit-form-vua-van-thoai-mai-denim-23', N'Quần regular fit form vừa vặn thoải mái - Denim, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 359000, NULL, N'Denim', N'ACTIVE'),
-(N'Quần regular fit kaki regular - Denim', N'quan-regular-fit-kaki-regular-denim-24', N'Quần regular fit kaki regular - Denim, màu be, phù hợp đi làm, đi học hằng ngày. Chất liệu denim, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 389000, 319000, N'Denim', N'ACTIVE'),
-(N'Quần regular fit form vừa vặn thoải mái - Polyester', N'quan-regular-fit-form-vua-van-thoai-mai-polyester-25', N'Quần regular fit form vừa vặn thoải mái - Polyester, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 419000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit ống đứng basic - Polyester', N'quan-regular-fit-ong-dung-basic-polyester-26', N'Quần regular fit ống đứng basic - Polyester, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 449000, NULL, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit denim regular - Polyester', N'quan-regular-fit-denim-regular-polyester-27', N'Quần regular fit denim regular - Polyester, màu xám, phù hợp đi làm, đi học hằng ngày. Chất liệu polyester, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 479000, 393000, N'Polyester', N'ACTIVE'),
-(N'Quần regular fit basic một màu - Cotton pha', N'quan-regular-fit-basic-mot-mau-cotton-pha-28', N'Quần regular fit basic một màu - Cotton pha, màu xanh navy, phù hợp đi làm, đi học hằng ngày. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_regular_fit, @brandLocal, 509000, NULL, N'Cotton pha', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_regular_fit
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_regular_fit;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_regular_fit n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Xám'), (N'31', N'Đen'), (N'32', N'Xám')) AS x(size, color);
+CREATE TABLE [dbo].[user_roles](
+	[user_id] [bigint] NOT NULL,
+	[role_id] [int] NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[user_id] ASC,
+	[role_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ===== Quần fiero (quan-fiero) — 25 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_fiero INT = (SELECT category_id FROM categories WHERE slug = N'quan-fiero');
-DECLARE @new_quan_fiero TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_fiero(product_id, slug)
-VALUES
-(N'Quần fiero ống côn hiện đại - Cotton co giãn', N'quan-fiero-ong-con-hien-dai-cotton-co-gian-01', N'Quần fiero ống côn hiện đại - Cotton co giãn, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 329000, NULL, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero ống đứng cá tính - Kaki Hàn Quốc', N'quan-fiero-ong-dung-ca-tinh-kaki-han-quoc-02', N'Quần fiero ống đứng cá tính - Kaki Hàn Quốc, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu kaki hàn quốc, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 359000, NULL, N'Kaki Hàn Quốc', N'ACTIVE'),
-(N'Quần fiero ống côn hiện đại - Denim mềm', N'quan-fiero-ong-con-hien-dai-denim-mem-03', N'Quần fiero ống côn hiện đại - Denim mềm, màu xám, phù hợp đi chơi, phối đồ năng động. Chất liệu denim mềm, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 389000, 319000, N'Denim mềm', N'ACTIVE'),
-(N'Quần fiero form basic năng động - Polyester cao cấp', N'quan-fiero-form-basic-nang-dong-polyester-cao-cap-04', N'Quần fiero form basic năng động - Polyester cao cấp, màu xanh navy, phù hợp đi chơi, phối đồ năng động. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 419000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần fiero ống đứng cá tính - Polyester cao cấp', N'quan-fiero-ong-dung-ca-tinh-polyester-cao-cap-05', N'Quần fiero ống đứng cá tính - Polyester cao cấp, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 449000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần fiero phong cách streetwear - Denim mềm', N'quan-fiero-phong-cach-streetwear-denim-mem-06', N'Quần fiero phong cách streetwear - Denim mềm, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu denim mềm, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 479000, 393000, N'Denim mềm', N'ACTIVE'),
-(N'Quần fiero phong cách streetwear - Polyester cao cấp', N'quan-fiero-phong-cach-streetwear-polyester-cao-cap-07', N'Quần fiero phong cách streetwear - Polyester cao cấp, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 519000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần fiero vải co giãn Hàn Quốc - Denim mềm', N'quan-fiero-vai-co-gian-han-quoc-denim-mem-08', N'Quần fiero vải co giãn Hàn Quốc - Denim mềm, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu denim mềm, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 559000, NULL, N'Denim mềm', N'ACTIVE'),
-(N'Quần fiero phối túi hộp - Cotton co giãn', N'quan-fiero-phoi-tui-hop-cotton-co-gian-09', N'Quần fiero phối túi hộp - Cotton co giãn, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 599000, 491000, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero ống côn hiện đại - Cotton co giãn', N'quan-fiero-ong-con-hien-dai-cotton-co-gian-10', N'Quần fiero ống côn hiện đại - Cotton co giãn, màu xanh navy, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 299000, NULL, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero phối dây rút cá tính - Cotton co giãn', N'quan-fiero-phoi-day-rut-ca-tinh-cotton-co-gian-11', N'Quần fiero phối dây rút cá tính - Cotton co giãn, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 329000, NULL, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero vải co giãn Hàn Quốc - Cotton co giãn', N'quan-fiero-vai-co-gian-han-quoc-cotton-co-gian-12', N'Quần fiero vải co giãn Hàn Quốc - Cotton co giãn, màu xanh navy, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 359000, 294000, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero ống côn hiện đại - Cotton co giãn', N'quan-fiero-ong-con-hien-dai-cotton-co-gian-13', N'Quần fiero ống côn hiện đại - Cotton co giãn, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 389000, NULL, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero vải co giãn Hàn Quốc - Kaki Hàn Quốc', N'quan-fiero-vai-co-gian-han-quoc-kaki-han-quoc-14', N'Quần fiero vải co giãn Hàn Quốc - Kaki Hàn Quốc, màu xanh navy, phù hợp đi chơi, phối đồ năng động. Chất liệu kaki hàn quốc, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 419000, NULL, N'Kaki Hàn Quốc', N'ACTIVE'),
-(N'Quần fiero form basic năng động - Cotton co giãn', N'quan-fiero-form-basic-nang-dong-cotton-co-gian-15', N'Quần fiero form basic năng động - Cotton co giãn, màu xám, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 449000, 368000, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero phong cách streetwear - Kaki Hàn Quốc', N'quan-fiero-phong-cach-streetwear-kaki-han-quoc-16', N'Quần fiero phong cách streetwear - Kaki Hàn Quốc, màu xám, phù hợp đi chơi, phối đồ năng động. Chất liệu kaki hàn quốc, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 479000, NULL, N'Kaki Hàn Quốc', N'ACTIVE'),
-(N'Quần fiero form basic năng động - Denim mềm', N'quan-fiero-form-basic-nang-dong-denim-mem-17', N'Quần fiero form basic năng động - Denim mềm, màu xanh navy, phù hợp đi chơi, phối đồ năng động. Chất liệu denim mềm, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 519000, NULL, N'Denim mềm', N'ACTIVE'),
-(N'Quần fiero ống đứng cá tính - Cotton co giãn', N'quan-fiero-ong-dung-ca-tinh-cotton-co-gian-18', N'Quần fiero ống đứng cá tính - Cotton co giãn, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 559000, 458000, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero phong cách streetwear - Cotton co giãn', N'quan-fiero-phong-cach-streetwear-cotton-co-gian-19', N'Quần fiero phong cách streetwear - Cotton co giãn, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 599000, NULL, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero ống côn hiện đại - Kaki Hàn Quốc', N'quan-fiero-ong-con-hien-dai-kaki-han-quoc-20', N'Quần fiero ống côn hiện đại - Kaki Hàn Quốc, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu kaki hàn quốc, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 299000, NULL, N'Kaki Hàn Quốc', N'ACTIVE'),
-(N'Quần fiero ống đứng cá tính - Polyester cao cấp', N'quan-fiero-ong-dung-ca-tinh-polyester-cao-cap-21', N'Quần fiero ống đứng cá tính - Polyester cao cấp, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 329000, 270000, N'Polyester cao cấp', N'ACTIVE'),
-(N'Quần fiero ống đứng cá tính - Kaki Hàn Quốc', N'quan-fiero-ong-dung-ca-tinh-kaki-han-quoc-22', N'Quần fiero ống đứng cá tính - Kaki Hàn Quốc, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu kaki hàn quốc, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 359000, NULL, N'Kaki Hàn Quốc', N'ACTIVE'),
-(N'Quần fiero form basic năng động - Kaki Hàn Quốc', N'quan-fiero-form-basic-nang-dong-kaki-han-quoc-23', N'Quần fiero form basic năng động - Kaki Hàn Quốc, màu đen, phù hợp đi chơi, phối đồ năng động. Chất liệu kaki hàn quốc, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 389000, NULL, N'Kaki Hàn Quốc', N'ACTIVE'),
-(N'Quần fiero phong cách streetwear - Cotton co giãn', N'quan-fiero-phong-cach-streetwear-cotton-co-gian-24', N'Quần fiero phong cách streetwear - Cotton co giãn, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu cotton co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 419000, 344000, N'Cotton co giãn', N'ACTIVE'),
-(N'Quần fiero basic một màu - Denim mềm', N'quan-fiero-basic-mot-mau-denim-mem-25', N'Quần fiero basic một màu - Denim mềm, màu rêu, phù hợp đi chơi, phối đồ năng động. Chất liệu denim mềm, form dáng chuẩn, dễ phối đồ.', @cat_quan_fiero, @brandLocal, 449000, NULL, N'Denim mềm', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_fiero
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_fiero;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_fiero n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Xám'), (N'31', N'Đen'), (N'32', N'Xám')) AS x(size, color);
+/****** Object:  Table [dbo].[users]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Quần cropped (quan-cropped) — 25 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_cropped INT = (SELECT category_id FROM categories WHERE slug = N'quan-cropped');
-DECLARE @new_quan_cropped TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_cropped(product_id, slug)
-VALUES
-(N'Quần cropped form hiện đại - Kaki co giãn', N'quan-cropped-form-hien-dai-kaki-co-gian-01', N'Quần cropped form hiện đại - Kaki co giãn, màu be, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 279000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped kiểu Hàn Quốc trẻ trung - Cotton pha', N'quan-cropped-kieu-han-quoc-tre-trung-cotton-pha-02', N'Quần cropped kiểu Hàn Quốc trẻ trung - Cotton pha, màu be, phù hợp đi chơi, đi học mùa hè. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 299000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần cropped linen mùa hè mát mẻ - Kaki mỏng', N'quan-cropped-linen-mua-he-mat-me-kaki-mong-03', N'Quần cropped linen mùa hè mát mẻ - Kaki mỏng, màu đen, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki mỏng, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 329000, 270000, N'Kaki mỏng', N'ACTIVE'),
-(N'Quần cropped một màu tối giản - Kaki co giãn', N'quan-cropped-mot-mau-toi-gian-kaki-co-gian-04', N'Quần cropped một màu tối giản - Kaki co giãn, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 359000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Kaki co giãn', N'quan-cropped-phoi-gau-hien-dai-kaki-co-gian-05', N'Quần cropped phối gấu hiện đại - Kaki co giãn, màu be, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 389000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped ống đứng lửng - Kaki mỏng', N'quan-cropped-ong-dung-lung-kaki-mong-06', N'Quần cropped ống đứng lửng - Kaki mỏng, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki mỏng, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 419000, 344000, N'Kaki mỏng', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Kaki co giãn', N'quan-cropped-phoi-gau-hien-dai-kaki-co-gian-07', N'Quần cropped phối gấu hiện đại - Kaki co giãn, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 439000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped basic ống suông - Linen', N'quan-cropped-basic-ong-suong-linen-08', N'Quần cropped basic ống suông - Linen, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 459000, NULL, N'Linen', N'ACTIVE'),
-(N'Quần cropped phối túi hông - Linen', N'quan-cropped-phoi-tui-hong-linen-09', N'Quần cropped phối túi hông - Linen, màu đen, phù hợp đi chơi, đi học mùa hè. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 499000, 409000, N'Linen', N'ACTIVE'),
-(N'Quần cropped ống đứng lửng - Cotton pha', N'quan-cropped-ong-dung-lung-cotton-pha-10', N'Quần cropped ống đứng lửng - Cotton pha, màu đen, phù hợp đi chơi, đi học mùa hè. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 259000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Cotton pha', N'quan-cropped-phoi-gau-hien-dai-cotton-pha-11', N'Quần cropped phối gấu hiện đại - Cotton pha, màu xám, phù hợp đi chơi, đi học mùa hè. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 279000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Kaki mỏng', N'quan-cropped-phoi-gau-hien-dai-kaki-mong-12', N'Quần cropped phối gấu hiện đại - Kaki mỏng, màu be, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki mỏng, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 299000, 245000, N'Kaki mỏng', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Linen', N'quan-cropped-phoi-gau-hien-dai-linen-13', N'Quần cropped phối gấu hiện đại - Linen, màu be, phù hợp đi chơi, đi học mùa hè. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 329000, NULL, N'Linen', N'ACTIVE'),
-(N'Quần cropped một màu tối giản - Cotton pha', N'quan-cropped-mot-mau-toi-gian-cotton-pha-14', N'Quần cropped một màu tối giản - Cotton pha, màu xám, phù hợp đi chơi, đi học mùa hè. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 359000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần cropped form hiện đại - Linen', N'quan-cropped-form-hien-dai-linen-15', N'Quần cropped form hiện đại - Linen, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 389000, 319000, N'Linen', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Kaki mỏng', N'quan-cropped-phoi-gau-hien-dai-kaki-mong-16', N'Quần cropped phối gấu hiện đại - Kaki mỏng, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki mỏng, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 419000, NULL, N'Kaki mỏng', N'ACTIVE'),
-(N'Quần cropped form hiện đại - Kaki co giãn', N'quan-cropped-form-hien-dai-kaki-co-gian-17', N'Quần cropped form hiện đại - Kaki co giãn, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 439000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped ống đứng lửng - Linen', N'quan-cropped-ong-dung-lung-linen-18', N'Quần cropped ống đứng lửng - Linen, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 459000, 376000, N'Linen', N'ACTIVE'),
-(N'Quần cropped một màu tối giản - Kaki co giãn', N'quan-cropped-mot-mau-toi-gian-kaki-co-gian-19', N'Quần cropped một màu tối giản - Kaki co giãn, màu xám, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 499000, NULL, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped ống đứng lửng - Linen', N'quan-cropped-ong-dung-lung-linen-20', N'Quần cropped ống đứng lửng - Linen, màu đen, phù hợp đi chơi, đi học mùa hè. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 259000, NULL, N'Linen', N'ACTIVE'),
-(N'Quần cropped basic ống suông - Kaki mỏng', N'quan-cropped-basic-ong-suong-kaki-mong-21', N'Quần cropped basic ống suông - Kaki mỏng, màu đen, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki mỏng, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 279000, 229000, N'Kaki mỏng', N'ACTIVE'),
-(N'Quần cropped kiểu Hàn Quốc trẻ trung - Cotton pha', N'quan-cropped-kieu-han-quoc-tre-trung-cotton-pha-22', N'Quần cropped kiểu Hàn Quốc trẻ trung - Cotton pha, màu đen, phù hợp đi chơi, đi học mùa hè. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 299000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần cropped phối gấu hiện đại - Cotton pha', N'quan-cropped-phoi-gau-hien-dai-cotton-pha-23', N'Quần cropped phối gấu hiện đại - Cotton pha, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu cotton pha, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 329000, NULL, N'Cotton pha', N'ACTIVE'),
-(N'Quần cropped phối túi hông - Kaki co giãn', N'quan-cropped-phoi-tui-hong-kaki-co-gian-24', N'Quần cropped phối túi hông - Kaki co giãn, màu xám, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki co giãn, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 359000, 294000, N'Kaki co giãn', N'ACTIVE'),
-(N'Quần cropped một màu tối giản - Kaki mỏng', N'quan-cropped-mot-mau-toi-gian-kaki-mong-25', N'Quần cropped một màu tối giản - Kaki mỏng, màu xanh rêu, phù hợp đi chơi, đi học mùa hè. Chất liệu kaki mỏng, form dáng chuẩn, dễ phối đồ.', @cat_quan_cropped, @brandLocal, 389000, NULL, N'Kaki mỏng', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_cropped
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_cropped;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_cropped n
-CROSS APPLY (VALUES (N'29', N'Be'), (N'30', N'Đen'), (N'31', N'Be'), (N'32', N'Đen')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Quần boxer (quan-boxer) — 5 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_boxer INT = (SELECT category_id FROM categories WHERE slug = N'quan-boxer');
-DECLARE @new_quan_boxer TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_boxer(product_id, slug)
-VALUES
-(N'Quần boxer trơn basic - Thun lạnh', N'quan-boxer-tron-basic-thun-lanh-01', N'Quần boxer trơn basic - Thun lạnh, màu trắng, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_boxer, @brandLocal, 99000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Quần boxer thun lạnh co giãn - Modal', N'quan-boxer-thun-lanh-co-gian-modal-02', N'Quần boxer thun lạnh co giãn - Modal, màu đen, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu modal, form dáng chuẩn, dễ phối đồ.', @cat_quan_boxer, @brandLocal, 119000, NULL, N'Modal', N'ACTIVE'),
-(N'Quần boxer họa tiết caro - Modal', N'quan-boxer-hoa-tiet-caro-modal-03', N'Quần boxer họa tiết caro - Modal, màu trắng, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu modal, form dáng chuẩn, dễ phối đồ.', @cat_quan_boxer, @brandLocal, 139000, 114000, N'Modal', N'ACTIVE'),
-(N'Quần boxer họa tiết caro - Thun lạnh', N'quan-boxer-hoa-tiet-caro-thun-lanh-04', N'Quần boxer họa tiết caro - Thun lạnh, màu xám, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_boxer, @brandLocal, 159000, NULL, N'Thun lạnh', N'ACTIVE'),
-(N'Quần boxer họa tiết caro - Cotton', N'quan-boxer-hoa-tiet-caro-cotton-05', N'Quần boxer họa tiết caro - Cotton, màu xám, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_boxer, @brandLocal, 179000, NULL, N'Cotton', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_boxer
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_boxer;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_boxer n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Xám'), (N'L', N'Đen'), (N'XL', N'Xám')) AS x(size, color);
+CREATE TABLE [dbo].[users](
+	[user_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[username] [nvarchar](50) NOT NULL,
+	[password] [nvarchar](255) NOT NULL,
+	[email] [nvarchar](100) NOT NULL,
+	[full_name] [nvarchar](100) NULL,
+	[phone] [nvarchar](20) NULL,
+	[avatar_url] [nvarchar](255) NULL,
+	[is_active] [bit] NULL,
+	[created_at] [datetime2](7) NULL,
+	[updated_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ===== Áo lót (ao-lot) — 5 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_ao_lot INT = (SELECT category_id FROM categories WHERE slug = N'ao-lot');
-DECLARE @new_ao_lot TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_ao_lot(product_id, slug)
-VALUES
-(N'Áo lót thấm hút mồ hôi - Modal', N'ao-lot-tham-hut-mo-hoi-modal-01', N'Áo lót thấm hút mồ hôi - Modal, màu trắng, phù hợp mặc hằng ngày bên trong. Chất liệu modal, form dáng chuẩn, dễ phối đồ.', @cat_ao_lot, @brandLocal, 89000, NULL, N'Modal', N'ACTIVE'),
-(N'Áo lót ba lỗ mát mẻ - Modal', N'ao-lot-ba-lo-mat-me-modal-02', N'Áo lót ba lỗ mát mẻ - Modal, màu đen, phù hợp mặc hằng ngày bên trong. Chất liệu modal, form dáng chuẩn, dễ phối đồ.', @cat_ao_lot, @brandLocal, 99000, NULL, N'Modal', N'ACTIVE'),
-(N'Áo lót form ôm vừa vặn - Cotton pha spandex', N'ao-lot-form-om-vua-van-cotton-pha-spandex-03', N'Áo lót form ôm vừa vặn - Cotton pha spandex, màu đen, phù hợp mặc hằng ngày bên trong. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_ao_lot, @brandLocal, 119000, 98000, N'Cotton pha spandex', N'ACTIVE'),
-(N'Áo lót ba lỗ mát mẻ - Cotton pha spandex', N'ao-lot-ba-lo-mat-me-cotton-pha-spandex-04', N'Áo lót ba lỗ mát mẻ - Cotton pha spandex, màu trắng, phù hợp mặc hằng ngày bên trong. Chất liệu cotton pha spandex, form dáng chuẩn, dễ phối đồ.', @cat_ao_lot, @brandLocal, 139000, NULL, N'Cotton pha spandex', N'ACTIVE'),
-(N'Áo lót cổ tròn basic - Modal', N'ao-lot-co-tron-basic-modal-05', N'Áo lót cổ tròn basic - Modal, màu đen, phù hợp mặc hằng ngày bên trong. Chất liệu modal, form dáng chuẩn, dễ phối đồ.', @cat_ao_lot, @brandLocal, 159000, NULL, N'Modal', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_ao_lot
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_ao_lot;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_ao_lot n
-CROSS APPLY (VALUES (N'S', N'Trắng'), (N'M', N'Đen'), (N'L', N'Trắng'), (N'XL', N'Đen')) AS x(size, color);
+/****** Object:  Table [dbo].[vouchers]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Quần brief (quan-brief) — 5 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_quan_brief INT = (SELECT category_id FROM categories WHERE slug = N'quan-brief');
-DECLARE @new_quan_brief TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_quan_brief(product_id, slug)
-VALUES
-(N'Quần brief cotton co giãn - Cotton', N'quan-brief-cotton-co-gian-cotton-01', N'Quần brief cotton co giãn - Cotton, màu đen, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_brief, @brandLocal, 89000, NULL, N'Cotton', N'ACTIVE'),
-(N'Quần brief cotton co giãn - Cotton', N'quan-brief-cotton-co-gian-cotton-02', N'Quần brief cotton co giãn - Cotton, màu trắng, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_brief, @brandLocal, 99000, NULL, N'Cotton', N'ACTIVE'),
-(N'Quần brief modal mềm mại - Thun lạnh', N'quan-brief-modal-mem-mai-thun-lanh-03', N'Quần brief modal mềm mại - Thun lạnh, màu xám, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu thun lạnh, form dáng chuẩn, dễ phối đồ.', @cat_quan_brief, @brandLocal, 119000, 98000, N'Thun lạnh', N'ACTIVE'),
-(N'Quần brief basic trơn - Cotton', N'quan-brief-basic-tron-cotton-04', N'Quần brief basic trơn - Cotton, màu đen, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_quan_brief, @brandLocal, 129000, NULL, N'Cotton', N'ACTIVE'),
-(N'Quần brief modal mềm mại - Modal', N'quan-brief-modal-mem-mai-modal-05', N'Quần brief modal mềm mại - Modal, màu đen, phù hợp mặc hằng ngày, thấm hút tốt. Chất liệu modal, form dáng chuẩn, dễ phối đồ.', @cat_quan_brief, @brandLocal, 149000, NULL, N'Modal', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_quan_brief
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_quan_brief;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_quan_brief n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Xám'), (N'L', N'Đen'), (N'XL', N'Xám')) AS x(size, color);
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Bộ suit (bo-suit) — 13 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_bo_suit INT = (SELECT category_id FROM categories WHERE slug = N'bo-suit');
-DECLARE @new_bo_suit TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_bo_suit(product_id, slug)
-VALUES
-(N'Bộ suit phối gile 3 món - Wool pha', N'bo-suit-phoi-gile-3-mon-wool-pha-01', N'Bộ suit phối gile 3 món - Wool pha, màu nâu rêu, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 1690000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Bộ suit slimfit dự tiệc - Polyester cao cấp', N'bo-suit-slimfit-du-tiec-polyester-cao-cap-02', N'Bộ suit slimfit dự tiệc - Polyester cao cấp, màu xanh navy, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 1890000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Bộ suit công sở 2 lớp lịch lãm - Wool pha', N'bo-suit-cong-so-2-lop-lich-lam-wool-pha-03', N'Bộ suit công sở 2 lớp lịch lãm - Wool pha, màu xanh navy, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 2090000, 1714000, N'Wool pha', N'ACTIVE'),
-(N'Bộ suit vest cưới cao cấp - Kaki Âu cao cấp', N'bo-suit-vest-cuoi-cao-cap-kaki-au-cao-cap-04', N'Bộ suit vest cưới cao cấp - Kaki Âu cao cấp, màu xanh navy, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu kaki âu cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 2290000, NULL, N'Kaki Âu cao cấp', N'ACTIVE'),
-(N'Bộ suit wool pha sang trọng - Polyester cao cấp', N'bo-suit-wool-pha-sang-trong-polyester-cao-cap-05', N'Bộ suit wool pha sang trọng - Polyester cao cấp, màu nâu rêu, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 2490000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Bộ suit vest dạ hội trang trọng - Polyester cao cấp', N'bo-suit-vest-da-hoi-trang-trong-polyester-cao-cap-06', N'Bộ suit vest dạ hội trang trọng - Polyester cao cấp, màu xám than, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 2790000, 2288000, N'Polyester cao cấp', N'ACTIVE'),
-(N'Bộ suit form Hàn Quốc hiện đại - Wool pha', N'bo-suit-form-han-quoc-hien-dai-wool-pha-07', N'Bộ suit form Hàn Quốc hiện đại - Wool pha, màu nâu rêu, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 2990000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Bộ suit wool pha sang trọng - Tuyết mưa cao cấp', N'bo-suit-wool-pha-sang-trong-tuyet-mua-cao-cap-08', N'Bộ suit wool pha sang trọng - Tuyết mưa cao cấp, màu đen, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 3390000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Bộ suit wool pha sang trọng - Kaki Âu cao cấp', N'bo-suit-wool-pha-sang-trong-kaki-au-cao-cap-09', N'Bộ suit wool pha sang trọng - Kaki Âu cao cấp, màu xanh navy, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu kaki âu cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 3990000, 3272000, N'Kaki Âu cao cấp', N'ACTIVE'),
-(N'Bộ suit slimfit dự tiệc - Wool pha', N'bo-suit-slimfit-du-tiec-wool-pha-10', N'Bộ suit slimfit dự tiệc - Wool pha, màu xám than, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 1490000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Bộ suit vest cưới cao cấp - Tuyết mưa cao cấp', N'bo-suit-vest-cuoi-cao-cap-tuyet-mua-cao-cap-11', N'Bộ suit vest cưới cao cấp - Tuyết mưa cao cấp, màu đen, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 1690000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE'),
-(N'Bộ suit vest dạ hội trang trọng - Wool pha', N'bo-suit-vest-da-hoi-trang-trong-wool-pha-12', N'Bộ suit vest dạ hội trang trọng - Wool pha, màu xám than, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 1890000, 1550000, N'Wool pha', N'ACTIVE'),
-(N'Bộ suit phối gile 3 món - Tuyết mưa cao cấp', N'bo-suit-phoi-gile-3-mon-tuyet-mua-cao-cap-13', N'Bộ suit phối gile 3 món - Tuyết mưa cao cấp, màu xám than, phù hợp cưới hỏi, dự tiệc, đi làm. Chất liệu tuyết mưa cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_bo_suit, @brandLocal, 2090000, NULL, N'Tuyết mưa cao cấp', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_bo_suit
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_bo_suit;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_bo_suit n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Xanh navy'), (N'L', N'Đen'), (N'XL', N'Xanh navy')) AS x(size, color);
+CREATE TABLE [dbo].[vouchers](
+	[voucher_id] [int] IDENTITY(1,1) NOT NULL,
+	[code] [nvarchar](50) NOT NULL,
+	[discount_type] [nvarchar](10) NOT NULL,
+	[discount_value] [decimal](12, 2) NOT NULL,
+	[min_order_value] [decimal](12, 2) NULL,
+	[max_discount_amount] [decimal](12, 2) NULL,
+	[used_count] [int] NOT NULL,
+	[start_date] [date] NULL,
+	[end_date] [date] NULL,
+	[usage_limit] [int] NULL,
+	[is_active] [bit] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[voucher_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
-
--- ===== Blazer (blazer) — 13 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_blazer INT = (SELECT category_id FROM categories WHERE slug = N'blazer');
-DECLARE @new_blazer TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_blazer(product_id, slug)
-VALUES
-(N'Blazer basic một màu - Polyester cao cấp', N'blazer-basic-mot-mau-polyester-cao-cap-01', N'Blazer basic một màu - Polyester cao cấp, màu xám, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 990000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Blazer linen mùa hè thoáng mát - Polyester cao cấp', N'blazer-linen-mua-he-thoang-mat-polyester-cao-cap-02', N'Blazer linen mùa hè thoáng mát - Polyester cao cấp, màu be, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1090000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Blazer 2 hàng khuy sang trọng - Linen', N'blazer-2-hang-khuy-sang-trong-linen-03', N'Blazer 2 hàng khuy sang trọng - Linen, màu xanh navy, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1190000, 976000, N'Linen', N'ACTIVE'),
-(N'Blazer unstructured mềm mại - Linen', N'blazer-unstructured-mem-mai-linen-04', N'Blazer unstructured mềm mại - Linen, màu be, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu linen, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1290000, NULL, N'Linen', N'ACTIVE'),
-(N'Blazer basic một màu - Tuyết mưa', N'blazer-basic-mot-mau-tuyet-mua-05', N'Blazer basic một màu - Tuyết mưa, màu đen, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu tuyết mưa, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1450000, NULL, N'Tuyết mưa', N'ACTIVE'),
-(N'Blazer unstructured mềm mại - Tuyết mưa', N'blazer-unstructured-mem-mai-tuyet-mua-06', N'Blazer unstructured mềm mại - Tuyết mưa, màu xanh navy, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu tuyết mưa, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1590000, 1304000, N'Tuyết mưa', N'ACTIVE'),
-(N'Blazer 2 hàng khuy sang trọng - Polyester cao cấp', N'blazer-2-hang-khuy-sang-trong-polyester-cao-cap-07', N'Blazer 2 hàng khuy sang trọng - Polyester cao cấp, màu xanh navy, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1690000, NULL, N'Polyester cao cấp', N'ACTIVE'),
-(N'Blazer 1 hàng khuy cổ điển - Tuyết mưa', N'blazer-1-hang-khuy-co-dien-tuyet-mua-08', N'Blazer 1 hàng khuy cổ điển - Tuyết mưa, màu đen, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu tuyết mưa, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1890000, NULL, N'Tuyết mưa', N'ACTIVE'),
-(N'Blazer họa tiết caro lịch lãm - Polyester cao cấp', N'blazer-hoa-tiet-caro-lich-lam-polyester-cao-cap-09', N'Blazer họa tiết caro lịch lãm - Polyester cao cấp, màu xám, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1990000, 1632000, N'Polyester cao cấp', N'ACTIVE'),
-(N'Blazer 1 hàng khuy cổ điển - Wool pha', N'blazer-1-hang-khuy-co-dien-wool-pha-10', N'Blazer 1 hàng khuy cổ điển - Wool pha, màu xanh navy, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 890000, NULL, N'Wool pha', N'ACTIVE'),
-(N'Blazer basic một màu - Tuyết mưa', N'blazer-basic-mot-mau-tuyet-mua-11', N'Blazer basic một màu - Tuyết mưa, màu be, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu tuyết mưa, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 990000, NULL, N'Tuyết mưa', N'ACTIVE'),
-(N'Blazer 2 hàng khuy sang trọng - Wool pha', N'blazer-2-hang-khuy-sang-trong-wool-pha-12', N'Blazer 2 hàng khuy sang trọng - Wool pha, màu xám, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu wool pha, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1090000, 894000, N'Wool pha', N'ACTIVE'),
-(N'Blazer họa tiết caro lịch lãm - Polyester cao cấp', N'blazer-hoa-tiet-caro-lich-lam-polyester-cao-cap-13', N'Blazer họa tiết caro lịch lãm - Polyester cao cấp, màu đen, phù hợp đi làm, dự tiệc, sự kiện. Chất liệu polyester cao cấp, form dáng chuẩn, dễ phối đồ.', @cat_blazer, @brandLocal, 1190000, NULL, N'Polyester cao cấp', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_blazer
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_blazer;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_blazer n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Xanh navy'), (N'L', N'Đen'), (N'XL', N'Xanh navy')) AS x(size, color);
+/****** Object:  Table [dbo].[wishlist]    Script Date: 8/4/2026 3:07:55 PM ******/
+SET ANSI_NULLS ON
 GO
-
--- ===== Đồ giữ nhiệt (do-giu-nhiet) — 5 sản phẩm (áo + quần giữ nhiệt) =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_do_giu_nhiet INT = (SELECT category_id FROM categories WHERE slug = N'do-giu-nhiet');
-DECLARE @new_do_giu_nhiet TABLE (product_id BIGINT, slug NVARCHAR(220), kind NVARCHAR(10));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug, (CASE WHEN inserted.product_name LIKE N'Áo%' THEN N'top' ELSE N'bottom' END) INTO @new_do_giu_nhiet(product_id, slug, kind)
-VALUES
-(N'Áo giữ nhiệt cổ tròn tay dài - Thun nỉ giữ nhiệt', N'ao-giu-nhiet-co-tron-tay-dai-thun-ni-giu-nhiet-01', N'Áo giữ nhiệt cổ tròn tay dài - Thun nỉ giữ nhiệt, màu đen, giữ ấm hiệu quả mùa đông, chất liệu thun nỉ giữ nhiệt, form ôm vừa vặn.', @cat_do_giu_nhiet, @brandLocal, 149000, NULL, N'Thun nỉ giữ nhiệt', N'ACTIVE'),
-(N'Áo giữ nhiệt cổ lọ ôm ấm - Polyester giữ nhiệt', N'ao-giu-nhiet-co-lo-om-am-polyester-giu-nhiet-02', N'Áo giữ nhiệt cổ lọ ôm ấm - Polyester giữ nhiệt, màu xám, giữ ấm hiệu quả mùa đông, chất liệu polyester giữ nhiệt, form ôm vừa vặn.', @cat_do_giu_nhiet, @brandLocal, 179000, NULL, N'Polyester giữ nhiệt', N'ACTIVE'),
-(N'Quần giữ nhiệt ống dài - Thun nỉ giữ nhiệt', N'quan-giu-nhiet-ong-dai-thun-ni-giu-nhiet-03', N'Quần giữ nhiệt ống dài - Thun nỉ giữ nhiệt, màu đen, giữ ấm hiệu quả mùa đông, chất liệu thun nỉ giữ nhiệt, form ôm vừa vặn.', @cat_do_giu_nhiet, @brandLocal, 199000, NULL, N'Thun nỉ giữ nhiệt', N'ACTIVE'),
-(N'Quần giữ nhiệt bó sát - Cotton pha nhiệt', N'quan-giu-nhiet-bo-sat-cotton-pha-nhiet-04', N'Quần giữ nhiệt bó sát - Cotton pha nhiệt, màu be, giữ ấm hiệu quả mùa đông, chất liệu cotton pha nhiệt, form ôm vừa vặn.', @cat_do_giu_nhiet, @brandLocal, 229000, NULL, N'Cotton pha nhiệt', N'ACTIVE'),
-(N'Áo giữ nhiệt cổ tròn tay dài - Cotton pha nhiệt', N'ao-giu-nhiet-co-tron-tay-dai-cotton-pha-nhiet-05', N'Áo giữ nhiệt cổ tròn tay dài - Cotton pha nhiệt, màu be, giữ ấm hiệu quả mùa đông, chất liệu cotton pha nhiệt, form ôm vừa vặn.', @cat_do_giu_nhiet, @brandLocal, 259000, NULL, N'Cotton pha nhiệt', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_do_giu_nhiet;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_do_giu_nhiet n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Đen'), (N'L', N'Xám'), (N'XL', N'Xám')) AS x(size, color)
-WHERE n.kind = N'top'
-UNION ALL
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_do_giu_nhiet n
-CROSS APPLY (VALUES (N'29', N'Đen'), (N'30', N'Đen'), (N'31', N'Xám'), (N'32', N'Xám')) AS x(size, color)
-WHERE n.kind = N'bottom';
+SET QUOTED_IDENTIFIER ON
 GO
-
--- ===== Bộ đồ (bo-do) — 15 sản phẩm =====
-DECLARE @brandLocal INT = (SELECT brand_id FROM brands WHERE brand_name = N'Local Brand');
-DECLARE @cat_bo_do INT = (SELECT category_id FROM categories WHERE slug = N'bo-do');
-DECLARE @new_bo_do TABLE (product_id BIGINT, slug NVARCHAR(220));
-
-INSERT INTO products (product_name, slug, description, category_id, brand_id, price, sale_price, material, status)
-OUTPUT inserted.product_id, inserted.slug INTO @new_bo_do(product_id, slug)
-VALUES
-(N'Bộ đồ pyjama mặc nhà - Cotton', N'bo-do-pyjama-mac-nha-cotton-01', N'Bộ đồ pyjama mặc nhà - Cotton, màu xanh navy, phù hợp mặc nhà, tập luyện thể thao. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 399000, NULL, N'Cotton', N'ACTIVE'),
-(N'Bộ đồ pyjama mặc nhà - Polyester gió', N'bo-do-pyjama-mac-nha-polyester-gio-02', N'Bộ đồ pyjama mặc nhà - Polyester gió, màu xanh navy, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 449000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Bộ đồ pyjama mặc nhà - Cotton', N'bo-do-pyjama-mac-nha-cotton-03', N'Bộ đồ pyjama mặc nhà - Cotton, màu xám, phù hợp mặc nhà, tập luyện thể thao. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 499000, 409000, N'Cotton', N'ACTIVE'),
-(N'Bộ đồ pyjama mặc nhà - Polyester gió', N'bo-do-pyjama-mac-nha-polyester-gio-04', N'Bộ đồ pyjama mặc nhà - Polyester gió, màu đen, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 549000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Bộ đồ gió thể thao nhẹ - Cotton', N'bo-do-gio-the-thao-nhe-cotton-05', N'Bộ đồ gió thể thao nhẹ - Cotton, màu xám, phù hợp mặc nhà, tập luyện thể thao. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 599000, NULL, N'Cotton', N'ACTIVE'),
-(N'Bộ đồ nỉ bo gấu ấm áp - Thun nỉ', N'bo-do-ni-bo-gau-am-ap-thun-ni-06', N'Bộ đồ nỉ bo gấu ấm áp - Thun nỉ, màu xanh navy, phù hợp mặc nhà, tập luyện thể thao. Chất liệu thun nỉ, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 649000, 532000, N'Thun nỉ', N'ACTIVE'),
-(N'Bộ đồ basic mặc nhà thoải mái - Polyester gió', N'bo-do-basic-mac-nha-thoai-mai-polyester-gio-07', N'Bộ đồ basic mặc nhà thoải mái - Polyester gió, màu xanh navy, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 699000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Bộ đồ thể thao 2 mảnh năng động - Polyester gió', N'bo-do-the-thao-2-manh-nang-dong-polyester-gio-08', N'Bộ đồ thể thao 2 mảnh năng động - Polyester gió, màu xám, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 349000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Bộ đồ thể thao 2 mảnh năng động - Cotton', N'bo-do-the-thao-2-manh-nang-dong-cotton-09', N'Bộ đồ thể thao 2 mảnh năng động - Cotton, màu xám, phù hợp mặc nhà, tập luyện thể thao. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 399000, 327000, N'Cotton', N'ACTIVE'),
-(N'Bộ đồ basic mặc nhà thoải mái - Cotton', N'bo-do-basic-mac-nha-thoai-mai-cotton-10', N'Bộ đồ basic mặc nhà thoải mái - Cotton, màu đen, phù hợp mặc nhà, tập luyện thể thao. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 449000, NULL, N'Cotton', N'ACTIVE'),
-(N'Bộ đồ gió thể thao nhẹ - Polyester gió', N'bo-do-gio-the-thao-nhe-polyester-gio-11', N'Bộ đồ gió thể thao nhẹ - Polyester gió, màu xanh navy, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 499000, NULL, N'Polyester gió', N'ACTIVE'),
-(N'Bộ đồ basic mặc nhà thoải mái - Polyester gió', N'bo-do-basic-mac-nha-thoai-mai-polyester-gio-12', N'Bộ đồ basic mặc nhà thoải mái - Polyester gió, màu xám, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 549000, 450000, N'Polyester gió', N'ACTIVE'),
-(N'Bộ đồ pyjama mặc nhà - Cotton', N'bo-do-pyjama-mac-nha-cotton-13', N'Bộ đồ pyjama mặc nhà - Cotton, màu đen, phù hợp mặc nhà, tập luyện thể thao. Chất liệu cotton, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 599000, NULL, N'Cotton', N'ACTIVE'),
-(N'Bộ đồ thể thao 2 mảnh năng động - Thun nỉ', N'bo-do-the-thao-2-manh-nang-dong-thun-ni-14', N'Bộ đồ thể thao 2 mảnh năng động - Thun nỉ, màu xám, phù hợp mặc nhà, tập luyện thể thao. Chất liệu thun nỉ, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 649000, NULL, N'Thun nỉ', N'ACTIVE'),
-(N'Bộ đồ nỉ bo gấu ấm áp - Polyester gió', N'bo-do-ni-bo-gau-am-ap-polyester-gio-15', N'Bộ đồ nỉ bo gấu ấm áp - Polyester gió, màu đen, phù hợp mặc nhà, tập luyện thể thao. Chất liệu polyester gió, form dáng chuẩn, dễ phối đồ.', @cat_bo_do, @brandLocal, 699000, 573000, N'Polyester gió', N'ACTIVE');
-
-INSERT INTO product_images (product_id, image_url, is_thumbnail, display_order)
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'/700/900', 1, 0 FROM @new_bo_do
-UNION ALL
-SELECT product_id, N'https://picsum.photos/seed/' + slug + N'-b/700/900', 0, 1 FROM @new_bo_do;
-
-INSERT INTO product_variants (product_id, size, color, sku, stock_quantity)
-SELECT n.product_id, x.size, x.color, CONCAT('SKU-', n.product_id, '-', x.size), 20 + (ABS(CHECKSUM(NEWID())) % 80)
-FROM @new_bo_do n
-CROSS APPLY (VALUES (N'S', N'Đen'), (N'M', N'Xám'), (N'L', N'Đen'), (N'XL', N'Xám')) AS x(size, color);
+CREATE TABLE [dbo].[wishlist](
+	[wishlist_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[created_at] [datetime2](7) NULL,
+	[product_id] [bigint] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[wishlist_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
 GO
+SET IDENTITY_INSERT [dbo].[brands] ON 
 
+INSERT [dbo].[brands] ([brand_id], [brand_name], [logo_url]) VALUES (1, N'Local Brand', NULL)
+INSERT [dbo].[brands] ([brand_id], [brand_name], [logo_url]) VALUES (2, N'No Brand', NULL)
+SET IDENTITY_INSERT [dbo].[brands] OFF
+SET IDENTITY_INSERT [dbo].[categories] ON 
 
--- Voucher mẫu để test checkout ngay (khớp 2 mã đã cấu hình sẵn trong AdminVouchersPage demo)
-INSERT INTO vouchers (code, discount_type, discount_value, min_order_value, max_discount_amount, usage_limit, is_active)
-VALUES
-(N'GIAM10', N'PERCENT', 10, 200000, 50000, 100, 1),
-(N'GIAM50K', N'AMOUNT', 50000, 300000, NULL, 50, 1);
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (1, N'Áo thun', 6, N'ao-thun', NULL, 1, N'https://images.pexels.com/photos/17630522/pexels-photo-17630522.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (2, N'Áo sơ mi', 6, N'ao-so-mi', NULL, 1, N'https://images.pexels.com/photos/901424/pexels-photo-901424.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (3, N'Quần jean', 7, N'quan-jean', NULL, 1, N'https://images.pexels.com/photos/4210863/pexels-photo-4210863.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (4, N'Quần tây', 7, N'quan-tay', NULL, 1, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (5, N'Áo khoác', 6, N'ao-khoac', NULL, 1, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (6, N'Áo', NULL, N'ao', NULL, 1, NULL)
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (7, N'Quần', NULL, N'quan', NULL, 1, NULL)
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (8, N'Đồ mặc trong', NULL, N'do-mac-trong', NULL, 1, NULL)
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (9, N'Suit & Blazer', NULL, N'suit-blazer', NULL, 1, NULL)
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (10, N'Áo dài', 6, N'ao-dai', NULL, 1, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (11, N'Áo polo', 6, N'ao-polo', NULL, 1, N'https://images.pexels.com/photos/9125735/pexels-photo-9125735.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (12, N'Quần short', 7, N'quan-short', NULL, 1, N'https://images.pexels.com/photos/23437377/pexels-photo-23437377.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (13, N'Quần kaki', 7, N'quan-kaki', NULL, 1, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (14, N'Quần boxer', 8, N'quan-boxer', NULL, 1, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (15, N'Áo lót', 8, N'ao-lot', NULL, 1, N'https://images.pexels.com/photos/6338297/pexels-photo-6338297.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (16, N'Bộ suit', 9, N'bo-suit', NULL, 1, N'https://images.pexels.com/photos/652352/pexels-photo-652352.jpeg?auto=compress&cs=tinysrgb&w=800')
+INSERT [dbo].[categories] ([category_id], [category_name], [parent_id], [slug], [description], [is_active], [image_url]) VALUES (17, N'Blazer', 9, N'blazer', NULL, 1, N'https://images.pexels.com/photos/936043/pexels-photo-936043.jpeg?auto=compress&cs=tinysrgb&w=800')
+SET IDENTITY_INSERT [dbo].[categories] OFF
+SET IDENTITY_INSERT [dbo].[product_images] ON 
+
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (1, 2, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (2, 1, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (3, 3, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (394, 394, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (395, 395, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (396, 396, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (397, 397, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (398, 398, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (399, 399, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (400, 400, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (401, 401, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (402, 402, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (403, 403, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (404, 404, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (405, 405, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (406, 406, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (407, 407, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (408, 408, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (409, 409, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (410, 410, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (411, 411, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (412, 412, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (413, 413, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (414, 414, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (415, 415, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (416, 416, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (417, 417, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (418, 418, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (419, 419, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (420, 420, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (421, 421, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (422, 422, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (423, 423, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (424, 424, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (425, 425, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (426, 426, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (427, 427, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (428, 428, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (429, 429, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (430, 430, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (431, 431, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (432, 432, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (433, 433, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (434, 434, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (435, 435, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (436, 436, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (437, 437, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (438, 438, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (439, 439, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (440, 440, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (441, 441, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (442, 442, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (443, 443, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (444, 444, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (445, 445, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (446, 446, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (447, 447, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (448, 448, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (449, 449, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (450, 450, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (451, 451, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (452, 452, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (453, 453, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (454, 454, N'https://images.pexels.com/photos/15835619/pexels-photo-15835619.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (455, 455, N'https://images.pexels.com/photos/10769408/pexels-photo-10769408.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (456, 456, N'https://images.pexels.com/photos/8068701/pexels-photo-8068701.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (457, 457, N'https://images.pexels.com/photos/29381847/pexels-photo-29381847.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (458, 458, N'https://images.pexels.com/photos/30004312/pexels-photo-30004312.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (459, 459, N'https://images.pexels.com/photos/27385944/pexels-photo-27385944.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (460, 460, N'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (461, 461, N'https://images.pexels.com/photos/15835619/pexels-photo-15835619.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (462, 462, N'https://images.pexels.com/photos/10769408/pexels-photo-10769408.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (463, 463, N'https://images.pexels.com/photos/8068701/pexels-photo-8068701.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (464, 464, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (465, 465, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (466, 466, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (467, 467, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (468, 468, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (469, 469, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (470, 470, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (471, 471, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (472, 472, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (473, 473, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (474, 474, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (475, 475, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (476, 476, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (477, 477, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (478, 478, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (479, 479, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (480, 480, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (481, 481, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (482, 482, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (483, 483, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (484, 484, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (485, 485, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (486, 486, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (487, 487, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (488, 488, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (489, 489, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
 GO
-
--- =====================================================
--- Bổ sung: trạng thái trả hàng + BÁN TẠI QUẦY (POS) + PHÍ VẬN CHUYỂN
--- =====================================================
-
-DECLARE @constraintName NVARCHAR(200);
-SELECT @constraintName = cc.name
-FROM sys.check_constraints cc
-JOIN sys.columns col
-    ON col.object_id = cc.parent_object_id AND col.column_id = cc.parent_column_id
-WHERE cc.parent_object_id = OBJECT_ID('dbo.orders')
-  AND col.name = 'status';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    DECLARE @dropSql NVARCHAR(400) = N'ALTER TABLE dbo.orders DROP CONSTRAINT ' + QUOTENAME(@constraintName);
-    EXEC sp_executesql @dropSql;
-END
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (490, 490, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (491, 491, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (492, 492, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (493, 493, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (494, 494, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (495, 495, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (496, 496, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (497, 497, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (498, 498, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (499, 499, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (500, 500, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (501, 501, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (502, 502, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (503, 503, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (504, 504, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (505, 505, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (506, 506, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (507, 507, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (508, 508, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (509, 509, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (510, 510, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (511, 511, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (512, 512, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (513, 513, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (514, 514, N'https://images.pexels.com/photos/4068664/pexels-photo-4068664.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (515, 515, N'https://images.pexels.com/photos/14072788/pexels-photo-14072788.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (516, 516, N'https://images.pexels.com/photos/17927122/pexels-photo-17927122.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (517, 517, N'https://images.pexels.com/photos/10341262/pexels-photo-10341262.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (518, 518, N'https://images.pexels.com/photos/6326369/pexels-photo-6326369.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (519, 519, N'https://images.pexels.com/photos/3051576/pexels-photo-3051576.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (520, 520, N'https://images.pexels.com/photos/4068664/pexels-photo-4068664.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (521, 521, N'https://images.pexels.com/photos/14072788/pexels-photo-14072788.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (522, 522, N'https://images.pexels.com/photos/17927122/pexels-photo-17927122.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (523, 523, N'https://images.pexels.com/photos/10341262/pexels-photo-10341262.jpeg?auto=compress&cs=tinysrgb&w=800', 1, 0)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (524, 1, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (525, 396, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (526, 399, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (527, 402, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (528, 394, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (529, 397, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (530, 400, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (531, 403, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (532, 395, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (533, 398, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (534, 401, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (535, 2, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (536, 406, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (537, 409, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (538, 412, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (539, 404, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (540, 407, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (541, 410, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (542, 413, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (543, 405, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (544, 408, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (545, 411, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (546, 3, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (547, 417, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (548, 421, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (549, 414, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (550, 418, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (551, 422, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (552, 415, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (553, 419, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (554, 423, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (555, 416, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (556, 420, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (557, 424, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (558, 427, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (559, 430, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (560, 433, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (561, 425, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (562, 428, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (563, 431, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (564, 426, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (565, 429, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (566, 432, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (567, 434, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (568, 436, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (569, 438, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (570, 440, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (571, 442, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (572, 435, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (573, 437, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (574, 439, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (575, 441, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (576, 443, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (577, 444, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (578, 445, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (579, 446, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (580, 447, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (581, 448, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (582, 449, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (583, 450, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (584, 451, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (585, 452, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (586, 453, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (587, 454, N'https://images.pexels.com/photos/27385944/pexels-photo-27385944.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (588, 461, N'https://images.pexels.com/photos/27385944/pexels-photo-27385944.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (589, 455, N'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
 GO
-
-ALTER TABLE dbo.orders
-    ADD CONSTRAINT CK_orders_status
-    CHECK (status IN ('PENDING','CONFIRMED','SHIPPING','DELIVERED','COMPLETED','CANCELLED','RETURN_REQUESTED','RETURNED'));
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (590, 462, N'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (591, 456, N'https://images.pexels.com/photos/15835619/pexels-photo-15835619.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (592, 463, N'https://images.pexels.com/photos/15835619/pexels-photo-15835619.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (593, 457, N'https://images.pexels.com/photos/10769408/pexels-photo-10769408.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (594, 458, N'https://images.pexels.com/photos/8068701/pexels-photo-8068701.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (595, 459, N'https://images.pexels.com/photos/29381847/pexels-photo-29381847.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (596, 460, N'https://images.pexels.com/photos/30004312/pexels-photo-30004312.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (597, 464, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (598, 467, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (599, 470, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (600, 473, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (601, 465, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (602, 468, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (603, 471, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (604, 466, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (605, 469, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (606, 472, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (607, 474, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (608, 475, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (609, 476, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (610, 477, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (611, 478, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (612, 479, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (613, 480, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (614, 481, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (615, 482, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (616, 483, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (617, 484, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (618, 486, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (619, 488, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (620, 490, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (621, 492, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (622, 485, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (623, 487, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (624, 489, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (625, 491, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (626, 493, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (627, 494, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (628, 497, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (629, 500, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (630, 503, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (631, 495, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (632, 498, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (633, 501, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (634, 496, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (635, 499, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (636, 502, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (637, 504, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (638, 508, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (639, 512, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (640, 505, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (641, 509, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (642, 513, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (643, 506, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (644, 510, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (645, 507, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (646, 511, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (647, 514, N'https://images.pexels.com/photos/6326369/pexels-photo-6326369.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (648, 520, N'https://images.pexels.com/photos/6326369/pexels-photo-6326369.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (649, 515, N'https://images.pexels.com/photos/3051576/pexels-photo-3051576.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (650, 521, N'https://images.pexels.com/photos/3051576/pexels-photo-3051576.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (651, 516, N'https://images.pexels.com/photos/4068664/pexels-photo-4068664.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (652, 522, N'https://images.pexels.com/photos/4068664/pexels-photo-4068664.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (653, 517, N'https://images.pexels.com/photos/14072788/pexels-photo-14072788.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (654, 523, N'https://images.pexels.com/photos/14072788/pexels-photo-14072788.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (655, 518, N'https://images.pexels.com/photos/17927122/pexels-photo-17927122.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (656, 519, N'https://images.pexels.com/photos/10341262/pexels-photo-10341262.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 1)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (657, 395, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (658, 398, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (659, 401, N'https://images.pexels.com/photos/2769290/pexels-photo-2769290.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (660, 1, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (661, 396, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (662, 399, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (663, 402, N'https://images.pexels.com/photos/8217536/pexels-photo-8217536.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (664, 394, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (665, 397, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (666, 400, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (667, 403, N'https://images.pexels.com/photos/428333/pexels-photo-428333.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (668, 405, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (669, 408, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (670, 411, N'https://images.pexels.com/photos/1043471/pexels-photo-1043471.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (671, 2, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (672, 406, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (673, 409, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (674, 412, N'https://images.pexels.com/photos/11392/pexels-photo-11392.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (675, 404, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (676, 407, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (677, 410, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (678, 413, N'https://images.pexels.com/photos/10529038/pexels-photo-10529038.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (679, 416, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (680, 420, N'https://images.pexels.com/photos/1018911/pexels-photo-1018911.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (681, 3, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (682, 417, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (683, 421, N'https://images.pexels.com/photos/9775489/pexels-photo-9775489.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (684, 414, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (685, 418, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (686, 422, N'https://images.pexels.com/photos/14561041/pexels-photo-14561041.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (687, 415, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (688, 419, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (689, 423, N'https://images.pexels.com/photos/2664705/pexels-photo-2664705.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'return_reason')
-BEGIN
-    ALTER TABLE dbo.orders ADD return_reason NVARCHAR(500) NULL;
-END
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (690, 426, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (691, 429, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (692, 432, N'https://images.pexels.com/photos/33412341/pexels-photo-33412341.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (693, 424, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (694, 427, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (695, 430, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (696, 433, N'https://images.pexels.com/photos/769746/pexels-photo-769746.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (697, 425, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (698, 428, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (699, 431, N'https://images.pexels.com/photos/769732/pexels-photo-769732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (700, 435, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (701, 437, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (702, 439, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (703, 441, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (704, 443, N'https://images.pexels.com/photos/1865557/pexels-photo-1865557.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (705, 434, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (706, 436, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (707, 438, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (708, 440, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (709, 442, N'https://images.pexels.com/photos/803773/pexels-photo-803773.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (710, 444, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (711, 445, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (712, 446, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (713, 447, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (714, 448, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (715, 449, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (716, 450, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (717, 451, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (718, 452, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (719, 453, N'https://images.pexels.com/photos/29585803/pexels-photo-29585803.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (720, 460, N'https://images.pexels.com/photos/27385944/pexels-photo-27385944.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (721, 454, N'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (722, 461, N'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (723, 455, N'https://images.pexels.com/photos/15835619/pexels-photo-15835619.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (724, 462, N'https://images.pexels.com/photos/15835619/pexels-photo-15835619.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (725, 456, N'https://images.pexels.com/photos/10769408/pexels-photo-10769408.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (726, 463, N'https://images.pexels.com/photos/10769408/pexels-photo-10769408.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (727, 457, N'https://images.pexels.com/photos/8068701/pexels-photo-8068701.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (728, 458, N'https://images.pexels.com/photos/29381847/pexels-photo-29381847.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (729, 459, N'https://images.pexels.com/photos/30004312/pexels-photo-30004312.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (730, 466, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (731, 469, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (732, 472, N'https://images.pexels.com/photos/9558898/pexels-photo-9558898.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (733, 464, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (734, 467, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (735, 470, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (736, 473, N'https://images.pexels.com/photos/14687263/pexels-photo-14687263.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (737, 465, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (738, 468, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (739, 471, N'https://images.pexels.com/photos/8942365/pexels-photo-8942365.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (740, 474, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (741, 475, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (742, 476, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (743, 477, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (744, 478, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (745, 479, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (746, 480, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (747, 481, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (748, 482, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (749, 483, N'https://images.pexels.com/photos/9930085/pexels-photo-9930085.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (750, 485, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (751, 487, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (752, 489, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (753, 491, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (754, 493, N'https://images.pexels.com/photos/8874672/pexels-photo-8874672.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (755, 484, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (756, 486, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (757, 488, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (758, 490, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (759, 492, N'https://images.pexels.com/photos/8874670/pexels-photo-8874670.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (760, 496, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (761, 499, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (762, 502, N'https://images.pexels.com/photos/10305224/pexels-photo-10305224.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (763, 494, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (764, 497, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (765, 500, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (766, 503, N'https://images.pexels.com/photos/17013503/pexels-photo-17013503.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (767, 495, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (768, 498, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (769, 501, N'https://images.pexels.com/photos/20337685/pexels-photo-20337685.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (770, 507, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (771, 511, N'https://images.pexels.com/photos/15551970/pexels-photo-15551970.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (772, 504, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (773, 508, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (774, 512, N'https://images.pexels.com/photos/14230732/pexels-photo-14230732.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (775, 505, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (776, 509, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (777, 513, N'https://images.pexels.com/photos/6475035/pexels-photo-6475035.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (778, 506, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (779, 510, N'https://images.pexels.com/photos/16963942/pexels-photo-16963942.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (780, 519, N'https://images.pexels.com/photos/6326369/pexels-photo-6326369.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (781, 514, N'https://images.pexels.com/photos/3051576/pexels-photo-3051576.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (782, 520, N'https://images.pexels.com/photos/3051576/pexels-photo-3051576.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (783, 515, N'https://images.pexels.com/photos/4068664/pexels-photo-4068664.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (784, 521, N'https://images.pexels.com/photos/4068664/pexels-photo-4068664.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (785, 516, N'https://images.pexels.com/photos/14072788/pexels-photo-14072788.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (786, 522, N'https://images.pexels.com/photos/14072788/pexels-photo-14072788.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (787, 517, N'https://images.pexels.com/photos/17927122/pexels-photo-17927122.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (788, 523, N'https://images.pexels.com/photos/17927122/pexels-photo-17927122.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
+INSERT [dbo].[product_images] ([image_id], [product_id], [image_url], [is_thumbnail], [display_order]) VALUES (789, 518, N'https://images.pexels.com/photos/10341262/pexels-photo-10341262.jpeg?auto=compress&cs=tinysrgb&w=800', 0, 2)
 GO
+SET IDENTITY_INSERT [dbo].[product_images] OFF
+SET IDENTITY_INSERT [dbo].[product_variants] ON 
 
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'order_type')
-BEGIN
-    ALTER TABLE dbo.orders ADD order_type NVARCHAR(10) NOT NULL DEFAULT 'ONLINE';
-END
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1, 2, N'S', N'Đen', N'SKU-2-S-Đen', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2, 2, N'M', N'Đen', N'SKU-2-M-Đen', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3, 2, N'L', N'Trắng', N'SKU-2-L-Trắng', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4, 1, N'S', N'Đen', N'SKU-1-S-Đen', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (5, 1, N'M', N'Đen', N'SKU-1-M-Đen', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (6, 1, N'L', N'Trắng', N'SKU-1-L-Trắng', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (7, 3, N'S', N'Đen', N'SKU-3-S-Đen', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (8, 3, N'M', N'Đen', N'SKU-3-M-Đen', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (9, 3, N'L', N'Trắng', N'SKU-3-L-Trắng', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1700, 394, N'S', N'Vàng', N'SKU-aothun-1', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1701, 394, N'S', N'Xám', N'SKU-aothun-2', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1702, 394, N'S', N'Xanh Lá', N'SKU-aothun-3', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1703, 394, N'S', N'Đỏ', N'SKU-aothun-4', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1704, 394, N'S', N'Đen', N'SKU-aothun-5', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1705, 394, N'M', N'Vàng', N'SKU-aothun-6', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1706, 394, N'M', N'Xám', N'SKU-aothun-7', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1707, 394, N'M', N'Xanh Lá', N'SKU-aothun-8', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1708, 394, N'M', N'Đỏ', N'SKU-aothun-9', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1709, 394, N'M', N'Đen', N'SKU-aothun-10', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1710, 394, N'L', N'Vàng', N'SKU-aothun-11', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1711, 394, N'L', N'Xám', N'SKU-aothun-12', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1712, 394, N'L', N'Xanh Lá', N'SKU-aothun-13', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1713, 394, N'L', N'Đỏ', N'SKU-aothun-14', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1714, 394, N'L', N'Đen', N'SKU-aothun-15', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1715, 394, N'XL', N'Vàng', N'SKU-aothun-16', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1716, 394, N'XL', N'Xám', N'SKU-aothun-17', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1717, 394, N'XL', N'Xanh Lá', N'SKU-aothun-18', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1718, 394, N'XL', N'Đỏ', N'SKU-aothun-19', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1719, 394, N'XL', N'Đen', N'SKU-aothun-20', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1720, 395, N'S', N'Vàng', N'SKU-aothun-21', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1721, 395, N'S', N'Đỏ', N'SKU-aothun-22', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1722, 395, N'S', N'Xanh Navy', N'SKU-aothun-23', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1723, 395, N'S', N'Trắng', N'SKU-aothun-24', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1724, 395, N'S', N'Hồng', N'SKU-aothun-25', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1725, 395, N'M', N'Vàng', N'SKU-aothun-26', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1726, 395, N'M', N'Đỏ', N'SKU-aothun-27', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1727, 395, N'M', N'Xanh Navy', N'SKU-aothun-28', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1728, 395, N'M', N'Trắng', N'SKU-aothun-29', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1729, 395, N'M', N'Hồng', N'SKU-aothun-30', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1730, 395, N'L', N'Vàng', N'SKU-aothun-31', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1731, 395, N'L', N'Đỏ', N'SKU-aothun-32', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1732, 395, N'L', N'Xanh Navy', N'SKU-aothun-33', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1733, 395, N'L', N'Trắng', N'SKU-aothun-34', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1734, 395, N'L', N'Hồng', N'SKU-aothun-35', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1735, 395, N'XL', N'Vàng', N'SKU-aothun-36', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1736, 395, N'XL', N'Đỏ', N'SKU-aothun-37', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1737, 395, N'XL', N'Xanh Navy', N'SKU-aothun-38', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1738, 395, N'XL', N'Trắng', N'SKU-aothun-39', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1739, 395, N'XL', N'Hồng', N'SKU-aothun-40', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1740, 396, N'S', N'Hồng', N'SKU-aothun-41', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1741, 396, N'S', N'Xanh Navy', N'SKU-aothun-42', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1742, 396, N'S', N'Xanh Lá', N'SKU-aothun-43', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1743, 396, N'S', N'Vàng', N'SKU-aothun-44', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1744, 396, N'S', N'Xám', N'SKU-aothun-45', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1745, 396, N'M', N'Hồng', N'SKU-aothun-46', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1746, 396, N'M', N'Xanh Navy', N'SKU-aothun-47', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1747, 396, N'M', N'Xanh Lá', N'SKU-aothun-48', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1748, 396, N'M', N'Vàng', N'SKU-aothun-49', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1749, 396, N'M', N'Xám', N'SKU-aothun-50', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1750, 396, N'L', N'Hồng', N'SKU-aothun-51', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1751, 396, N'L', N'Xanh Navy', N'SKU-aothun-52', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1752, 396, N'L', N'Xanh Lá', N'SKU-aothun-53', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1753, 396, N'L', N'Vàng', N'SKU-aothun-54', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1754, 396, N'L', N'Xám', N'SKU-aothun-55', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1755, 396, N'XL', N'Hồng', N'SKU-aothun-56', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1756, 396, N'XL', N'Xanh Navy', N'SKU-aothun-57', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1757, 396, N'XL', N'Xanh Lá', N'SKU-aothun-58', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1758, 396, N'XL', N'Vàng', N'SKU-aothun-59', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1759, 396, N'XL', N'Xám', N'SKU-aothun-60', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1760, 397, N'S', N'Đen', N'SKU-aothun-61', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1761, 397, N'S', N'Trắng', N'SKU-aothun-62', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1762, 397, N'S', N'Xanh Navy', N'SKU-aothun-63', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1763, 397, N'S', N'Đỏ', N'SKU-aothun-64', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1764, 397, N'S', N'Hồng', N'SKU-aothun-65', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1765, 397, N'M', N'Đen', N'SKU-aothun-66', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1766, 397, N'M', N'Trắng', N'SKU-aothun-67', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1767, 397, N'M', N'Xanh Navy', N'SKU-aothun-68', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1768, 397, N'M', N'Đỏ', N'SKU-aothun-69', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1769, 397, N'M', N'Hồng', N'SKU-aothun-70', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1770, 397, N'L', N'Đen', N'SKU-aothun-71', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1771, 397, N'L', N'Trắng', N'SKU-aothun-72', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1772, 397, N'L', N'Xanh Navy', N'SKU-aothun-73', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1773, 397, N'L', N'Đỏ', N'SKU-aothun-74', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1774, 397, N'L', N'Hồng', N'SKU-aothun-75', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1775, 397, N'XL', N'Đen', N'SKU-aothun-76', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1776, 397, N'XL', N'Trắng', N'SKU-aothun-77', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1777, 397, N'XL', N'Xanh Navy', N'SKU-aothun-78', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1778, 397, N'XL', N'Đỏ', N'SKU-aothun-79', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1779, 397, N'XL', N'Hồng', N'SKU-aothun-80', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1780, 398, N'S', N'Trắng', N'SKU-aothun-81', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1781, 398, N'S', N'Xanh Lá', N'SKU-aothun-82', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1782, 398, N'S', N'Đỏ', N'SKU-aothun-83', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1783, 398, N'S', N'Xám', N'SKU-aothun-84', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1784, 398, N'S', N'Xanh Navy', N'SKU-aothun-85', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1785, 398, N'M', N'Trắng', N'SKU-aothun-86', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1786, 398, N'M', N'Xanh Lá', N'SKU-aothun-87', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1787, 398, N'M', N'Đỏ', N'SKU-aothun-88', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1788, 398, N'M', N'Xám', N'SKU-aothun-89', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1789, 398, N'M', N'Xanh Navy', N'SKU-aothun-90', 57)
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_orders_order_type')
-BEGIN
-    ALTER TABLE dbo.orders ADD CONSTRAINT CK_orders_order_type CHECK (order_type IN ('ONLINE','POS'));
-END
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1790, 398, N'L', N'Trắng', N'SKU-aothun-91', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1791, 398, N'L', N'Xanh Lá', N'SKU-aothun-92', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1792, 398, N'L', N'Đỏ', N'SKU-aothun-93', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1793, 398, N'L', N'Xám', N'SKU-aothun-94', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1794, 398, N'L', N'Xanh Navy', N'SKU-aothun-95', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1795, 398, N'XL', N'Trắng', N'SKU-aothun-96', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1796, 398, N'XL', N'Xanh Lá', N'SKU-aothun-97', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1797, 398, N'XL', N'Đỏ', N'SKU-aothun-98', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1798, 398, N'XL', N'Xám', N'SKU-aothun-99', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1799, 398, N'XL', N'Xanh Navy', N'SKU-aothun-100', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1800, 399, N'S', N'Xanh Lá', N'SKU-aothun-101', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1801, 399, N'S', N'Đen', N'SKU-aothun-102', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1802, 399, N'S', N'Trắng', N'SKU-aothun-103', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1803, 399, N'S', N'Hồng', N'SKU-aothun-104', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1804, 399, N'S', N'Xanh Navy', N'SKU-aothun-105', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1805, 399, N'M', N'Xanh Lá', N'SKU-aothun-106', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1806, 399, N'M', N'Đen', N'SKU-aothun-107', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1807, 399, N'M', N'Trắng', N'SKU-aothun-108', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1808, 399, N'M', N'Hồng', N'SKU-aothun-109', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1809, 399, N'M', N'Xanh Navy', N'SKU-aothun-110', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1810, 399, N'L', N'Xanh Lá', N'SKU-aothun-111', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1811, 399, N'L', N'Đen', N'SKU-aothun-112', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1812, 399, N'L', N'Trắng', N'SKU-aothun-113', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1813, 399, N'L', N'Hồng', N'SKU-aothun-114', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1814, 399, N'L', N'Xanh Navy', N'SKU-aothun-115', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1815, 399, N'XL', N'Xanh Lá', N'SKU-aothun-116', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1816, 399, N'XL', N'Đen', N'SKU-aothun-117', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1817, 399, N'XL', N'Trắng', N'SKU-aothun-118', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1818, 399, N'XL', N'Hồng', N'SKU-aothun-119', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1819, 399, N'XL', N'Xanh Navy', N'SKU-aothun-120', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1820, 400, N'S', N'Xám', N'SKU-aothun-121', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1821, 400, N'S', N'Đen', N'SKU-aothun-122', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1822, 400, N'S', N'Xanh Lá', N'SKU-aothun-123', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1823, 400, N'S', N'Hồng', N'SKU-aothun-124', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1824, 400, N'S', N'Xanh Navy', N'SKU-aothun-125', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1825, 400, N'M', N'Xám', N'SKU-aothun-126', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1826, 400, N'M', N'Đen', N'SKU-aothun-127', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1827, 400, N'M', N'Xanh Lá', N'SKU-aothun-128', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1828, 400, N'M', N'Hồng', N'SKU-aothun-129', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1829, 400, N'M', N'Xanh Navy', N'SKU-aothun-130', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1830, 400, N'L', N'Xám', N'SKU-aothun-131', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1831, 400, N'L', N'Đen', N'SKU-aothun-132', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1832, 400, N'L', N'Xanh Lá', N'SKU-aothun-133', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1833, 400, N'L', N'Hồng', N'SKU-aothun-134', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1834, 400, N'L', N'Xanh Navy', N'SKU-aothun-135', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1835, 400, N'XL', N'Xám', N'SKU-aothun-136', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1836, 400, N'XL', N'Đen', N'SKU-aothun-137', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1837, 400, N'XL', N'Xanh Lá', N'SKU-aothun-138', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1838, 400, N'XL', N'Hồng', N'SKU-aothun-139', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1839, 400, N'XL', N'Xanh Navy', N'SKU-aothun-140', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1840, 401, N'S', N'Xanh Lá', N'SKU-aothun-141', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1841, 401, N'S', N'Trắng', N'SKU-aothun-142', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1842, 401, N'S', N'Đỏ', N'SKU-aothun-143', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1843, 401, N'S', N'Vàng', N'SKU-aothun-144', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1844, 401, N'S', N'Hồng', N'SKU-aothun-145', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1845, 401, N'M', N'Xanh Lá', N'SKU-aothun-146', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1846, 401, N'M', N'Trắng', N'SKU-aothun-147', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1847, 401, N'M', N'Đỏ', N'SKU-aothun-148', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1848, 401, N'M', N'Vàng', N'SKU-aothun-149', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1849, 401, N'M', N'Hồng', N'SKU-aothun-150', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1850, 401, N'L', N'Xanh Lá', N'SKU-aothun-151', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1851, 401, N'L', N'Trắng', N'SKU-aothun-152', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1852, 401, N'L', N'Đỏ', N'SKU-aothun-153', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1853, 401, N'L', N'Vàng', N'SKU-aothun-154', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1854, 401, N'L', N'Hồng', N'SKU-aothun-155', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1855, 401, N'XL', N'Xanh Lá', N'SKU-aothun-156', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1856, 401, N'XL', N'Trắng', N'SKU-aothun-157', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1857, 401, N'XL', N'Đỏ', N'SKU-aothun-158', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1858, 401, N'XL', N'Vàng', N'SKU-aothun-159', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1859, 401, N'XL', N'Hồng', N'SKU-aothun-160', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1860, 402, N'S', N'Xám', N'SKU-aothun-161', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1861, 402, N'S', N'Trắng', N'SKU-aothun-162', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1862, 402, N'S', N'Vàng', N'SKU-aothun-163', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1863, 402, N'S', N'Đỏ', N'SKU-aothun-164', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1864, 402, N'S', N'Xanh Navy', N'SKU-aothun-165', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1865, 402, N'M', N'Xám', N'SKU-aothun-166', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1866, 402, N'M', N'Trắng', N'SKU-aothun-167', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1867, 402, N'M', N'Vàng', N'SKU-aothun-168', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1868, 402, N'M', N'Đỏ', N'SKU-aothun-169', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1869, 402, N'M', N'Xanh Navy', N'SKU-aothun-170', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1870, 402, N'L', N'Xám', N'SKU-aothun-171', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1871, 402, N'L', N'Trắng', N'SKU-aothun-172', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1872, 402, N'L', N'Vàng', N'SKU-aothun-173', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1873, 402, N'L', N'Đỏ', N'SKU-aothun-174', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1874, 402, N'L', N'Xanh Navy', N'SKU-aothun-175', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1875, 402, N'XL', N'Xám', N'SKU-aothun-176', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1876, 402, N'XL', N'Trắng', N'SKU-aothun-177', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1877, 402, N'XL', N'Vàng', N'SKU-aothun-178', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1878, 402, N'XL', N'Đỏ', N'SKU-aothun-179', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1879, 402, N'XL', N'Xanh Navy', N'SKU-aothun-180', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1880, 403, N'S', N'Vàng', N'SKU-aothun-181', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1881, 403, N'S', N'Đen', N'SKU-aothun-182', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1882, 403, N'S', N'Xanh Lá', N'SKU-aothun-183', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1883, 403, N'S', N'Xám', N'SKU-aothun-184', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1884, 403, N'S', N'Đỏ', N'SKU-aothun-185', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1885, 403, N'M', N'Vàng', N'SKU-aothun-186', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1886, 403, N'M', N'Đen', N'SKU-aothun-187', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1887, 403, N'M', N'Xanh Lá', N'SKU-aothun-188', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1888, 403, N'M', N'Xám', N'SKU-aothun-189', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1889, 403, N'M', N'Đỏ', N'SKU-aothun-190', 22)
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'cashier_id')
-BEGIN
-    ALTER TABLE dbo.orders ADD cashier_id BIGINT NULL;
-END
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1890, 403, N'L', N'Vàng', N'SKU-aothun-191', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1891, 403, N'L', N'Đen', N'SKU-aothun-192', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1892, 403, N'L', N'Xanh Lá', N'SKU-aothun-193', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1893, 403, N'L', N'Xám', N'SKU-aothun-194', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1894, 403, N'L', N'Đỏ', N'SKU-aothun-195', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1895, 403, N'XL', N'Vàng', N'SKU-aothun-196', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1896, 403, N'XL', N'Đen', N'SKU-aothun-197', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1897, 403, N'XL', N'Xanh Lá', N'SKU-aothun-198', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1898, 403, N'XL', N'Xám', N'SKU-aothun-199', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1899, 403, N'XL', N'Đỏ', N'SKU-aothun-200', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1900, 404, N'S', N'Xanh Navy', N'SKU-aosomi-201', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1901, 404, N'S', N'Hồng', N'SKU-aosomi-202', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1902, 404, N'S', N'Đen', N'SKU-aosomi-203', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1903, 404, N'S', N'Xám', N'SKU-aosomi-204', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1904, 404, N'S', N'Kem', N'SKU-aosomi-205', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1905, 404, N'M', N'Xanh Navy', N'SKU-aosomi-206', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1906, 404, N'M', N'Hồng', N'SKU-aosomi-207', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1907, 404, N'M', N'Đen', N'SKU-aosomi-208', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1908, 404, N'M', N'Xám', N'SKU-aosomi-209', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1909, 404, N'M', N'Kem', N'SKU-aosomi-210', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1910, 404, N'L', N'Xanh Navy', N'SKU-aosomi-211', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1911, 404, N'L', N'Hồng', N'SKU-aosomi-212', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1912, 404, N'L', N'Đen', N'SKU-aosomi-213', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1913, 404, N'L', N'Xám', N'SKU-aosomi-214', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1914, 404, N'L', N'Kem', N'SKU-aosomi-215', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1915, 404, N'XL', N'Xanh Navy', N'SKU-aosomi-216', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1916, 404, N'XL', N'Hồng', N'SKU-aosomi-217', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1917, 404, N'XL', N'Đen', N'SKU-aosomi-218', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1918, 404, N'XL', N'Xám', N'SKU-aosomi-219', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1919, 404, N'XL', N'Kem', N'SKU-aosomi-220', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1920, 405, N'S', N'Đen', N'SKU-aosomi-221', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1921, 405, N'S', N'Kem', N'SKU-aosomi-222', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1922, 405, N'S', N'Trắng', N'SKU-aosomi-223', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1923, 405, N'S', N'Hồng', N'SKU-aosomi-224', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1924, 405, N'S', N'Xanh Navy', N'SKU-aosomi-225', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1925, 405, N'M', N'Đen', N'SKU-aosomi-226', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1926, 405, N'M', N'Kem', N'SKU-aosomi-227', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1927, 405, N'M', N'Trắng', N'SKU-aosomi-228', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1928, 405, N'M', N'Hồng', N'SKU-aosomi-229', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1929, 405, N'M', N'Xanh Navy', N'SKU-aosomi-230', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1930, 405, N'L', N'Đen', N'SKU-aosomi-231', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1931, 405, N'L', N'Kem', N'SKU-aosomi-232', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1932, 405, N'L', N'Trắng', N'SKU-aosomi-233', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1933, 405, N'L', N'Hồng', N'SKU-aosomi-234', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1934, 405, N'L', N'Xanh Navy', N'SKU-aosomi-235', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1935, 405, N'XL', N'Đen', N'SKU-aosomi-236', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1936, 405, N'XL', N'Kem', N'SKU-aosomi-237', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1937, 405, N'XL', N'Trắng', N'SKU-aosomi-238', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1938, 405, N'XL', N'Hồng', N'SKU-aosomi-239', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1939, 405, N'XL', N'Xanh Navy', N'SKU-aosomi-240', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1940, 406, N'S', N'Xanh Navy', N'SKU-aosomi-241', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1941, 406, N'S', N'Kem', N'SKU-aosomi-242', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1942, 406, N'S', N'Trắng', N'SKU-aosomi-243', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1943, 406, N'S', N'Hồng', N'SKU-aosomi-244', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1944, 406, N'S', N'Xanh Dương', N'SKU-aosomi-245', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1945, 406, N'M', N'Xanh Navy', N'SKU-aosomi-246', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1946, 406, N'M', N'Kem', N'SKU-aosomi-247', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1947, 406, N'M', N'Trắng', N'SKU-aosomi-248', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1948, 406, N'M', N'Hồng', N'SKU-aosomi-249', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1949, 406, N'M', N'Xanh Dương', N'SKU-aosomi-250', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1950, 406, N'L', N'Xanh Navy', N'SKU-aosomi-251', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1951, 406, N'L', N'Kem', N'SKU-aosomi-252', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1952, 406, N'L', N'Trắng', N'SKU-aosomi-253', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1953, 406, N'L', N'Hồng', N'SKU-aosomi-254', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1954, 406, N'L', N'Xanh Dương', N'SKU-aosomi-255', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1955, 406, N'XL', N'Xanh Navy', N'SKU-aosomi-256', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1956, 406, N'XL', N'Kem', N'SKU-aosomi-257', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1957, 406, N'XL', N'Trắng', N'SKU-aosomi-258', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1958, 406, N'XL', N'Hồng', N'SKU-aosomi-259', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1959, 406, N'XL', N'Xanh Dương', N'SKU-aosomi-260', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1960, 407, N'S', N'Kem', N'SKU-aosomi-261', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1961, 407, N'S', N'Trắng', N'SKU-aosomi-262', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1962, 407, N'S', N'Đen', N'SKU-aosomi-263', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1963, 407, N'S', N'Xám', N'SKU-aosomi-264', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1964, 407, N'S', N'Xanh Dương', N'SKU-aosomi-265', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1965, 407, N'M', N'Kem', N'SKU-aosomi-266', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1966, 407, N'M', N'Trắng', N'SKU-aosomi-267', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1967, 407, N'M', N'Đen', N'SKU-aosomi-268', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1968, 407, N'M', N'Xám', N'SKU-aosomi-269', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1969, 407, N'M', N'Xanh Dương', N'SKU-aosomi-270', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1970, 407, N'L', N'Kem', N'SKU-aosomi-271', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1971, 407, N'L', N'Trắng', N'SKU-aosomi-272', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1972, 407, N'L', N'Đen', N'SKU-aosomi-273', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1973, 407, N'L', N'Xám', N'SKU-aosomi-274', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1974, 407, N'L', N'Xanh Dương', N'SKU-aosomi-275', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1975, 407, N'XL', N'Kem', N'SKU-aosomi-276', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1976, 407, N'XL', N'Trắng', N'SKU-aosomi-277', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1977, 407, N'XL', N'Đen', N'SKU-aosomi-278', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1978, 407, N'XL', N'Xám', N'SKU-aosomi-279', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1979, 407, N'XL', N'Xanh Dương', N'SKU-aosomi-280', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1980, 408, N'S', N'Trắng', N'SKU-aosomi-281', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1981, 408, N'S', N'Xanh Navy', N'SKU-aosomi-282', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1982, 408, N'S', N'Kem', N'SKU-aosomi-283', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1983, 408, N'S', N'Xanh Dương', N'SKU-aosomi-284', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1984, 408, N'S', N'Đen', N'SKU-aosomi-285', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1985, 408, N'M', N'Trắng', N'SKU-aosomi-286', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1986, 408, N'M', N'Xanh Navy', N'SKU-aosomi-287', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1987, 408, N'M', N'Kem', N'SKU-aosomi-288', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1988, 408, N'M', N'Xanh Dương', N'SKU-aosomi-289', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1989, 408, N'M', N'Đen', N'SKU-aosomi-290', 34)
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_orders_cashier')
-BEGIN
-    ALTER TABLE dbo.orders ADD CONSTRAINT FK_orders_cashier FOREIGN KEY (cashier_id) REFERENCES users(user_id);
-END
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1990, 408, N'L', N'Trắng', N'SKU-aosomi-291', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1991, 408, N'L', N'Xanh Navy', N'SKU-aosomi-292', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1992, 408, N'L', N'Kem', N'SKU-aosomi-293', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1993, 408, N'L', N'Xanh Dương', N'SKU-aosomi-294', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1994, 408, N'L', N'Đen', N'SKU-aosomi-295', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1995, 408, N'XL', N'Trắng', N'SKU-aosomi-296', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1996, 408, N'XL', N'Xanh Navy', N'SKU-aosomi-297', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1997, 408, N'XL', N'Kem', N'SKU-aosomi-298', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1998, 408, N'XL', N'Xanh Dương', N'SKU-aosomi-299', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (1999, 408, N'XL', N'Đen', N'SKU-aosomi-300', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2000, 409, N'S', N'Xanh Dương', N'SKU-aosomi-301', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2001, 409, N'S', N'Xám', N'SKU-aosomi-302', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2002, 409, N'S', N'Trắng', N'SKU-aosomi-303', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2003, 409, N'S', N'Đen', N'SKU-aosomi-304', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2004, 409, N'S', N'Kem', N'SKU-aosomi-305', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2005, 409, N'M', N'Xanh Dương', N'SKU-aosomi-306', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2006, 409, N'M', N'Xám', N'SKU-aosomi-307', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2007, 409, N'M', N'Trắng', N'SKU-aosomi-308', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2008, 409, N'M', N'Đen', N'SKU-aosomi-309', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2009, 409, N'M', N'Kem', N'SKU-aosomi-310', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2010, 409, N'L', N'Xanh Dương', N'SKU-aosomi-311', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2011, 409, N'L', N'Xám', N'SKU-aosomi-312', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2012, 409, N'L', N'Trắng', N'SKU-aosomi-313', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2013, 409, N'L', N'Đen', N'SKU-aosomi-314', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2014, 409, N'L', N'Kem', N'SKU-aosomi-315', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2015, 409, N'XL', N'Xanh Dương', N'SKU-aosomi-316', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2016, 409, N'XL', N'Xám', N'SKU-aosomi-317', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2017, 409, N'XL', N'Trắng', N'SKU-aosomi-318', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2018, 409, N'XL', N'Đen', N'SKU-aosomi-319', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2019, 409, N'XL', N'Kem', N'SKU-aosomi-320', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2020, 410, N'S', N'Xanh Navy', N'SKU-aosomi-321', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2021, 410, N'S', N'Hồng', N'SKU-aosomi-322', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2022, 410, N'S', N'Kem', N'SKU-aosomi-323', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2023, 410, N'S', N'Xám', N'SKU-aosomi-324', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2024, 410, N'S', N'Trắng', N'SKU-aosomi-325', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2025, 410, N'M', N'Xanh Navy', N'SKU-aosomi-326', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2026, 410, N'M', N'Hồng', N'SKU-aosomi-327', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2027, 410, N'M', N'Kem', N'SKU-aosomi-328', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2028, 410, N'M', N'Xám', N'SKU-aosomi-329', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2029, 410, N'M', N'Trắng', N'SKU-aosomi-330', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2030, 410, N'L', N'Xanh Navy', N'SKU-aosomi-331', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2031, 410, N'L', N'Hồng', N'SKU-aosomi-332', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2032, 410, N'L', N'Kem', N'SKU-aosomi-333', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2033, 410, N'L', N'Xám', N'SKU-aosomi-334', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2034, 410, N'L', N'Trắng', N'SKU-aosomi-335', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2035, 410, N'XL', N'Xanh Navy', N'SKU-aosomi-336', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2036, 410, N'XL', N'Hồng', N'SKU-aosomi-337', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2037, 410, N'XL', N'Kem', N'SKU-aosomi-338', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2038, 410, N'XL', N'Xám', N'SKU-aosomi-339', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2039, 410, N'XL', N'Trắng', N'SKU-aosomi-340', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2040, 411, N'S', N'Đen', N'SKU-aosomi-341', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2041, 411, N'S', N'Hồng', N'SKU-aosomi-342', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2042, 411, N'S', N'Xanh Navy', N'SKU-aosomi-343', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2043, 411, N'S', N'Kem', N'SKU-aosomi-344', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2044, 411, N'S', N'Xanh Dương', N'SKU-aosomi-345', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2045, 411, N'M', N'Đen', N'SKU-aosomi-346', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2046, 411, N'M', N'Hồng', N'SKU-aosomi-347', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2047, 411, N'M', N'Xanh Navy', N'SKU-aosomi-348', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2048, 411, N'M', N'Kem', N'SKU-aosomi-349', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2049, 411, N'M', N'Xanh Dương', N'SKU-aosomi-350', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2050, 411, N'L', N'Đen', N'SKU-aosomi-351', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2051, 411, N'L', N'Hồng', N'SKU-aosomi-352', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2052, 411, N'L', N'Xanh Navy', N'SKU-aosomi-353', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2053, 411, N'L', N'Kem', N'SKU-aosomi-354', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2054, 411, N'L', N'Xanh Dương', N'SKU-aosomi-355', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2055, 411, N'XL', N'Đen', N'SKU-aosomi-356', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2056, 411, N'XL', N'Hồng', N'SKU-aosomi-357', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2057, 411, N'XL', N'Xanh Navy', N'SKU-aosomi-358', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2058, 411, N'XL', N'Kem', N'SKU-aosomi-359', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2059, 411, N'XL', N'Xanh Dương', N'SKU-aosomi-360', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2060, 412, N'S', N'Đen', N'SKU-aosomi-361', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2061, 412, N'S', N'Xám', N'SKU-aosomi-362', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2062, 412, N'S', N'Kem', N'SKU-aosomi-363', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2063, 412, N'S', N'Trắng', N'SKU-aosomi-364', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2064, 412, N'S', N'Xanh Dương', N'SKU-aosomi-365', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2065, 412, N'M', N'Đen', N'SKU-aosomi-366', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2066, 412, N'M', N'Xám', N'SKU-aosomi-367', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2067, 412, N'M', N'Kem', N'SKU-aosomi-368', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2068, 412, N'M', N'Trắng', N'SKU-aosomi-369', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2069, 412, N'M', N'Xanh Dương', N'SKU-aosomi-370', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2070, 412, N'L', N'Đen', N'SKU-aosomi-371', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2071, 412, N'L', N'Xám', N'SKU-aosomi-372', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2072, 412, N'L', N'Kem', N'SKU-aosomi-373', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2073, 412, N'L', N'Trắng', N'SKU-aosomi-374', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2074, 412, N'L', N'Xanh Dương', N'SKU-aosomi-375', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2075, 412, N'XL', N'Đen', N'SKU-aosomi-376', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2076, 412, N'XL', N'Xám', N'SKU-aosomi-377', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2077, 412, N'XL', N'Kem', N'SKU-aosomi-378', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2078, 412, N'XL', N'Trắng', N'SKU-aosomi-379', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2079, 412, N'XL', N'Xanh Dương', N'SKU-aosomi-380', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2080, 413, N'S', N'Xám', N'SKU-aosomi-381', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2081, 413, N'S', N'Hồng', N'SKU-aosomi-382', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2082, 413, N'S', N'Kem', N'SKU-aosomi-383', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2083, 413, N'S', N'Xanh Navy', N'SKU-aosomi-384', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2084, 413, N'S', N'Đen', N'SKU-aosomi-385', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2085, 413, N'M', N'Xám', N'SKU-aosomi-386', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2086, 413, N'M', N'Hồng', N'SKU-aosomi-387', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2087, 413, N'M', N'Kem', N'SKU-aosomi-388', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2088, 413, N'M', N'Xanh Navy', N'SKU-aosomi-389', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2089, 413, N'M', N'Đen', N'SKU-aosomi-390', 60)
 GO
-
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'shipping_fee')
-BEGIN
-    ALTER TABLE dbo.orders ADD shipping_fee DECIMAL(12,2) NOT NULL DEFAULT 0;
-END
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2090, 413, N'L', N'Xám', N'SKU-aosomi-391', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2091, 413, N'L', N'Hồng', N'SKU-aosomi-392', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2092, 413, N'L', N'Kem', N'SKU-aosomi-393', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2093, 413, N'L', N'Xanh Navy', N'SKU-aosomi-394', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2094, 413, N'L', N'Đen', N'SKU-aosomi-395', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2095, 413, N'XL', N'Xám', N'SKU-aosomi-396', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2096, 413, N'XL', N'Hồng', N'SKU-aosomi-397', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2097, 413, N'XL', N'Kem', N'SKU-aosomi-398', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2098, 413, N'XL', N'Xanh Navy', N'SKU-aosomi-399', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2099, 413, N'XL', N'Đen', N'SKU-aosomi-400', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2100, 414, N'S', N'Be', N'SKU-quanjean-401', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2101, 414, N'S', N'Xanh Dương', N'SKU-quanjean-402', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2102, 414, N'S', N'Trắng', N'SKU-quanjean-403', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2103, 414, N'S', N'Xám', N'SKU-quanjean-404', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2104, 414, N'S', N'Đen', N'SKU-quanjean-405', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2105, 414, N'M', N'Be', N'SKU-quanjean-406', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2106, 414, N'M', N'Xanh Dương', N'SKU-quanjean-407', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2107, 414, N'M', N'Trắng', N'SKU-quanjean-408', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2108, 414, N'M', N'Xám', N'SKU-quanjean-409', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2109, 414, N'M', N'Đen', N'SKU-quanjean-410', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2110, 414, N'L', N'Be', N'SKU-quanjean-411', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2111, 414, N'L', N'Xanh Dương', N'SKU-quanjean-412', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2112, 414, N'L', N'Trắng', N'SKU-quanjean-413', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2113, 414, N'L', N'Xám', N'SKU-quanjean-414', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2114, 414, N'L', N'Đen', N'SKU-quanjean-415', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2115, 414, N'XL', N'Be', N'SKU-quanjean-416', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2116, 414, N'XL', N'Xanh Dương', N'SKU-quanjean-417', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2117, 414, N'XL', N'Trắng', N'SKU-quanjean-418', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2118, 414, N'XL', N'Xám', N'SKU-quanjean-419', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2119, 414, N'XL', N'Đen', N'SKU-quanjean-420', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2120, 415, N'S', N'Trắng', N'SKU-quanjean-421', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2121, 415, N'S', N'Xám', N'SKU-quanjean-422', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2122, 415, N'S', N'Xanh Dương', N'SKU-quanjean-423', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2123, 415, N'S', N'Đen', N'SKU-quanjean-424', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2124, 415, N'S', N'Be', N'SKU-quanjean-425', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2125, 415, N'M', N'Trắng', N'SKU-quanjean-426', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2126, 415, N'M', N'Xám', N'SKU-quanjean-427', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2127, 415, N'M', N'Xanh Dương', N'SKU-quanjean-428', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2128, 415, N'M', N'Đen', N'SKU-quanjean-429', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2129, 415, N'M', N'Be', N'SKU-quanjean-430', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2130, 415, N'L', N'Trắng', N'SKU-quanjean-431', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2131, 415, N'L', N'Xám', N'SKU-quanjean-432', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2132, 415, N'L', N'Xanh Dương', N'SKU-quanjean-433', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2133, 415, N'L', N'Đen', N'SKU-quanjean-434', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2134, 415, N'L', N'Be', N'SKU-quanjean-435', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2135, 415, N'XL', N'Trắng', N'SKU-quanjean-436', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2136, 415, N'XL', N'Xám', N'SKU-quanjean-437', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2137, 415, N'XL', N'Xanh Dương', N'SKU-quanjean-438', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2138, 415, N'XL', N'Đen', N'SKU-quanjean-439', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2139, 415, N'XL', N'Be', N'SKU-quanjean-440', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2140, 416, N'S', N'Trắng', N'SKU-quanjean-441', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2141, 416, N'S', N'Xanh Dương', N'SKU-quanjean-442', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2142, 416, N'S', N'Đen', N'SKU-quanjean-443', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2143, 416, N'S', N'Xám', N'SKU-quanjean-444', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2144, 416, N'S', N'Be', N'SKU-quanjean-445', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2145, 416, N'M', N'Trắng', N'SKU-quanjean-446', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2146, 416, N'M', N'Xanh Dương', N'SKU-quanjean-447', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2147, 416, N'M', N'Đen', N'SKU-quanjean-448', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2148, 416, N'M', N'Xám', N'SKU-quanjean-449', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2149, 416, N'M', N'Be', N'SKU-quanjean-450', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2150, 416, N'L', N'Trắng', N'SKU-quanjean-451', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2151, 416, N'L', N'Xanh Dương', N'SKU-quanjean-452', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2152, 416, N'L', N'Đen', N'SKU-quanjean-453', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2153, 416, N'L', N'Xám', N'SKU-quanjean-454', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2154, 416, N'L', N'Be', N'SKU-quanjean-455', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2155, 416, N'XL', N'Trắng', N'SKU-quanjean-456', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2156, 416, N'XL', N'Xanh Dương', N'SKU-quanjean-457', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2157, 416, N'XL', N'Đen', N'SKU-quanjean-458', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2158, 416, N'XL', N'Xám', N'SKU-quanjean-459', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2159, 416, N'XL', N'Be', N'SKU-quanjean-460', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2160, 417, N'S', N'Trắng', N'SKU-quanjean-461', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2161, 417, N'S', N'Xám', N'SKU-quanjean-462', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2162, 417, N'S', N'Xanh Dương', N'SKU-quanjean-463', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2163, 417, N'S', N'Đen', N'SKU-quanjean-464', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2164, 417, N'S', N'Be', N'SKU-quanjean-465', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2165, 417, N'M', N'Trắng', N'SKU-quanjean-466', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2166, 417, N'M', N'Xám', N'SKU-quanjean-467', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2167, 417, N'M', N'Xanh Dương', N'SKU-quanjean-468', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2168, 417, N'M', N'Đen', N'SKU-quanjean-469', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2169, 417, N'M', N'Be', N'SKU-quanjean-470', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2170, 417, N'L', N'Trắng', N'SKU-quanjean-471', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2171, 417, N'L', N'Xám', N'SKU-quanjean-472', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2172, 417, N'L', N'Xanh Dương', N'SKU-quanjean-473', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2173, 417, N'L', N'Đen', N'SKU-quanjean-474', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2174, 417, N'L', N'Be', N'SKU-quanjean-475', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2175, 417, N'XL', N'Trắng', N'SKU-quanjean-476', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2176, 417, N'XL', N'Xám', N'SKU-quanjean-477', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2177, 417, N'XL', N'Xanh Dương', N'SKU-quanjean-478', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2178, 417, N'XL', N'Đen', N'SKU-quanjean-479', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2179, 417, N'XL', N'Be', N'SKU-quanjean-480', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2180, 418, N'S', N'Xanh Dương', N'SKU-quanjean-481', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2181, 418, N'S', N'Đen', N'SKU-quanjean-482', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2182, 418, N'S', N'Xám', N'SKU-quanjean-483', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2183, 418, N'S', N'Trắng', N'SKU-quanjean-484', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2184, 418, N'S', N'Be', N'SKU-quanjean-485', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2185, 418, N'M', N'Xanh Dương', N'SKU-quanjean-486', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2186, 418, N'M', N'Đen', N'SKU-quanjean-487', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2187, 418, N'M', N'Xám', N'SKU-quanjean-488', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2188, 418, N'M', N'Trắng', N'SKU-quanjean-489', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2189, 418, N'M', N'Be', N'SKU-quanjean-490', 55)
 GO
-
-IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'user_id' AND is_nullable = 0)
-    ALTER TABLE dbo.orders ALTER COLUMN user_id BIGINT NULL;
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2190, 418, N'L', N'Xanh Dương', N'SKU-quanjean-491', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2191, 418, N'L', N'Đen', N'SKU-quanjean-492', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2192, 418, N'L', N'Xám', N'SKU-quanjean-493', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2193, 418, N'L', N'Trắng', N'SKU-quanjean-494', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2194, 418, N'L', N'Be', N'SKU-quanjean-495', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2195, 418, N'XL', N'Xanh Dương', N'SKU-quanjean-496', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2196, 418, N'XL', N'Đen', N'SKU-quanjean-497', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2197, 418, N'XL', N'Xám', N'SKU-quanjean-498', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2198, 418, N'XL', N'Trắng', N'SKU-quanjean-499', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2199, 418, N'XL', N'Be', N'SKU-quanjean-500', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2200, 419, N'S', N'Be', N'SKU-quanjean-501', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2201, 419, N'S', N'Trắng', N'SKU-quanjean-502', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2202, 419, N'S', N'Xanh Dương', N'SKU-quanjean-503', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2203, 419, N'S', N'Xám', N'SKU-quanjean-504', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2204, 419, N'S', N'Đen', N'SKU-quanjean-505', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2205, 419, N'M', N'Be', N'SKU-quanjean-506', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2206, 419, N'M', N'Trắng', N'SKU-quanjean-507', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2207, 419, N'M', N'Xanh Dương', N'SKU-quanjean-508', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2208, 419, N'M', N'Xám', N'SKU-quanjean-509', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2209, 419, N'M', N'Đen', N'SKU-quanjean-510', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2210, 419, N'L', N'Be', N'SKU-quanjean-511', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2211, 419, N'L', N'Trắng', N'SKU-quanjean-512', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2212, 419, N'L', N'Xanh Dương', N'SKU-quanjean-513', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2213, 419, N'L', N'Xám', N'SKU-quanjean-514', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2214, 419, N'L', N'Đen', N'SKU-quanjean-515', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2215, 419, N'XL', N'Be', N'SKU-quanjean-516', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2216, 419, N'XL', N'Trắng', N'SKU-quanjean-517', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2217, 419, N'XL', N'Xanh Dương', N'SKU-quanjean-518', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2218, 419, N'XL', N'Xám', N'SKU-quanjean-519', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2219, 419, N'XL', N'Đen', N'SKU-quanjean-520', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2220, 420, N'S', N'Trắng', N'SKU-quanjean-521', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2221, 420, N'S', N'Xám', N'SKU-quanjean-522', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2222, 420, N'S', N'Đen', N'SKU-quanjean-523', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2223, 420, N'S', N'Xanh Dương', N'SKU-quanjean-524', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2224, 420, N'S', N'Be', N'SKU-quanjean-525', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2225, 420, N'M', N'Trắng', N'SKU-quanjean-526', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2226, 420, N'M', N'Xám', N'SKU-quanjean-527', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2227, 420, N'M', N'Đen', N'SKU-quanjean-528', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2228, 420, N'M', N'Xanh Dương', N'SKU-quanjean-529', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2229, 420, N'M', N'Be', N'SKU-quanjean-530', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2230, 420, N'L', N'Trắng', N'SKU-quanjean-531', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2231, 420, N'L', N'Xám', N'SKU-quanjean-532', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2232, 420, N'L', N'Đen', N'SKU-quanjean-533', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2233, 420, N'L', N'Xanh Dương', N'SKU-quanjean-534', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2234, 420, N'L', N'Be', N'SKU-quanjean-535', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2235, 420, N'XL', N'Trắng', N'SKU-quanjean-536', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2236, 420, N'XL', N'Xám', N'SKU-quanjean-537', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2237, 420, N'XL', N'Đen', N'SKU-quanjean-538', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2238, 420, N'XL', N'Xanh Dương', N'SKU-quanjean-539', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2239, 420, N'XL', N'Be', N'SKU-quanjean-540', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2240, 421, N'S', N'Xanh Dương', N'SKU-quanjean-541', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2241, 421, N'S', N'Trắng', N'SKU-quanjean-542', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2242, 421, N'S', N'Đen', N'SKU-quanjean-543', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2243, 421, N'S', N'Be', N'SKU-quanjean-544', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2244, 421, N'S', N'Xám', N'SKU-quanjean-545', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2245, 421, N'M', N'Xanh Dương', N'SKU-quanjean-546', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2246, 421, N'M', N'Trắng', N'SKU-quanjean-547', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2247, 421, N'M', N'Đen', N'SKU-quanjean-548', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2248, 421, N'M', N'Be', N'SKU-quanjean-549', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2249, 421, N'M', N'Xám', N'SKU-quanjean-550', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2250, 421, N'L', N'Xanh Dương', N'SKU-quanjean-551', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2251, 421, N'L', N'Trắng', N'SKU-quanjean-552', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2252, 421, N'L', N'Đen', N'SKU-quanjean-553', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2253, 421, N'L', N'Be', N'SKU-quanjean-554', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2254, 421, N'L', N'Xám', N'SKU-quanjean-555', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2255, 421, N'XL', N'Xanh Dương', N'SKU-quanjean-556', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2256, 421, N'XL', N'Trắng', N'SKU-quanjean-557', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2257, 421, N'XL', N'Đen', N'SKU-quanjean-558', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2258, 421, N'XL', N'Be', N'SKU-quanjean-559', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2259, 421, N'XL', N'Xám', N'SKU-quanjean-560', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2260, 422, N'S', N'Đen', N'SKU-quanjean-561', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2261, 422, N'S', N'Xám', N'SKU-quanjean-562', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2262, 422, N'S', N'Be', N'SKU-quanjean-563', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2263, 422, N'S', N'Xanh Dương', N'SKU-quanjean-564', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2264, 422, N'S', N'Trắng', N'SKU-quanjean-565', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2265, 422, N'M', N'Đen', N'SKU-quanjean-566', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2266, 422, N'M', N'Xám', N'SKU-quanjean-567', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2267, 422, N'M', N'Be', N'SKU-quanjean-568', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2268, 422, N'M', N'Xanh Dương', N'SKU-quanjean-569', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2269, 422, N'M', N'Trắng', N'SKU-quanjean-570', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2270, 422, N'L', N'Đen', N'SKU-quanjean-571', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2271, 422, N'L', N'Xám', N'SKU-quanjean-572', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2272, 422, N'L', N'Be', N'SKU-quanjean-573', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2273, 422, N'L', N'Xanh Dương', N'SKU-quanjean-574', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2274, 422, N'L', N'Trắng', N'SKU-quanjean-575', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2275, 422, N'XL', N'Đen', N'SKU-quanjean-576', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2276, 422, N'XL', N'Xám', N'SKU-quanjean-577', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2277, 422, N'XL', N'Be', N'SKU-quanjean-578', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2278, 422, N'XL', N'Xanh Dương', N'SKU-quanjean-579', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2279, 422, N'XL', N'Trắng', N'SKU-quanjean-580', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2280, 423, N'S', N'Xám', N'SKU-quanjean-581', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2281, 423, N'S', N'Đen', N'SKU-quanjean-582', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2282, 423, N'S', N'Trắng', N'SKU-quanjean-583', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2283, 423, N'S', N'Xanh Dương', N'SKU-quanjean-584', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2284, 423, N'S', N'Be', N'SKU-quanjean-585', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2285, 423, N'M', N'Xám', N'SKU-quanjean-586', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2286, 423, N'M', N'Đen', N'SKU-quanjean-587', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2287, 423, N'M', N'Trắng', N'SKU-quanjean-588', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2288, 423, N'M', N'Xanh Dương', N'SKU-quanjean-589', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2289, 423, N'M', N'Be', N'SKU-quanjean-590', 36)
 GO
-
-IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'receiver_name')
-    ALTER TABLE dbo.orders ALTER COLUMN receiver_name NVARCHAR(100) NULL;
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2290, 423, N'L', N'Xám', N'SKU-quanjean-591', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2291, 423, N'L', N'Đen', N'SKU-quanjean-592', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2292, 423, N'L', N'Trắng', N'SKU-quanjean-593', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2293, 423, N'L', N'Xanh Dương', N'SKU-quanjean-594', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2294, 423, N'L', N'Be', N'SKU-quanjean-595', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2295, 423, N'XL', N'Xám', N'SKU-quanjean-596', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2296, 423, N'XL', N'Đen', N'SKU-quanjean-597', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2297, 423, N'XL', N'Trắng', N'SKU-quanjean-598', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2298, 423, N'XL', N'Xanh Dương', N'SKU-quanjean-599', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2299, 423, N'XL', N'Be', N'SKU-quanjean-600', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2300, 424, N'S', N'Xanh Navy', N'SKU-quantay-601', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2301, 424, N'S', N'Xám', N'SKU-quantay-602', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2302, 424, N'S', N'Đen', N'SKU-quantay-603', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2303, 424, N'S', N'Be', N'SKU-quantay-604', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2304, 424, N'S', N'Nâu', N'SKU-quantay-605', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2305, 424, N'M', N'Xanh Navy', N'SKU-quantay-606', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2306, 424, N'M', N'Xám', N'SKU-quantay-607', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2307, 424, N'M', N'Đen', N'SKU-quantay-608', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2308, 424, N'M', N'Be', N'SKU-quantay-609', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2309, 424, N'M', N'Nâu', N'SKU-quantay-610', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2310, 424, N'L', N'Xanh Navy', N'SKU-quantay-611', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2311, 424, N'L', N'Xám', N'SKU-quantay-612', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2312, 424, N'L', N'Đen', N'SKU-quantay-613', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2313, 424, N'L', N'Be', N'SKU-quantay-614', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2314, 424, N'L', N'Nâu', N'SKU-quantay-615', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2315, 424, N'XL', N'Xanh Navy', N'SKU-quantay-616', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2316, 424, N'XL', N'Xám', N'SKU-quantay-617', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2317, 424, N'XL', N'Đen', N'SKU-quantay-618', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2318, 424, N'XL', N'Be', N'SKU-quantay-619', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2319, 424, N'XL', N'Nâu', N'SKU-quantay-620', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2320, 425, N'S', N'Nâu', N'SKU-quantay-621', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2321, 425, N'S', N'Be', N'SKU-quantay-622', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2322, 425, N'S', N'Xám', N'SKU-quantay-623', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2323, 425, N'S', N'Xanh Navy', N'SKU-quantay-624', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2324, 425, N'S', N'Đen', N'SKU-quantay-625', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2325, 425, N'M', N'Nâu', N'SKU-quantay-626', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2326, 425, N'M', N'Be', N'SKU-quantay-627', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2327, 425, N'M', N'Xám', N'SKU-quantay-628', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2328, 425, N'M', N'Xanh Navy', N'SKU-quantay-629', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2329, 425, N'M', N'Đen', N'SKU-quantay-630', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2330, 425, N'L', N'Nâu', N'SKU-quantay-631', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2331, 425, N'L', N'Be', N'SKU-quantay-632', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2332, 425, N'L', N'Xám', N'SKU-quantay-633', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2333, 425, N'L', N'Xanh Navy', N'SKU-quantay-634', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2334, 425, N'L', N'Đen', N'SKU-quantay-635', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2335, 425, N'XL', N'Nâu', N'SKU-quantay-636', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2336, 425, N'XL', N'Be', N'SKU-quantay-637', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2337, 425, N'XL', N'Xám', N'SKU-quantay-638', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2338, 425, N'XL', N'Xanh Navy', N'SKU-quantay-639', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2339, 425, N'XL', N'Đen', N'SKU-quantay-640', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2340, 426, N'S', N'Đen', N'SKU-quantay-641', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2341, 426, N'S', N'Xanh Navy', N'SKU-quantay-642', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2342, 426, N'S', N'Be', N'SKU-quantay-643', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2343, 426, N'S', N'Nâu', N'SKU-quantay-644', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2344, 426, N'S', N'Xám', N'SKU-quantay-645', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2345, 426, N'M', N'Đen', N'SKU-quantay-646', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2346, 426, N'M', N'Xanh Navy', N'SKU-quantay-647', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2347, 426, N'M', N'Be', N'SKU-quantay-648', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2348, 426, N'M', N'Nâu', N'SKU-quantay-649', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2349, 426, N'M', N'Xám', N'SKU-quantay-650', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2350, 426, N'L', N'Đen', N'SKU-quantay-651', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2351, 426, N'L', N'Xanh Navy', N'SKU-quantay-652', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2352, 426, N'L', N'Be', N'SKU-quantay-653', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2353, 426, N'L', N'Nâu', N'SKU-quantay-654', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2354, 426, N'L', N'Xám', N'SKU-quantay-655', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2355, 426, N'XL', N'Đen', N'SKU-quantay-656', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2356, 426, N'XL', N'Xanh Navy', N'SKU-quantay-657', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2357, 426, N'XL', N'Be', N'SKU-quantay-658', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2358, 426, N'XL', N'Nâu', N'SKU-quantay-659', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2359, 426, N'XL', N'Xám', N'SKU-quantay-660', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2360, 427, N'S', N'Nâu', N'SKU-quantay-661', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2361, 427, N'S', N'Xanh Navy', N'SKU-quantay-662', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2362, 427, N'S', N'Xám', N'SKU-quantay-663', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2363, 427, N'S', N'Be', N'SKU-quantay-664', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2364, 427, N'S', N'Đen', N'SKU-quantay-665', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2365, 427, N'M', N'Nâu', N'SKU-quantay-666', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2366, 427, N'M', N'Xanh Navy', N'SKU-quantay-667', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2367, 427, N'M', N'Xám', N'SKU-quantay-668', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2368, 427, N'M', N'Be', N'SKU-quantay-669', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2369, 427, N'M', N'Đen', N'SKU-quantay-670', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2370, 427, N'L', N'Nâu', N'SKU-quantay-671', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2371, 427, N'L', N'Xanh Navy', N'SKU-quantay-672', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2372, 427, N'L', N'Xám', N'SKU-quantay-673', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2373, 427, N'L', N'Be', N'SKU-quantay-674', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2374, 427, N'L', N'Đen', N'SKU-quantay-675', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2375, 427, N'XL', N'Nâu', N'SKU-quantay-676', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2376, 427, N'XL', N'Xanh Navy', N'SKU-quantay-677', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2377, 427, N'XL', N'Xám', N'SKU-quantay-678', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2378, 427, N'XL', N'Be', N'SKU-quantay-679', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2379, 427, N'XL', N'Đen', N'SKU-quantay-680', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2380, 428, N'S', N'Xanh Navy', N'SKU-quantay-681', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2381, 428, N'S', N'Nâu', N'SKU-quantay-682', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2382, 428, N'S', N'Xám', N'SKU-quantay-683', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2383, 428, N'S', N'Be', N'SKU-quantay-684', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2384, 428, N'S', N'Đen', N'SKU-quantay-685', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2385, 428, N'M', N'Xanh Navy', N'SKU-quantay-686', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2386, 428, N'M', N'Nâu', N'SKU-quantay-687', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2387, 428, N'M', N'Xám', N'SKU-quantay-688', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2388, 428, N'M', N'Be', N'SKU-quantay-689', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2389, 428, N'M', N'Đen', N'SKU-quantay-690', 35)
 GO
-
-IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'phone')
-    ALTER TABLE dbo.orders ALTER COLUMN phone NVARCHAR(20) NULL;
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2390, 428, N'L', N'Xanh Navy', N'SKU-quantay-691', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2391, 428, N'L', N'Nâu', N'SKU-quantay-692', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2392, 428, N'L', N'Xám', N'SKU-quantay-693', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2393, 428, N'L', N'Be', N'SKU-quantay-694', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2394, 428, N'L', N'Đen', N'SKU-quantay-695', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2395, 428, N'XL', N'Xanh Navy', N'SKU-quantay-696', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2396, 428, N'XL', N'Nâu', N'SKU-quantay-697', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2397, 428, N'XL', N'Xám', N'SKU-quantay-698', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2398, 428, N'XL', N'Be', N'SKU-quantay-699', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2399, 428, N'XL', N'Đen', N'SKU-quantay-700', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2400, 429, N'S', N'Nâu', N'SKU-quantay-701', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2401, 429, N'S', N'Xám', N'SKU-quantay-702', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2402, 429, N'S', N'Xanh Navy', N'SKU-quantay-703', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2403, 429, N'S', N'Be', N'SKU-quantay-704', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2404, 429, N'S', N'Đen', N'SKU-quantay-705', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2405, 429, N'M', N'Nâu', N'SKU-quantay-706', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2406, 429, N'M', N'Xám', N'SKU-quantay-707', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2407, 429, N'M', N'Xanh Navy', N'SKU-quantay-708', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2408, 429, N'M', N'Be', N'SKU-quantay-709', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2409, 429, N'M', N'Đen', N'SKU-quantay-710', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2410, 429, N'L', N'Nâu', N'SKU-quantay-711', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2411, 429, N'L', N'Xám', N'SKU-quantay-712', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2412, 429, N'L', N'Xanh Navy', N'SKU-quantay-713', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2413, 429, N'L', N'Be', N'SKU-quantay-714', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2414, 429, N'L', N'Đen', N'SKU-quantay-715', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2415, 429, N'XL', N'Nâu', N'SKU-quantay-716', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2416, 429, N'XL', N'Xám', N'SKU-quantay-717', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2417, 429, N'XL', N'Xanh Navy', N'SKU-quantay-718', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2418, 429, N'XL', N'Be', N'SKU-quantay-719', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2419, 429, N'XL', N'Đen', N'SKU-quantay-720', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2420, 430, N'S', N'Đen', N'SKU-quantay-721', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2421, 430, N'S', N'Xanh Navy', N'SKU-quantay-722', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2422, 430, N'S', N'Be', N'SKU-quantay-723', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2423, 430, N'S', N'Xám', N'SKU-quantay-724', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2424, 430, N'S', N'Nâu', N'SKU-quantay-725', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2425, 430, N'M', N'Đen', N'SKU-quantay-726', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2426, 430, N'M', N'Xanh Navy', N'SKU-quantay-727', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2427, 430, N'M', N'Be', N'SKU-quantay-728', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2428, 430, N'M', N'Xám', N'SKU-quantay-729', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2429, 430, N'M', N'Nâu', N'SKU-quantay-730', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2430, 430, N'L', N'Đen', N'SKU-quantay-731', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2431, 430, N'L', N'Xanh Navy', N'SKU-quantay-732', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2432, 430, N'L', N'Be', N'SKU-quantay-733', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2433, 430, N'L', N'Xám', N'SKU-quantay-734', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2434, 430, N'L', N'Nâu', N'SKU-quantay-735', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2435, 430, N'XL', N'Đen', N'SKU-quantay-736', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2436, 430, N'XL', N'Xanh Navy', N'SKU-quantay-737', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2437, 430, N'XL', N'Be', N'SKU-quantay-738', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2438, 430, N'XL', N'Xám', N'SKU-quantay-739', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2439, 430, N'XL', N'Nâu', N'SKU-quantay-740', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2440, 431, N'S', N'Đen', N'SKU-quantay-741', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2441, 431, N'S', N'Be', N'SKU-quantay-742', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2442, 431, N'S', N'Xanh Navy', N'SKU-quantay-743', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2443, 431, N'S', N'Nâu', N'SKU-quantay-744', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2444, 431, N'S', N'Xám', N'SKU-quantay-745', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2445, 431, N'M', N'Đen', N'SKU-quantay-746', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2446, 431, N'M', N'Be', N'SKU-quantay-747', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2447, 431, N'M', N'Xanh Navy', N'SKU-quantay-748', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2448, 431, N'M', N'Nâu', N'SKU-quantay-749', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2449, 431, N'M', N'Xám', N'SKU-quantay-750', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2450, 431, N'L', N'Đen', N'SKU-quantay-751', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2451, 431, N'L', N'Be', N'SKU-quantay-752', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2452, 431, N'L', N'Xanh Navy', N'SKU-quantay-753', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2453, 431, N'L', N'Nâu', N'SKU-quantay-754', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2454, 431, N'L', N'Xám', N'SKU-quantay-755', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2455, 431, N'XL', N'Đen', N'SKU-quantay-756', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2456, 431, N'XL', N'Be', N'SKU-quantay-757', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2457, 431, N'XL', N'Xanh Navy', N'SKU-quantay-758', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2458, 431, N'XL', N'Nâu', N'SKU-quantay-759', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2459, 431, N'XL', N'Xám', N'SKU-quantay-760', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2460, 432, N'S', N'Xám', N'SKU-quantay-761', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2461, 432, N'S', N'Be', N'SKU-quantay-762', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2462, 432, N'S', N'Xanh Navy', N'SKU-quantay-763', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2463, 432, N'S', N'Đen', N'SKU-quantay-764', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2464, 432, N'S', N'Nâu', N'SKU-quantay-765', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2465, 432, N'M', N'Xám', N'SKU-quantay-766', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2466, 432, N'M', N'Be', N'SKU-quantay-767', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2467, 432, N'M', N'Xanh Navy', N'SKU-quantay-768', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2468, 432, N'M', N'Đen', N'SKU-quantay-769', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2469, 432, N'M', N'Nâu', N'SKU-quantay-770', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2470, 432, N'L', N'Xám', N'SKU-quantay-771', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2471, 432, N'L', N'Be', N'SKU-quantay-772', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2472, 432, N'L', N'Xanh Navy', N'SKU-quantay-773', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2473, 432, N'L', N'Đen', N'SKU-quantay-774', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2474, 432, N'L', N'Nâu', N'SKU-quantay-775', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2475, 432, N'XL', N'Xám', N'SKU-quantay-776', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2476, 432, N'XL', N'Be', N'SKU-quantay-777', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2477, 432, N'XL', N'Xanh Navy', N'SKU-quantay-778', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2478, 432, N'XL', N'Đen', N'SKU-quantay-779', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2479, 432, N'XL', N'Nâu', N'SKU-quantay-780', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2480, 433, N'S', N'Đen', N'SKU-quantay-781', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2481, 433, N'S', N'Nâu', N'SKU-quantay-782', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2482, 433, N'S', N'Xanh Navy', N'SKU-quantay-783', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2483, 433, N'S', N'Xám', N'SKU-quantay-784', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2484, 433, N'S', N'Be', N'SKU-quantay-785', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2485, 433, N'M', N'Đen', N'SKU-quantay-786', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2486, 433, N'M', N'Nâu', N'SKU-quantay-787', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2487, 433, N'M', N'Xanh Navy', N'SKU-quantay-788', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2488, 433, N'M', N'Xám', N'SKU-quantay-789', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2489, 433, N'M', N'Be', N'SKU-quantay-790', 35)
 GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2490, 433, N'L', N'Đen', N'SKU-quantay-791', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2491, 433, N'L', N'Nâu', N'SKU-quantay-792', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2492, 433, N'L', N'Xanh Navy', N'SKU-quantay-793', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2493, 433, N'L', N'Xám', N'SKU-quantay-794', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2494, 433, N'L', N'Be', N'SKU-quantay-795', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2495, 433, N'XL', N'Đen', N'SKU-quantay-796', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2496, 433, N'XL', N'Nâu', N'SKU-quantay-797', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2497, 433, N'XL', N'Xanh Navy', N'SKU-quantay-798', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2498, 433, N'XL', N'Xám', N'SKU-quantay-799', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2499, 433, N'XL', N'Be', N'SKU-quantay-800', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2500, 434, N'S', N'Nâu', N'SKU-aokhoac-801', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2501, 434, N'S', N'Xám', N'SKU-aokhoac-802', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2502, 434, N'S', N'Đen', N'SKU-aokhoac-803', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2503, 434, N'S', N'Be', N'SKU-aokhoac-804', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2504, 434, N'S', N'Xanh Navy', N'SKU-aokhoac-805', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2505, 434, N'M', N'Nâu', N'SKU-aokhoac-806', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2506, 434, N'M', N'Xám', N'SKU-aokhoac-807', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2507, 434, N'M', N'Đen', N'SKU-aokhoac-808', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2508, 434, N'M', N'Be', N'SKU-aokhoac-809', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2509, 434, N'M', N'Xanh Navy', N'SKU-aokhoac-810', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2510, 434, N'L', N'Nâu', N'SKU-aokhoac-811', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2511, 434, N'L', N'Xám', N'SKU-aokhoac-812', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2512, 434, N'L', N'Đen', N'SKU-aokhoac-813', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2513, 434, N'L', N'Be', N'SKU-aokhoac-814', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2514, 434, N'L', N'Xanh Navy', N'SKU-aokhoac-815', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2515, 434, N'XL', N'Nâu', N'SKU-aokhoac-816', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2516, 434, N'XL', N'Xám', N'SKU-aokhoac-817', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2517, 434, N'XL', N'Đen', N'SKU-aokhoac-818', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2518, 434, N'XL', N'Be', N'SKU-aokhoac-819', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2519, 434, N'XL', N'Xanh Navy', N'SKU-aokhoac-820', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2520, 435, N'S', N'Be', N'SKU-aokhoac-821', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2521, 435, N'S', N'Đỏ', N'SKU-aokhoac-822', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2522, 435, N'S', N'Nâu', N'SKU-aokhoac-823', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2523, 435, N'S', N'Xanh Navy', N'SKU-aokhoac-824', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2524, 435, N'S', N'Đen', N'SKU-aokhoac-825', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2525, 435, N'M', N'Be', N'SKU-aokhoac-826', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2526, 435, N'M', N'Đỏ', N'SKU-aokhoac-827', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2527, 435, N'M', N'Nâu', N'SKU-aokhoac-828', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2528, 435, N'M', N'Xanh Navy', N'SKU-aokhoac-829', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2529, 435, N'M', N'Đen', N'SKU-aokhoac-830', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2530, 435, N'L', N'Be', N'SKU-aokhoac-831', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2531, 435, N'L', N'Đỏ', N'SKU-aokhoac-832', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2532, 435, N'L', N'Nâu', N'SKU-aokhoac-833', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2533, 435, N'L', N'Xanh Navy', N'SKU-aokhoac-834', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2534, 435, N'L', N'Đen', N'SKU-aokhoac-835', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2535, 435, N'XL', N'Be', N'SKU-aokhoac-836', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2536, 435, N'XL', N'Đỏ', N'SKU-aokhoac-837', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2537, 435, N'XL', N'Nâu', N'SKU-aokhoac-838', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2538, 435, N'XL', N'Xanh Navy', N'SKU-aokhoac-839', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2539, 435, N'XL', N'Đen', N'SKU-aokhoac-840', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2540, 436, N'S', N'Be', N'SKU-aokhoac-841', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2541, 436, N'S', N'Xám', N'SKU-aokhoac-842', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2542, 436, N'S', N'Nâu', N'SKU-aokhoac-843', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2543, 436, N'S', N'Đỏ', N'SKU-aokhoac-844', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2544, 436, N'S', N'Đen', N'SKU-aokhoac-845', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2545, 436, N'M', N'Be', N'SKU-aokhoac-846', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2546, 436, N'M', N'Xám', N'SKU-aokhoac-847', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2547, 436, N'M', N'Nâu', N'SKU-aokhoac-848', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2548, 436, N'M', N'Đỏ', N'SKU-aokhoac-849', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2549, 436, N'M', N'Đen', N'SKU-aokhoac-850', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2550, 436, N'L', N'Be', N'SKU-aokhoac-851', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2551, 436, N'L', N'Xám', N'SKU-aokhoac-852', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2552, 436, N'L', N'Nâu', N'SKU-aokhoac-853', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2553, 436, N'L', N'Đỏ', N'SKU-aokhoac-854', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2554, 436, N'L', N'Đen', N'SKU-aokhoac-855', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2555, 436, N'XL', N'Be', N'SKU-aokhoac-856', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2556, 436, N'XL', N'Xám', N'SKU-aokhoac-857', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2557, 436, N'XL', N'Nâu', N'SKU-aokhoac-858', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2558, 436, N'XL', N'Đỏ', N'SKU-aokhoac-859', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2559, 436, N'XL', N'Đen', N'SKU-aokhoac-860', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2560, 437, N'S', N'Be', N'SKU-aokhoac-861', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2561, 437, N'S', N'Xanh Navy', N'SKU-aokhoac-862', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2562, 437, N'S', N'Đỏ', N'SKU-aokhoac-863', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2563, 437, N'S', N'Đen', N'SKU-aokhoac-864', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2564, 437, N'S', N'Xám', N'SKU-aokhoac-865', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2565, 437, N'M', N'Be', N'SKU-aokhoac-866', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2566, 437, N'M', N'Xanh Navy', N'SKU-aokhoac-867', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2567, 437, N'M', N'Đỏ', N'SKU-aokhoac-868', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2568, 437, N'M', N'Đen', N'SKU-aokhoac-869', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2569, 437, N'M', N'Xám', N'SKU-aokhoac-870', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2570, 437, N'L', N'Be', N'SKU-aokhoac-871', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2571, 437, N'L', N'Xanh Navy', N'SKU-aokhoac-872', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2572, 437, N'L', N'Đỏ', N'SKU-aokhoac-873', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2573, 437, N'L', N'Đen', N'SKU-aokhoac-874', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2574, 437, N'L', N'Xám', N'SKU-aokhoac-875', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2575, 437, N'XL', N'Be', N'SKU-aokhoac-876', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2576, 437, N'XL', N'Xanh Navy', N'SKU-aokhoac-877', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2577, 437, N'XL', N'Đỏ', N'SKU-aokhoac-878', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2578, 437, N'XL', N'Đen', N'SKU-aokhoac-879', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2579, 437, N'XL', N'Xám', N'SKU-aokhoac-880', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2580, 438, N'S', N'Be', N'SKU-aokhoac-881', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2581, 438, N'S', N'Nâu', N'SKU-aokhoac-882', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2582, 438, N'S', N'Xanh Navy', N'SKU-aokhoac-883', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2583, 438, N'S', N'Đỏ', N'SKU-aokhoac-884', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2584, 438, N'S', N'Xám', N'SKU-aokhoac-885', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2585, 438, N'M', N'Be', N'SKU-aokhoac-886', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2586, 438, N'M', N'Nâu', N'SKU-aokhoac-887', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2587, 438, N'M', N'Xanh Navy', N'SKU-aokhoac-888', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2588, 438, N'M', N'Đỏ', N'SKU-aokhoac-889', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2589, 438, N'M', N'Xám', N'SKU-aokhoac-890', 56)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2590, 438, N'L', N'Be', N'SKU-aokhoac-891', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2591, 438, N'L', N'Nâu', N'SKU-aokhoac-892', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2592, 438, N'L', N'Xanh Navy', N'SKU-aokhoac-893', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2593, 438, N'L', N'Đỏ', N'SKU-aokhoac-894', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2594, 438, N'L', N'Xám', N'SKU-aokhoac-895', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2595, 438, N'XL', N'Be', N'SKU-aokhoac-896', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2596, 438, N'XL', N'Nâu', N'SKU-aokhoac-897', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2597, 438, N'XL', N'Xanh Navy', N'SKU-aokhoac-898', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2598, 438, N'XL', N'Đỏ', N'SKU-aokhoac-899', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2599, 438, N'XL', N'Xám', N'SKU-aokhoac-900', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2600, 439, N'S', N'Đen', N'SKU-aokhoac-901', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2601, 439, N'S', N'Xám', N'SKU-aokhoac-902', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2602, 439, N'S', N'Xanh Navy', N'SKU-aokhoac-903', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2603, 439, N'S', N'Đỏ', N'SKU-aokhoac-904', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2604, 439, N'S', N'Nâu', N'SKU-aokhoac-905', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2605, 439, N'M', N'Đen', N'SKU-aokhoac-906', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2606, 439, N'M', N'Xám', N'SKU-aokhoac-907', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2607, 439, N'M', N'Xanh Navy', N'SKU-aokhoac-908', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2608, 439, N'M', N'Đỏ', N'SKU-aokhoac-909', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2609, 439, N'M', N'Nâu', N'SKU-aokhoac-910', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2610, 439, N'L', N'Đen', N'SKU-aokhoac-911', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2611, 439, N'L', N'Xám', N'SKU-aokhoac-912', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2612, 439, N'L', N'Xanh Navy', N'SKU-aokhoac-913', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2613, 439, N'L', N'Đỏ', N'SKU-aokhoac-914', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2614, 439, N'L', N'Nâu', N'SKU-aokhoac-915', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2615, 439, N'XL', N'Đen', N'SKU-aokhoac-916', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2616, 439, N'XL', N'Xám', N'SKU-aokhoac-917', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2617, 439, N'XL', N'Xanh Navy', N'SKU-aokhoac-918', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2618, 439, N'XL', N'Đỏ', N'SKU-aokhoac-919', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2619, 439, N'XL', N'Nâu', N'SKU-aokhoac-920', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2620, 440, N'S', N'Xanh Navy', N'SKU-aokhoac-921', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2621, 440, N'S', N'Xám', N'SKU-aokhoac-922', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2622, 440, N'S', N'Đen', N'SKU-aokhoac-923', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2623, 440, N'S', N'Be', N'SKU-aokhoac-924', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2624, 440, N'S', N'Đỏ', N'SKU-aokhoac-925', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2625, 440, N'M', N'Xanh Navy', N'SKU-aokhoac-926', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2626, 440, N'M', N'Xám', N'SKU-aokhoac-927', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2627, 440, N'M', N'Đen', N'SKU-aokhoac-928', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2628, 440, N'M', N'Be', N'SKU-aokhoac-929', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2629, 440, N'M', N'Đỏ', N'SKU-aokhoac-930', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2630, 440, N'L', N'Xanh Navy', N'SKU-aokhoac-931', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2631, 440, N'L', N'Xám', N'SKU-aokhoac-932', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2632, 440, N'L', N'Đen', N'SKU-aokhoac-933', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2633, 440, N'L', N'Be', N'SKU-aokhoac-934', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2634, 440, N'L', N'Đỏ', N'SKU-aokhoac-935', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2635, 440, N'XL', N'Xanh Navy', N'SKU-aokhoac-936', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2636, 440, N'XL', N'Xám', N'SKU-aokhoac-937', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2637, 440, N'XL', N'Đen', N'SKU-aokhoac-938', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2638, 440, N'XL', N'Be', N'SKU-aokhoac-939', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2639, 440, N'XL', N'Đỏ', N'SKU-aokhoac-940', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2640, 441, N'S', N'Đỏ', N'SKU-aokhoac-941', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2641, 441, N'S', N'Nâu', N'SKU-aokhoac-942', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2642, 441, N'S', N'Đen', N'SKU-aokhoac-943', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2643, 441, N'S', N'Be', N'SKU-aokhoac-944', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2644, 441, N'S', N'Xám', N'SKU-aokhoac-945', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2645, 441, N'M', N'Đỏ', N'SKU-aokhoac-946', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2646, 441, N'M', N'Nâu', N'SKU-aokhoac-947', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2647, 441, N'M', N'Đen', N'SKU-aokhoac-948', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2648, 441, N'M', N'Be', N'SKU-aokhoac-949', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2649, 441, N'M', N'Xám', N'SKU-aokhoac-950', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2650, 441, N'L', N'Đỏ', N'SKU-aokhoac-951', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2651, 441, N'L', N'Nâu', N'SKU-aokhoac-952', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2652, 441, N'L', N'Đen', N'SKU-aokhoac-953', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2653, 441, N'L', N'Be', N'SKU-aokhoac-954', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2654, 441, N'L', N'Xám', N'SKU-aokhoac-955', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2655, 441, N'XL', N'Đỏ', N'SKU-aokhoac-956', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2656, 441, N'XL', N'Nâu', N'SKU-aokhoac-957', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2657, 441, N'XL', N'Đen', N'SKU-aokhoac-958', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2658, 441, N'XL', N'Be', N'SKU-aokhoac-959', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2659, 441, N'XL', N'Xám', N'SKU-aokhoac-960', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2660, 442, N'S', N'Xám', N'SKU-aokhoac-961', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2661, 442, N'S', N'Xanh Navy', N'SKU-aokhoac-962', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2662, 442, N'S', N'Be', N'SKU-aokhoac-963', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2663, 442, N'S', N'Đen', N'SKU-aokhoac-964', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2664, 442, N'S', N'Đỏ', N'SKU-aokhoac-965', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2665, 442, N'M', N'Xám', N'SKU-aokhoac-966', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2666, 442, N'M', N'Xanh Navy', N'SKU-aokhoac-967', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2667, 442, N'M', N'Be', N'SKU-aokhoac-968', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2668, 442, N'M', N'Đen', N'SKU-aokhoac-969', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2669, 442, N'M', N'Đỏ', N'SKU-aokhoac-970', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2670, 442, N'L', N'Xám', N'SKU-aokhoac-971', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2671, 442, N'L', N'Xanh Navy', N'SKU-aokhoac-972', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2672, 442, N'L', N'Be', N'SKU-aokhoac-973', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2673, 442, N'L', N'Đen', N'SKU-aokhoac-974', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2674, 442, N'L', N'Đỏ', N'SKU-aokhoac-975', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2675, 442, N'XL', N'Xám', N'SKU-aokhoac-976', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2676, 442, N'XL', N'Xanh Navy', N'SKU-aokhoac-977', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2677, 442, N'XL', N'Be', N'SKU-aokhoac-978', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2678, 442, N'XL', N'Đen', N'SKU-aokhoac-979', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2679, 442, N'XL', N'Đỏ', N'SKU-aokhoac-980', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2680, 443, N'S', N'Nâu', N'SKU-aokhoac-981', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2681, 443, N'S', N'Be', N'SKU-aokhoac-982', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2682, 443, N'S', N'Đen', N'SKU-aokhoac-983', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2683, 443, N'S', N'Đỏ', N'SKU-aokhoac-984', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2684, 443, N'S', N'Xanh Navy', N'SKU-aokhoac-985', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2685, 443, N'M', N'Nâu', N'SKU-aokhoac-986', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2686, 443, N'M', N'Be', N'SKU-aokhoac-987', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2687, 443, N'M', N'Đen', N'SKU-aokhoac-988', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2688, 443, N'M', N'Đỏ', N'SKU-aokhoac-989', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2689, 443, N'M', N'Xanh Navy', N'SKU-aokhoac-990', 50)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2690, 443, N'L', N'Nâu', N'SKU-aokhoac-991', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2691, 443, N'L', N'Be', N'SKU-aokhoac-992', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2692, 443, N'L', N'Đen', N'SKU-aokhoac-993', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2693, 443, N'L', N'Đỏ', N'SKU-aokhoac-994', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2694, 443, N'L', N'Xanh Navy', N'SKU-aokhoac-995', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2695, 443, N'XL', N'Nâu', N'SKU-aokhoac-996', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2696, 443, N'XL', N'Be', N'SKU-aokhoac-997', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2697, 443, N'XL', N'Đen', N'SKU-aokhoac-998', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2698, 443, N'XL', N'Đỏ', N'SKU-aokhoac-999', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2699, 443, N'XL', N'Xanh Navy', N'SKU-aokhoac-1000', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2700, 444, N'S', N'Vàng', N'SKU-aodai-1001', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2701, 444, N'S', N'Xanh Lá', N'SKU-aodai-1002', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2702, 444, N'S', N'Nâu', N'SKU-aodai-1003', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2703, 444, N'S', N'Tím', N'SKU-aodai-1004', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2704, 444, N'S', N'Xanh Dương', N'SKU-aodai-1005', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2705, 444, N'M', N'Vàng', N'SKU-aodai-1006', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2706, 444, N'M', N'Xanh Lá', N'SKU-aodai-1007', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2707, 444, N'M', N'Nâu', N'SKU-aodai-1008', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2708, 444, N'M', N'Tím', N'SKU-aodai-1009', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2709, 444, N'M', N'Xanh Dương', N'SKU-aodai-1010', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2710, 444, N'L', N'Vàng', N'SKU-aodai-1011', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2711, 444, N'L', N'Xanh Lá', N'SKU-aodai-1012', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2712, 444, N'L', N'Nâu', N'SKU-aodai-1013', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2713, 444, N'L', N'Tím', N'SKU-aodai-1014', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2714, 444, N'L', N'Xanh Dương', N'SKU-aodai-1015', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2715, 444, N'XL', N'Vàng', N'SKU-aodai-1016', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2716, 444, N'XL', N'Xanh Lá', N'SKU-aodai-1017', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2717, 444, N'XL', N'Nâu', N'SKU-aodai-1018', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2718, 444, N'XL', N'Tím', N'SKU-aodai-1019', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2719, 444, N'XL', N'Xanh Dương', N'SKU-aodai-1020', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2720, 445, N'S', N'Trắng', N'SKU-aodai-1021', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2721, 445, N'S', N'Nâu', N'SKU-aodai-1022', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2722, 445, N'S', N'Xanh Dương', N'SKU-aodai-1023', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2723, 445, N'S', N'Tím', N'SKU-aodai-1024', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2724, 445, N'S', N'Xanh Lá', N'SKU-aodai-1025', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2725, 445, N'M', N'Trắng', N'SKU-aodai-1026', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2726, 445, N'M', N'Nâu', N'SKU-aodai-1027', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2727, 445, N'M', N'Xanh Dương', N'SKU-aodai-1028', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2728, 445, N'M', N'Tím', N'SKU-aodai-1029', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2729, 445, N'M', N'Xanh Lá', N'SKU-aodai-1030', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2730, 445, N'L', N'Trắng', N'SKU-aodai-1031', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2731, 445, N'L', N'Nâu', N'SKU-aodai-1032', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2732, 445, N'L', N'Xanh Dương', N'SKU-aodai-1033', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2733, 445, N'L', N'Tím', N'SKU-aodai-1034', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2734, 445, N'L', N'Xanh Lá', N'SKU-aodai-1035', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2735, 445, N'XL', N'Trắng', N'SKU-aodai-1036', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2736, 445, N'XL', N'Nâu', N'SKU-aodai-1037', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2737, 445, N'XL', N'Xanh Dương', N'SKU-aodai-1038', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2738, 445, N'XL', N'Tím', N'SKU-aodai-1039', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2739, 445, N'XL', N'Xanh Lá', N'SKU-aodai-1040', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2740, 446, N'S', N'Xanh Dương', N'SKU-aodai-1041', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2741, 446, N'S', N'Đỏ', N'SKU-aodai-1042', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2742, 446, N'S', N'Xanh Lá', N'SKU-aodai-1043', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2743, 446, N'S', N'Vàng', N'SKU-aodai-1044', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2744, 446, N'S', N'Trắng', N'SKU-aodai-1045', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2745, 446, N'M', N'Xanh Dương', N'SKU-aodai-1046', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2746, 446, N'M', N'Đỏ', N'SKU-aodai-1047', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2747, 446, N'M', N'Xanh Lá', N'SKU-aodai-1048', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2748, 446, N'M', N'Vàng', N'SKU-aodai-1049', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2749, 446, N'M', N'Trắng', N'SKU-aodai-1050', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2750, 446, N'L', N'Xanh Dương', N'SKU-aodai-1051', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2751, 446, N'L', N'Đỏ', N'SKU-aodai-1052', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2752, 446, N'L', N'Xanh Lá', N'SKU-aodai-1053', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2753, 446, N'L', N'Vàng', N'SKU-aodai-1054', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2754, 446, N'L', N'Trắng', N'SKU-aodai-1055', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2755, 446, N'XL', N'Xanh Dương', N'SKU-aodai-1056', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2756, 446, N'XL', N'Đỏ', N'SKU-aodai-1057', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2757, 446, N'XL', N'Xanh Lá', N'SKU-aodai-1058', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2758, 446, N'XL', N'Vàng', N'SKU-aodai-1059', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2759, 446, N'XL', N'Trắng', N'SKU-aodai-1060', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2760, 447, N'S', N'Tím', N'SKU-aodai-1061', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2761, 447, N'S', N'Vàng', N'SKU-aodai-1062', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2762, 447, N'S', N'Xanh Lá', N'SKU-aodai-1063', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2763, 447, N'S', N'Xanh Dương', N'SKU-aodai-1064', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2764, 447, N'S', N'Đỏ', N'SKU-aodai-1065', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2765, 447, N'M', N'Tím', N'SKU-aodai-1066', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2766, 447, N'M', N'Vàng', N'SKU-aodai-1067', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2767, 447, N'M', N'Xanh Lá', N'SKU-aodai-1068', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2768, 447, N'M', N'Xanh Dương', N'SKU-aodai-1069', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2769, 447, N'M', N'Đỏ', N'SKU-aodai-1070', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2770, 447, N'L', N'Tím', N'SKU-aodai-1071', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2771, 447, N'L', N'Vàng', N'SKU-aodai-1072', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2772, 447, N'L', N'Xanh Lá', N'SKU-aodai-1073', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2773, 447, N'L', N'Xanh Dương', N'SKU-aodai-1074', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2774, 447, N'L', N'Đỏ', N'SKU-aodai-1075', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2775, 447, N'XL', N'Tím', N'SKU-aodai-1076', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2776, 447, N'XL', N'Vàng', N'SKU-aodai-1077', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2777, 447, N'XL', N'Xanh Lá', N'SKU-aodai-1078', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2778, 447, N'XL', N'Xanh Dương', N'SKU-aodai-1079', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2779, 447, N'XL', N'Đỏ', N'SKU-aodai-1080', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2780, 448, N'S', N'Trắng', N'SKU-aodai-1081', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2781, 448, N'S', N'Nâu', N'SKU-aodai-1082', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2782, 448, N'S', N'Tím', N'SKU-aodai-1083', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2783, 448, N'S', N'Xanh Dương', N'SKU-aodai-1084', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2784, 448, N'S', N'Vàng', N'SKU-aodai-1085', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2785, 448, N'M', N'Trắng', N'SKU-aodai-1086', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2786, 448, N'M', N'Nâu', N'SKU-aodai-1087', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2787, 448, N'M', N'Tím', N'SKU-aodai-1088', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2788, 448, N'M', N'Xanh Dương', N'SKU-aodai-1089', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2789, 448, N'M', N'Vàng', N'SKU-aodai-1090', 24)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2790, 448, N'L', N'Trắng', N'SKU-aodai-1091', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2791, 448, N'L', N'Nâu', N'SKU-aodai-1092', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2792, 448, N'L', N'Tím', N'SKU-aodai-1093', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2793, 448, N'L', N'Xanh Dương', N'SKU-aodai-1094', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2794, 448, N'L', N'Vàng', N'SKU-aodai-1095', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2795, 448, N'XL', N'Trắng', N'SKU-aodai-1096', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2796, 448, N'XL', N'Nâu', N'SKU-aodai-1097', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2797, 448, N'XL', N'Tím', N'SKU-aodai-1098', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2798, 448, N'XL', N'Xanh Dương', N'SKU-aodai-1099', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2799, 448, N'XL', N'Vàng', N'SKU-aodai-1100', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2800, 449, N'S', N'Vàng', N'SKU-aodai-1101', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2801, 449, N'S', N'Xanh Lá', N'SKU-aodai-1102', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2802, 449, N'S', N'Nâu', N'SKU-aodai-1103', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2803, 449, N'S', N'Đỏ', N'SKU-aodai-1104', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2804, 449, N'S', N'Trắng', N'SKU-aodai-1105', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2805, 449, N'M', N'Vàng', N'SKU-aodai-1106', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2806, 449, N'M', N'Xanh Lá', N'SKU-aodai-1107', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2807, 449, N'M', N'Nâu', N'SKU-aodai-1108', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2808, 449, N'M', N'Đỏ', N'SKU-aodai-1109', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2809, 449, N'M', N'Trắng', N'SKU-aodai-1110', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2810, 449, N'L', N'Vàng', N'SKU-aodai-1111', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2811, 449, N'L', N'Xanh Lá', N'SKU-aodai-1112', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2812, 449, N'L', N'Nâu', N'SKU-aodai-1113', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2813, 449, N'L', N'Đỏ', N'SKU-aodai-1114', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2814, 449, N'L', N'Trắng', N'SKU-aodai-1115', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2815, 449, N'XL', N'Vàng', N'SKU-aodai-1116', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2816, 449, N'XL', N'Xanh Lá', N'SKU-aodai-1117', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2817, 449, N'XL', N'Nâu', N'SKU-aodai-1118', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2818, 449, N'XL', N'Đỏ', N'SKU-aodai-1119', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2819, 449, N'XL', N'Trắng', N'SKU-aodai-1120', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2820, 450, N'S', N'Tím', N'SKU-aodai-1121', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2821, 450, N'S', N'Nâu', N'SKU-aodai-1122', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2822, 450, N'S', N'Đỏ', N'SKU-aodai-1123', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2823, 450, N'S', N'Xanh Lá', N'SKU-aodai-1124', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2824, 450, N'S', N'Xanh Dương', N'SKU-aodai-1125', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2825, 450, N'M', N'Tím', N'SKU-aodai-1126', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2826, 450, N'M', N'Nâu', N'SKU-aodai-1127', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2827, 450, N'M', N'Đỏ', N'SKU-aodai-1128', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2828, 450, N'M', N'Xanh Lá', N'SKU-aodai-1129', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2829, 450, N'M', N'Xanh Dương', N'SKU-aodai-1130', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2830, 450, N'L', N'Tím', N'SKU-aodai-1131', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2831, 450, N'L', N'Nâu', N'SKU-aodai-1132', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2832, 450, N'L', N'Đỏ', N'SKU-aodai-1133', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2833, 450, N'L', N'Xanh Lá', N'SKU-aodai-1134', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2834, 450, N'L', N'Xanh Dương', N'SKU-aodai-1135', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2835, 450, N'XL', N'Tím', N'SKU-aodai-1136', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2836, 450, N'XL', N'Nâu', N'SKU-aodai-1137', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2837, 450, N'XL', N'Đỏ', N'SKU-aodai-1138', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2838, 450, N'XL', N'Xanh Lá', N'SKU-aodai-1139', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2839, 450, N'XL', N'Xanh Dương', N'SKU-aodai-1140', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2840, 451, N'S', N'Vàng', N'SKU-aodai-1141', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2841, 451, N'S', N'Xanh Lá', N'SKU-aodai-1142', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2842, 451, N'S', N'Đỏ', N'SKU-aodai-1143', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2843, 451, N'S', N'Tím', N'SKU-aodai-1144', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2844, 451, N'S', N'Trắng', N'SKU-aodai-1145', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2845, 451, N'M', N'Vàng', N'SKU-aodai-1146', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2846, 451, N'M', N'Xanh Lá', N'SKU-aodai-1147', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2847, 451, N'M', N'Đỏ', N'SKU-aodai-1148', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2848, 451, N'M', N'Tím', N'SKU-aodai-1149', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2849, 451, N'M', N'Trắng', N'SKU-aodai-1150', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2850, 451, N'L', N'Vàng', N'SKU-aodai-1151', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2851, 451, N'L', N'Xanh Lá', N'SKU-aodai-1152', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2852, 451, N'L', N'Đỏ', N'SKU-aodai-1153', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2853, 451, N'L', N'Tím', N'SKU-aodai-1154', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2854, 451, N'L', N'Trắng', N'SKU-aodai-1155', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2855, 451, N'XL', N'Vàng', N'SKU-aodai-1156', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2856, 451, N'XL', N'Xanh Lá', N'SKU-aodai-1157', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2857, 451, N'XL', N'Đỏ', N'SKU-aodai-1158', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2858, 451, N'XL', N'Tím', N'SKU-aodai-1159', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2859, 451, N'XL', N'Trắng', N'SKU-aodai-1160', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2860, 452, N'S', N'Vàng', N'SKU-aodai-1161', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2861, 452, N'S', N'Đỏ', N'SKU-aodai-1162', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2862, 452, N'S', N'Nâu', N'SKU-aodai-1163', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2863, 452, N'S', N'Xanh Lá', N'SKU-aodai-1164', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2864, 452, N'S', N'Tím', N'SKU-aodai-1165', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2865, 452, N'M', N'Vàng', N'SKU-aodai-1166', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2866, 452, N'M', N'Đỏ', N'SKU-aodai-1167', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2867, 452, N'M', N'Nâu', N'SKU-aodai-1168', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2868, 452, N'M', N'Xanh Lá', N'SKU-aodai-1169', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2869, 452, N'M', N'Tím', N'SKU-aodai-1170', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2870, 452, N'L', N'Vàng', N'SKU-aodai-1171', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2871, 452, N'L', N'Đỏ', N'SKU-aodai-1172', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2872, 452, N'L', N'Nâu', N'SKU-aodai-1173', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2873, 452, N'L', N'Xanh Lá', N'SKU-aodai-1174', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2874, 452, N'L', N'Tím', N'SKU-aodai-1175', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2875, 452, N'XL', N'Vàng', N'SKU-aodai-1176', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2876, 452, N'XL', N'Đỏ', N'SKU-aodai-1177', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2877, 452, N'XL', N'Nâu', N'SKU-aodai-1178', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2878, 452, N'XL', N'Xanh Lá', N'SKU-aodai-1179', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2879, 452, N'XL', N'Tím', N'SKU-aodai-1180', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2880, 453, N'S', N'Xanh Dương', N'SKU-aodai-1181', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2881, 453, N'S', N'Trắng', N'SKU-aodai-1182', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2882, 453, N'S', N'Tím', N'SKU-aodai-1183', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2883, 453, N'S', N'Nâu', N'SKU-aodai-1184', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2884, 453, N'S', N'Đỏ', N'SKU-aodai-1185', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2885, 453, N'M', N'Xanh Dương', N'SKU-aodai-1186', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2886, 453, N'M', N'Trắng', N'SKU-aodai-1187', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2887, 453, N'M', N'Tím', N'SKU-aodai-1188', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2888, 453, N'M', N'Nâu', N'SKU-aodai-1189', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2889, 453, N'M', N'Đỏ', N'SKU-aodai-1190', 19)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2890, 453, N'L', N'Xanh Dương', N'SKU-aodai-1191', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2891, 453, N'L', N'Trắng', N'SKU-aodai-1192', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2892, 453, N'L', N'Tím', N'SKU-aodai-1193', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2893, 453, N'L', N'Nâu', N'SKU-aodai-1194', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2894, 453, N'L', N'Đỏ', N'SKU-aodai-1195', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2895, 453, N'XL', N'Xanh Dương', N'SKU-aodai-1196', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2896, 453, N'XL', N'Trắng', N'SKU-aodai-1197', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2897, 453, N'XL', N'Tím', N'SKU-aodai-1198', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2898, 453, N'XL', N'Nâu', N'SKU-aodai-1199', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2899, 453, N'XL', N'Đỏ', N'SKU-aodai-1200', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2900, 454, N'S', N'Đen', N'SKU-aopolo-1201', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2901, 454, N'S', N'Đỏ', N'SKU-aopolo-1202', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2902, 454, N'S', N'Trắng', N'SKU-aopolo-1203', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2903, 454, N'S', N'Xám', N'SKU-aopolo-1204', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2904, 454, N'S', N'Xanh Lá', N'SKU-aopolo-1205', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2905, 454, N'M', N'Đen', N'SKU-aopolo-1206', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2906, 454, N'M', N'Đỏ', N'SKU-aopolo-1207', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2907, 454, N'M', N'Trắng', N'SKU-aopolo-1208', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2908, 454, N'M', N'Xám', N'SKU-aopolo-1209', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2909, 454, N'M', N'Xanh Lá', N'SKU-aopolo-1210', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2910, 454, N'L', N'Đen', N'SKU-aopolo-1211', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2911, 454, N'L', N'Đỏ', N'SKU-aopolo-1212', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2912, 454, N'L', N'Trắng', N'SKU-aopolo-1213', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2913, 454, N'L', N'Xám', N'SKU-aopolo-1214', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2914, 454, N'L', N'Xanh Lá', N'SKU-aopolo-1215', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2915, 454, N'XL', N'Đen', N'SKU-aopolo-1216', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2916, 454, N'XL', N'Đỏ', N'SKU-aopolo-1217', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2917, 454, N'XL', N'Trắng', N'SKU-aopolo-1218', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2918, 454, N'XL', N'Xám', N'SKU-aopolo-1219', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2919, 454, N'XL', N'Xanh Lá', N'SKU-aopolo-1220', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2920, 455, N'S', N'Xám', N'SKU-aopolo-1221', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2921, 455, N'S', N'Đen', N'SKU-aopolo-1222', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2922, 455, N'S', N'Xanh Navy', N'SKU-aopolo-1223', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2923, 455, N'S', N'Cam', N'SKU-aopolo-1224', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2924, 455, N'S', N'Xanh Lá', N'SKU-aopolo-1225', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2925, 455, N'M', N'Xám', N'SKU-aopolo-1226', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2926, 455, N'M', N'Đen', N'SKU-aopolo-1227', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2927, 455, N'M', N'Xanh Navy', N'SKU-aopolo-1228', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2928, 455, N'M', N'Cam', N'SKU-aopolo-1229', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2929, 455, N'M', N'Xanh Lá', N'SKU-aopolo-1230', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2930, 455, N'L', N'Xám', N'SKU-aopolo-1231', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2931, 455, N'L', N'Đen', N'SKU-aopolo-1232', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2932, 455, N'L', N'Xanh Navy', N'SKU-aopolo-1233', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2933, 455, N'L', N'Cam', N'SKU-aopolo-1234', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2934, 455, N'L', N'Xanh Lá', N'SKU-aopolo-1235', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2935, 455, N'XL', N'Xám', N'SKU-aopolo-1236', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2936, 455, N'XL', N'Đen', N'SKU-aopolo-1237', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2937, 455, N'XL', N'Xanh Navy', N'SKU-aopolo-1238', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2938, 455, N'XL', N'Cam', N'SKU-aopolo-1239', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2939, 455, N'XL', N'Xanh Lá', N'SKU-aopolo-1240', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2940, 456, N'S', N'Đen', N'SKU-aopolo-1241', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2941, 456, N'S', N'Đỏ', N'SKU-aopolo-1242', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2942, 456, N'S', N'Xanh Lá', N'SKU-aopolo-1243', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2943, 456, N'S', N'Xám', N'SKU-aopolo-1244', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2944, 456, N'S', N'Xanh Navy', N'SKU-aopolo-1245', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2945, 456, N'M', N'Đen', N'SKU-aopolo-1246', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2946, 456, N'M', N'Đỏ', N'SKU-aopolo-1247', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2947, 456, N'M', N'Xanh Lá', N'SKU-aopolo-1248', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2948, 456, N'M', N'Xám', N'SKU-aopolo-1249', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2949, 456, N'M', N'Xanh Navy', N'SKU-aopolo-1250', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2950, 456, N'L', N'Đen', N'SKU-aopolo-1251', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2951, 456, N'L', N'Đỏ', N'SKU-aopolo-1252', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2952, 456, N'L', N'Xanh Lá', N'SKU-aopolo-1253', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2953, 456, N'L', N'Xám', N'SKU-aopolo-1254', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2954, 456, N'L', N'Xanh Navy', N'SKU-aopolo-1255', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2955, 456, N'XL', N'Đen', N'SKU-aopolo-1256', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2956, 456, N'XL', N'Đỏ', N'SKU-aopolo-1257', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2957, 456, N'XL', N'Xanh Lá', N'SKU-aopolo-1258', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2958, 456, N'XL', N'Xám', N'SKU-aopolo-1259', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2959, 456, N'XL', N'Xanh Navy', N'SKU-aopolo-1260', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2960, 457, N'S', N'Cam', N'SKU-aopolo-1261', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2961, 457, N'S', N'Xám', N'SKU-aopolo-1262', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2962, 457, N'S', N'Xanh Lá', N'SKU-aopolo-1263', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2963, 457, N'S', N'Xanh Navy', N'SKU-aopolo-1264', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2964, 457, N'S', N'Đỏ', N'SKU-aopolo-1265', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2965, 457, N'M', N'Cam', N'SKU-aopolo-1266', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2966, 457, N'M', N'Xám', N'SKU-aopolo-1267', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2967, 457, N'M', N'Xanh Lá', N'SKU-aopolo-1268', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2968, 457, N'M', N'Xanh Navy', N'SKU-aopolo-1269', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2969, 457, N'M', N'Đỏ', N'SKU-aopolo-1270', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2970, 457, N'L', N'Cam', N'SKU-aopolo-1271', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2971, 457, N'L', N'Xám', N'SKU-aopolo-1272', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2972, 457, N'L', N'Xanh Lá', N'SKU-aopolo-1273', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2973, 457, N'L', N'Xanh Navy', N'SKU-aopolo-1274', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2974, 457, N'L', N'Đỏ', N'SKU-aopolo-1275', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2975, 457, N'XL', N'Cam', N'SKU-aopolo-1276', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2976, 457, N'XL', N'Xám', N'SKU-aopolo-1277', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2977, 457, N'XL', N'Xanh Lá', N'SKU-aopolo-1278', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2978, 457, N'XL', N'Xanh Navy', N'SKU-aopolo-1279', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2979, 457, N'XL', N'Đỏ', N'SKU-aopolo-1280', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2980, 458, N'S', N'Xanh Navy', N'SKU-aopolo-1281', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2981, 458, N'S', N'Trắng', N'SKU-aopolo-1282', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2982, 458, N'S', N'Xám', N'SKU-aopolo-1283', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2983, 458, N'S', N'Cam', N'SKU-aopolo-1284', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2984, 458, N'S', N'Đỏ', N'SKU-aopolo-1285', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2985, 458, N'M', N'Xanh Navy', N'SKU-aopolo-1286', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2986, 458, N'M', N'Trắng', N'SKU-aopolo-1287', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2987, 458, N'M', N'Xám', N'SKU-aopolo-1288', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2988, 458, N'M', N'Cam', N'SKU-aopolo-1289', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2989, 458, N'M', N'Đỏ', N'SKU-aopolo-1290', 52)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2990, 458, N'L', N'Xanh Navy', N'SKU-aopolo-1291', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2991, 458, N'L', N'Trắng', N'SKU-aopolo-1292', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2992, 458, N'L', N'Xám', N'SKU-aopolo-1293', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2993, 458, N'L', N'Cam', N'SKU-aopolo-1294', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2994, 458, N'L', N'Đỏ', N'SKU-aopolo-1295', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2995, 458, N'XL', N'Xanh Navy', N'SKU-aopolo-1296', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2996, 458, N'XL', N'Trắng', N'SKU-aopolo-1297', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2997, 458, N'XL', N'Xám', N'SKU-aopolo-1298', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2998, 458, N'XL', N'Cam', N'SKU-aopolo-1299', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (2999, 458, N'XL', N'Đỏ', N'SKU-aopolo-1300', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3000, 459, N'S', N'Xanh Lá', N'SKU-aopolo-1301', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3001, 459, N'S', N'Xám', N'SKU-aopolo-1302', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3002, 459, N'S', N'Trắng', N'SKU-aopolo-1303', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3003, 459, N'S', N'Cam', N'SKU-aopolo-1304', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3004, 459, N'S', N'Xanh Navy', N'SKU-aopolo-1305', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3005, 459, N'M', N'Xanh Lá', N'SKU-aopolo-1306', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3006, 459, N'M', N'Xám', N'SKU-aopolo-1307', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3007, 459, N'M', N'Trắng', N'SKU-aopolo-1308', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3008, 459, N'M', N'Cam', N'SKU-aopolo-1309', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3009, 459, N'M', N'Xanh Navy', N'SKU-aopolo-1310', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3010, 459, N'L', N'Xanh Lá', N'SKU-aopolo-1311', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3011, 459, N'L', N'Xám', N'SKU-aopolo-1312', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3012, 459, N'L', N'Trắng', N'SKU-aopolo-1313', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3013, 459, N'L', N'Cam', N'SKU-aopolo-1314', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3014, 459, N'L', N'Xanh Navy', N'SKU-aopolo-1315', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3015, 459, N'XL', N'Xanh Lá', N'SKU-aopolo-1316', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3016, 459, N'XL', N'Xám', N'SKU-aopolo-1317', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3017, 459, N'XL', N'Trắng', N'SKU-aopolo-1318', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3018, 459, N'XL', N'Cam', N'SKU-aopolo-1319', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3019, 459, N'XL', N'Xanh Navy', N'SKU-aopolo-1320', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3020, 460, N'S', N'Trắng', N'SKU-aopolo-1321', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3021, 460, N'S', N'Xanh Lá', N'SKU-aopolo-1322', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3022, 460, N'S', N'Xanh Navy', N'SKU-aopolo-1323', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3023, 460, N'S', N'Cam', N'SKU-aopolo-1324', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3024, 460, N'S', N'Đỏ', N'SKU-aopolo-1325', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3025, 460, N'M', N'Trắng', N'SKU-aopolo-1326', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3026, 460, N'M', N'Xanh Lá', N'SKU-aopolo-1327', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3027, 460, N'M', N'Xanh Navy', N'SKU-aopolo-1328', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3028, 460, N'M', N'Cam', N'SKU-aopolo-1329', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3029, 460, N'M', N'Đỏ', N'SKU-aopolo-1330', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3030, 460, N'L', N'Trắng', N'SKU-aopolo-1331', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3031, 460, N'L', N'Xanh Lá', N'SKU-aopolo-1332', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3032, 460, N'L', N'Xanh Navy', N'SKU-aopolo-1333', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3033, 460, N'L', N'Cam', N'SKU-aopolo-1334', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3034, 460, N'L', N'Đỏ', N'SKU-aopolo-1335', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3035, 460, N'XL', N'Trắng', N'SKU-aopolo-1336', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3036, 460, N'XL', N'Xanh Lá', N'SKU-aopolo-1337', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3037, 460, N'XL', N'Xanh Navy', N'SKU-aopolo-1338', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3038, 460, N'XL', N'Cam', N'SKU-aopolo-1339', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3039, 460, N'XL', N'Đỏ', N'SKU-aopolo-1340', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3040, 461, N'S', N'Đen', N'SKU-aopolo-1341', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3041, 461, N'S', N'Xám', N'SKU-aopolo-1342', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3042, 461, N'S', N'Xanh Navy', N'SKU-aopolo-1343', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3043, 461, N'S', N'Cam', N'SKU-aopolo-1344', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3044, 461, N'S', N'Xanh Lá', N'SKU-aopolo-1345', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3045, 461, N'M', N'Đen', N'SKU-aopolo-1346', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3046, 461, N'M', N'Xám', N'SKU-aopolo-1347', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3047, 461, N'M', N'Xanh Navy', N'SKU-aopolo-1348', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3048, 461, N'M', N'Cam', N'SKU-aopolo-1349', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3049, 461, N'M', N'Xanh Lá', N'SKU-aopolo-1350', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3050, 461, N'L', N'Đen', N'SKU-aopolo-1351', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3051, 461, N'L', N'Xám', N'SKU-aopolo-1352', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3052, 461, N'L', N'Xanh Navy', N'SKU-aopolo-1353', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3053, 461, N'L', N'Cam', N'SKU-aopolo-1354', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3054, 461, N'L', N'Xanh Lá', N'SKU-aopolo-1355', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3055, 461, N'XL', N'Đen', N'SKU-aopolo-1356', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3056, 461, N'XL', N'Xám', N'SKU-aopolo-1357', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3057, 461, N'XL', N'Xanh Navy', N'SKU-aopolo-1358', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3058, 461, N'XL', N'Cam', N'SKU-aopolo-1359', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3059, 461, N'XL', N'Xanh Lá', N'SKU-aopolo-1360', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3060, 462, N'S', N'Đen', N'SKU-aopolo-1361', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3061, 462, N'S', N'Xanh Lá', N'SKU-aopolo-1362', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3062, 462, N'S', N'Cam', N'SKU-aopolo-1363', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3063, 462, N'S', N'Trắng', N'SKU-aopolo-1364', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3064, 462, N'S', N'Xám', N'SKU-aopolo-1365', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3065, 462, N'M', N'Đen', N'SKU-aopolo-1366', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3066, 462, N'M', N'Xanh Lá', N'SKU-aopolo-1367', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3067, 462, N'M', N'Cam', N'SKU-aopolo-1368', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3068, 462, N'M', N'Trắng', N'SKU-aopolo-1369', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3069, 462, N'M', N'Xám', N'SKU-aopolo-1370', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3070, 462, N'L', N'Đen', N'SKU-aopolo-1371', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3071, 462, N'L', N'Xanh Lá', N'SKU-aopolo-1372', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3072, 462, N'L', N'Cam', N'SKU-aopolo-1373', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3073, 462, N'L', N'Trắng', N'SKU-aopolo-1374', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3074, 462, N'L', N'Xám', N'SKU-aopolo-1375', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3075, 462, N'XL', N'Đen', N'SKU-aopolo-1376', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3076, 462, N'XL', N'Xanh Lá', N'SKU-aopolo-1377', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3077, 462, N'XL', N'Cam', N'SKU-aopolo-1378', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3078, 462, N'XL', N'Trắng', N'SKU-aopolo-1379', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3079, 462, N'XL', N'Xám', N'SKU-aopolo-1380', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3080, 463, N'S', N'Đỏ', N'SKU-aopolo-1381', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3081, 463, N'S', N'Cam', N'SKU-aopolo-1382', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3082, 463, N'S', N'Xanh Lá', N'SKU-aopolo-1383', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3083, 463, N'S', N'Trắng', N'SKU-aopolo-1384', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3084, 463, N'S', N'Xanh Navy', N'SKU-aopolo-1385', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3085, 463, N'M', N'Đỏ', N'SKU-aopolo-1386', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3086, 463, N'M', N'Cam', N'SKU-aopolo-1387', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3087, 463, N'M', N'Xanh Lá', N'SKU-aopolo-1388', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3088, 463, N'M', N'Trắng', N'SKU-aopolo-1389', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3089, 463, N'M', N'Xanh Navy', N'SKU-aopolo-1390', 27)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3090, 463, N'L', N'Đỏ', N'SKU-aopolo-1391', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3091, 463, N'L', N'Cam', N'SKU-aopolo-1392', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3092, 463, N'L', N'Xanh Lá', N'SKU-aopolo-1393', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3093, 463, N'L', N'Trắng', N'SKU-aopolo-1394', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3094, 463, N'L', N'Xanh Navy', N'SKU-aopolo-1395', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3095, 463, N'XL', N'Đỏ', N'SKU-aopolo-1396', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3096, 463, N'XL', N'Cam', N'SKU-aopolo-1397', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3097, 463, N'XL', N'Xanh Lá', N'SKU-aopolo-1398', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3098, 463, N'XL', N'Trắng', N'SKU-aopolo-1399', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3099, 463, N'XL', N'Xanh Navy', N'SKU-aopolo-1400', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3100, 464, N'S', N'Be', N'SKU-quanshort-1401', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3101, 464, N'S', N'Xám', N'SKU-quanshort-1402', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3102, 464, N'S', N'Xanh Dương', N'SKU-quanshort-1403', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3103, 464, N'S', N'Nâu', N'SKU-quanshort-1404', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3104, 464, N'S', N'Đen', N'SKU-quanshort-1405', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3105, 464, N'M', N'Be', N'SKU-quanshort-1406', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3106, 464, N'M', N'Xám', N'SKU-quanshort-1407', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3107, 464, N'M', N'Xanh Dương', N'SKU-quanshort-1408', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3108, 464, N'M', N'Nâu', N'SKU-quanshort-1409', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3109, 464, N'M', N'Đen', N'SKU-quanshort-1410', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3110, 464, N'L', N'Be', N'SKU-quanshort-1411', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3111, 464, N'L', N'Xám', N'SKU-quanshort-1412', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3112, 464, N'L', N'Xanh Dương', N'SKU-quanshort-1413', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3113, 464, N'L', N'Nâu', N'SKU-quanshort-1414', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3114, 464, N'L', N'Đen', N'SKU-quanshort-1415', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3115, 464, N'XL', N'Be', N'SKU-quanshort-1416', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3116, 464, N'XL', N'Xám', N'SKU-quanshort-1417', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3117, 464, N'XL', N'Xanh Dương', N'SKU-quanshort-1418', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3118, 464, N'XL', N'Nâu', N'SKU-quanshort-1419', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3119, 464, N'XL', N'Đen', N'SKU-quanshort-1420', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3120, 465, N'S', N'Be', N'SKU-quanshort-1421', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3121, 465, N'S', N'Xám', N'SKU-quanshort-1422', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3122, 465, N'S', N'Đen', N'SKU-quanshort-1423', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3123, 465, N'S', N'Xanh Dương', N'SKU-quanshort-1424', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3124, 465, N'S', N'Nâu', N'SKU-quanshort-1425', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3125, 465, N'M', N'Be', N'SKU-quanshort-1426', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3126, 465, N'M', N'Xám', N'SKU-quanshort-1427', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3127, 465, N'M', N'Đen', N'SKU-quanshort-1428', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3128, 465, N'M', N'Xanh Dương', N'SKU-quanshort-1429', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3129, 465, N'M', N'Nâu', N'SKU-quanshort-1430', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3130, 465, N'L', N'Be', N'SKU-quanshort-1431', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3131, 465, N'L', N'Xám', N'SKU-quanshort-1432', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3132, 465, N'L', N'Đen', N'SKU-quanshort-1433', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3133, 465, N'L', N'Xanh Dương', N'SKU-quanshort-1434', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3134, 465, N'L', N'Nâu', N'SKU-quanshort-1435', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3135, 465, N'XL', N'Be', N'SKU-quanshort-1436', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3136, 465, N'XL', N'Xám', N'SKU-quanshort-1437', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3137, 465, N'XL', N'Đen', N'SKU-quanshort-1438', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3138, 465, N'XL', N'Xanh Dương', N'SKU-quanshort-1439', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3139, 465, N'XL', N'Nâu', N'SKU-quanshort-1440', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3140, 466, N'S', N'Đen', N'SKU-quanshort-1441', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3141, 466, N'S', N'Xanh Dương', N'SKU-quanshort-1442', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3142, 466, N'S', N'Be', N'SKU-quanshort-1443', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3143, 466, N'S', N'Xám', N'SKU-quanshort-1444', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3144, 466, N'S', N'Trắng', N'SKU-quanshort-1445', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3145, 466, N'M', N'Đen', N'SKU-quanshort-1446', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3146, 466, N'M', N'Xanh Dương', N'SKU-quanshort-1447', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3147, 466, N'M', N'Be', N'SKU-quanshort-1448', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3148, 466, N'M', N'Xám', N'SKU-quanshort-1449', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3149, 466, N'M', N'Trắng', N'SKU-quanshort-1450', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3150, 466, N'L', N'Đen', N'SKU-quanshort-1451', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3151, 466, N'L', N'Xanh Dương', N'SKU-quanshort-1452', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3152, 466, N'L', N'Be', N'SKU-quanshort-1453', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3153, 466, N'L', N'Xám', N'SKU-quanshort-1454', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3154, 466, N'L', N'Trắng', N'SKU-quanshort-1455', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3155, 466, N'XL', N'Đen', N'SKU-quanshort-1456', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3156, 466, N'XL', N'Xanh Dương', N'SKU-quanshort-1457', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3157, 466, N'XL', N'Be', N'SKU-quanshort-1458', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3158, 466, N'XL', N'Xám', N'SKU-quanshort-1459', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3159, 466, N'XL', N'Trắng', N'SKU-quanshort-1460', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3160, 467, N'S', N'Xám', N'SKU-quanshort-1461', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3161, 467, N'S', N'Đen', N'SKU-quanshort-1462', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3162, 467, N'S', N'Nâu', N'SKU-quanshort-1463', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3163, 467, N'S', N'Xanh Dương', N'SKU-quanshort-1464', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3164, 467, N'S', N'Trắng', N'SKU-quanshort-1465', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3165, 467, N'M', N'Xám', N'SKU-quanshort-1466', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3166, 467, N'M', N'Đen', N'SKU-quanshort-1467', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3167, 467, N'M', N'Nâu', N'SKU-quanshort-1468', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3168, 467, N'M', N'Xanh Dương', N'SKU-quanshort-1469', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3169, 467, N'M', N'Trắng', N'SKU-quanshort-1470', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3170, 467, N'L', N'Xám', N'SKU-quanshort-1471', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3171, 467, N'L', N'Đen', N'SKU-quanshort-1472', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3172, 467, N'L', N'Nâu', N'SKU-quanshort-1473', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3173, 467, N'L', N'Xanh Dương', N'SKU-quanshort-1474', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3174, 467, N'L', N'Trắng', N'SKU-quanshort-1475', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3175, 467, N'XL', N'Xám', N'SKU-quanshort-1476', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3176, 467, N'XL', N'Đen', N'SKU-quanshort-1477', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3177, 467, N'XL', N'Nâu', N'SKU-quanshort-1478', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3178, 467, N'XL', N'Xanh Dương', N'SKU-quanshort-1479', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3179, 467, N'XL', N'Trắng', N'SKU-quanshort-1480', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3180, 468, N'S', N'Trắng', N'SKU-quanshort-1481', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3181, 468, N'S', N'Đen', N'SKU-quanshort-1482', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3182, 468, N'S', N'Nâu', N'SKU-quanshort-1483', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3183, 468, N'S', N'Xám', N'SKU-quanshort-1484', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3184, 468, N'S', N'Be', N'SKU-quanshort-1485', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3185, 468, N'M', N'Trắng', N'SKU-quanshort-1486', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3186, 468, N'M', N'Đen', N'SKU-quanshort-1487', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3187, 468, N'M', N'Nâu', N'SKU-quanshort-1488', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3188, 468, N'M', N'Xám', N'SKU-quanshort-1489', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3189, 468, N'M', N'Be', N'SKU-quanshort-1490', 24)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3190, 468, N'L', N'Trắng', N'SKU-quanshort-1491', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3191, 468, N'L', N'Đen', N'SKU-quanshort-1492', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3192, 468, N'L', N'Nâu', N'SKU-quanshort-1493', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3193, 468, N'L', N'Xám', N'SKU-quanshort-1494', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3194, 468, N'L', N'Be', N'SKU-quanshort-1495', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3195, 468, N'XL', N'Trắng', N'SKU-quanshort-1496', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3196, 468, N'XL', N'Đen', N'SKU-quanshort-1497', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3197, 468, N'XL', N'Nâu', N'SKU-quanshort-1498', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3198, 468, N'XL', N'Xám', N'SKU-quanshort-1499', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3199, 468, N'XL', N'Be', N'SKU-quanshort-1500', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3200, 469, N'S', N'Đen', N'SKU-quanshort-1501', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3201, 469, N'S', N'Xám', N'SKU-quanshort-1502', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3202, 469, N'S', N'Trắng', N'SKU-quanshort-1503', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3203, 469, N'S', N'Xanh Dương', N'SKU-quanshort-1504', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3204, 469, N'S', N'Nâu', N'SKU-quanshort-1505', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3205, 469, N'M', N'Đen', N'SKU-quanshort-1506', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3206, 469, N'M', N'Xám', N'SKU-quanshort-1507', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3207, 469, N'M', N'Trắng', N'SKU-quanshort-1508', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3208, 469, N'M', N'Xanh Dương', N'SKU-quanshort-1509', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3209, 469, N'M', N'Nâu', N'SKU-quanshort-1510', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3210, 469, N'L', N'Đen', N'SKU-quanshort-1511', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3211, 469, N'L', N'Xám', N'SKU-quanshort-1512', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3212, 469, N'L', N'Trắng', N'SKU-quanshort-1513', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3213, 469, N'L', N'Xanh Dương', N'SKU-quanshort-1514', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3214, 469, N'L', N'Nâu', N'SKU-quanshort-1515', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3215, 469, N'XL', N'Đen', N'SKU-quanshort-1516', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3216, 469, N'XL', N'Xám', N'SKU-quanshort-1517', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3217, 469, N'XL', N'Trắng', N'SKU-quanshort-1518', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3218, 469, N'XL', N'Xanh Dương', N'SKU-quanshort-1519', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3219, 469, N'XL', N'Nâu', N'SKU-quanshort-1520', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3220, 470, N'S', N'Nâu', N'SKU-quanshort-1521', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3221, 470, N'S', N'Xám', N'SKU-quanshort-1522', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3222, 470, N'S', N'Be', N'SKU-quanshort-1523', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3223, 470, N'S', N'Đen', N'SKU-quanshort-1524', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3224, 470, N'S', N'Xanh Dương', N'SKU-quanshort-1525', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3225, 470, N'M', N'Nâu', N'SKU-quanshort-1526', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3226, 470, N'M', N'Xám', N'SKU-quanshort-1527', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3227, 470, N'M', N'Be', N'SKU-quanshort-1528', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3228, 470, N'M', N'Đen', N'SKU-quanshort-1529', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3229, 470, N'M', N'Xanh Dương', N'SKU-quanshort-1530', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3230, 470, N'L', N'Nâu', N'SKU-quanshort-1531', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3231, 470, N'L', N'Xám', N'SKU-quanshort-1532', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3232, 470, N'L', N'Be', N'SKU-quanshort-1533', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3233, 470, N'L', N'Đen', N'SKU-quanshort-1534', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3234, 470, N'L', N'Xanh Dương', N'SKU-quanshort-1535', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3235, 470, N'XL', N'Nâu', N'SKU-quanshort-1536', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3236, 470, N'XL', N'Xám', N'SKU-quanshort-1537', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3237, 470, N'XL', N'Be', N'SKU-quanshort-1538', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3238, 470, N'XL', N'Đen', N'SKU-quanshort-1539', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3239, 470, N'XL', N'Xanh Dương', N'SKU-quanshort-1540', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3240, 471, N'S', N'Trắng', N'SKU-quanshort-1541', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3241, 471, N'S', N'Xám', N'SKU-quanshort-1542', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3242, 471, N'S', N'Be', N'SKU-quanshort-1543', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3243, 471, N'S', N'Đen', N'SKU-quanshort-1544', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3244, 471, N'S', N'Xanh Dương', N'SKU-quanshort-1545', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3245, 471, N'M', N'Trắng', N'SKU-quanshort-1546', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3246, 471, N'M', N'Xám', N'SKU-quanshort-1547', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3247, 471, N'M', N'Be', N'SKU-quanshort-1548', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3248, 471, N'M', N'Đen', N'SKU-quanshort-1549', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3249, 471, N'M', N'Xanh Dương', N'SKU-quanshort-1550', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3250, 471, N'L', N'Trắng', N'SKU-quanshort-1551', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3251, 471, N'L', N'Xám', N'SKU-quanshort-1552', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3252, 471, N'L', N'Be', N'SKU-quanshort-1553', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3253, 471, N'L', N'Đen', N'SKU-quanshort-1554', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3254, 471, N'L', N'Xanh Dương', N'SKU-quanshort-1555', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3255, 471, N'XL', N'Trắng', N'SKU-quanshort-1556', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3256, 471, N'XL', N'Xám', N'SKU-quanshort-1557', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3257, 471, N'XL', N'Be', N'SKU-quanshort-1558', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3258, 471, N'XL', N'Đen', N'SKU-quanshort-1559', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3259, 471, N'XL', N'Xanh Dương', N'SKU-quanshort-1560', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3260, 472, N'S', N'Nâu', N'SKU-quanshort-1561', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3261, 472, N'S', N'Trắng', N'SKU-quanshort-1562', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3262, 472, N'S', N'Xám', N'SKU-quanshort-1563', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3263, 472, N'S', N'Đen', N'SKU-quanshort-1564', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3264, 472, N'S', N'Xanh Dương', N'SKU-quanshort-1565', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3265, 472, N'M', N'Nâu', N'SKU-quanshort-1566', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3266, 472, N'M', N'Trắng', N'SKU-quanshort-1567', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3267, 472, N'M', N'Xám', N'SKU-quanshort-1568', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3268, 472, N'M', N'Đen', N'SKU-quanshort-1569', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3269, 472, N'M', N'Xanh Dương', N'SKU-quanshort-1570', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3270, 472, N'L', N'Nâu', N'SKU-quanshort-1571', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3271, 472, N'L', N'Trắng', N'SKU-quanshort-1572', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3272, 472, N'L', N'Xám', N'SKU-quanshort-1573', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3273, 472, N'L', N'Đen', N'SKU-quanshort-1574', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3274, 472, N'L', N'Xanh Dương', N'SKU-quanshort-1575', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3275, 472, N'XL', N'Nâu', N'SKU-quanshort-1576', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3276, 472, N'XL', N'Trắng', N'SKU-quanshort-1577', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3277, 472, N'XL', N'Xám', N'SKU-quanshort-1578', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3278, 472, N'XL', N'Đen', N'SKU-quanshort-1579', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3279, 472, N'XL', N'Xanh Dương', N'SKU-quanshort-1580', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3280, 473, N'S', N'Xanh Dương', N'SKU-quanshort-1581', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3281, 473, N'S', N'Đen', N'SKU-quanshort-1582', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3282, 473, N'S', N'Xám', N'SKU-quanshort-1583', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3283, 473, N'S', N'Trắng', N'SKU-quanshort-1584', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3284, 473, N'S', N'Be', N'SKU-quanshort-1585', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3285, 473, N'M', N'Xanh Dương', N'SKU-quanshort-1586', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3286, 473, N'M', N'Đen', N'SKU-quanshort-1587', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3287, 473, N'M', N'Xám', N'SKU-quanshort-1588', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3288, 473, N'M', N'Trắng', N'SKU-quanshort-1589', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3289, 473, N'M', N'Be', N'SKU-quanshort-1590', 15)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3290, 473, N'L', N'Xanh Dương', N'SKU-quanshort-1591', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3291, 473, N'L', N'Đen', N'SKU-quanshort-1592', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3292, 473, N'L', N'Xám', N'SKU-quanshort-1593', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3293, 473, N'L', N'Trắng', N'SKU-quanshort-1594', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3294, 473, N'L', N'Be', N'SKU-quanshort-1595', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3295, 473, N'XL', N'Xanh Dương', N'SKU-quanshort-1596', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3296, 473, N'XL', N'Đen', N'SKU-quanshort-1597', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3297, 473, N'XL', N'Xám', N'SKU-quanshort-1598', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3298, 473, N'XL', N'Trắng', N'SKU-quanshort-1599', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3299, 473, N'XL', N'Be', N'SKU-quanshort-1600', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3300, 474, N'S', N'Xanh Rêu', N'SKU-quankaki-1601', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3301, 474, N'S', N'Nâu', N'SKU-quankaki-1602', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3302, 474, N'S', N'Be', N'SKU-quankaki-1603', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3303, 474, N'S', N'Xám', N'SKU-quankaki-1604', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3304, 474, N'S', N'Đen', N'SKU-quankaki-1605', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3305, 474, N'M', N'Xanh Rêu', N'SKU-quankaki-1606', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3306, 474, N'M', N'Nâu', N'SKU-quankaki-1607', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3307, 474, N'M', N'Be', N'SKU-quankaki-1608', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3308, 474, N'M', N'Xám', N'SKU-quankaki-1609', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3309, 474, N'M', N'Đen', N'SKU-quankaki-1610', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3310, 474, N'L', N'Xanh Rêu', N'SKU-quankaki-1611', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3311, 474, N'L', N'Nâu', N'SKU-quankaki-1612', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3312, 474, N'L', N'Be', N'SKU-quankaki-1613', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3313, 474, N'L', N'Xám', N'SKU-quankaki-1614', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3314, 474, N'L', N'Đen', N'SKU-quankaki-1615', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3315, 474, N'XL', N'Xanh Rêu', N'SKU-quankaki-1616', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3316, 474, N'XL', N'Nâu', N'SKU-quankaki-1617', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3317, 474, N'XL', N'Be', N'SKU-quankaki-1618', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3318, 474, N'XL', N'Xám', N'SKU-quankaki-1619', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3319, 474, N'XL', N'Đen', N'SKU-quankaki-1620', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3320, 475, N'S', N'Nâu', N'SKU-quankaki-1621', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3321, 475, N'S', N'Be', N'SKU-quankaki-1622', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3322, 475, N'S', N'Xanh Navy', N'SKU-quankaki-1623', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3323, 475, N'S', N'Xanh Rêu', N'SKU-quankaki-1624', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3324, 475, N'S', N'Xám', N'SKU-quankaki-1625', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3325, 475, N'M', N'Nâu', N'SKU-quankaki-1626', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3326, 475, N'M', N'Be', N'SKU-quankaki-1627', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3327, 475, N'M', N'Xanh Navy', N'SKU-quankaki-1628', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3328, 475, N'M', N'Xanh Rêu', N'SKU-quankaki-1629', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3329, 475, N'M', N'Xám', N'SKU-quankaki-1630', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3330, 475, N'L', N'Nâu', N'SKU-quankaki-1631', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3331, 475, N'L', N'Be', N'SKU-quankaki-1632', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3332, 475, N'L', N'Xanh Navy', N'SKU-quankaki-1633', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3333, 475, N'L', N'Xanh Rêu', N'SKU-quankaki-1634', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3334, 475, N'L', N'Xám', N'SKU-quankaki-1635', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3335, 475, N'XL', N'Nâu', N'SKU-quankaki-1636', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3336, 475, N'XL', N'Be', N'SKU-quankaki-1637', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3337, 475, N'XL', N'Xanh Navy', N'SKU-quankaki-1638', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3338, 475, N'XL', N'Xanh Rêu', N'SKU-quankaki-1639', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3339, 475, N'XL', N'Xám', N'SKU-quankaki-1640', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3340, 476, N'S', N'Xanh Navy', N'SKU-quankaki-1641', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3341, 476, N'S', N'Đen', N'SKU-quankaki-1642', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3342, 476, N'S', N'Nâu', N'SKU-quankaki-1643', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3343, 476, N'S', N'Xanh Rêu', N'SKU-quankaki-1644', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3344, 476, N'S', N'Be', N'SKU-quankaki-1645', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3345, 476, N'M', N'Xanh Navy', N'SKU-quankaki-1646', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3346, 476, N'M', N'Đen', N'SKU-quankaki-1647', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3347, 476, N'M', N'Nâu', N'SKU-quankaki-1648', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3348, 476, N'M', N'Xanh Rêu', N'SKU-quankaki-1649', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3349, 476, N'M', N'Be', N'SKU-quankaki-1650', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3350, 476, N'L', N'Xanh Navy', N'SKU-quankaki-1651', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3351, 476, N'L', N'Đen', N'SKU-quankaki-1652', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3352, 476, N'L', N'Nâu', N'SKU-quankaki-1653', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3353, 476, N'L', N'Xanh Rêu', N'SKU-quankaki-1654', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3354, 476, N'L', N'Be', N'SKU-quankaki-1655', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3355, 476, N'XL', N'Xanh Navy', N'SKU-quankaki-1656', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3356, 476, N'XL', N'Đen', N'SKU-quankaki-1657', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3357, 476, N'XL', N'Nâu', N'SKU-quankaki-1658', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3358, 476, N'XL', N'Xanh Rêu', N'SKU-quankaki-1659', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3359, 476, N'XL', N'Be', N'SKU-quankaki-1660', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3360, 477, N'S', N'Đen', N'SKU-quankaki-1661', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3361, 477, N'S', N'Xanh Navy', N'SKU-quankaki-1662', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3362, 477, N'S', N'Xanh Rêu', N'SKU-quankaki-1663', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3363, 477, N'S', N'Xám', N'SKU-quankaki-1664', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3364, 477, N'S', N'Nâu', N'SKU-quankaki-1665', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3365, 477, N'M', N'Đen', N'SKU-quankaki-1666', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3366, 477, N'M', N'Xanh Navy', N'SKU-quankaki-1667', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3367, 477, N'M', N'Xanh Rêu', N'SKU-quankaki-1668', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3368, 477, N'M', N'Xám', N'SKU-quankaki-1669', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3369, 477, N'M', N'Nâu', N'SKU-quankaki-1670', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3370, 477, N'L', N'Đen', N'SKU-quankaki-1671', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3371, 477, N'L', N'Xanh Navy', N'SKU-quankaki-1672', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3372, 477, N'L', N'Xanh Rêu', N'SKU-quankaki-1673', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3373, 477, N'L', N'Xám', N'SKU-quankaki-1674', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3374, 477, N'L', N'Nâu', N'SKU-quankaki-1675', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3375, 477, N'XL', N'Đen', N'SKU-quankaki-1676', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3376, 477, N'XL', N'Xanh Navy', N'SKU-quankaki-1677', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3377, 477, N'XL', N'Xanh Rêu', N'SKU-quankaki-1678', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3378, 477, N'XL', N'Xám', N'SKU-quankaki-1679', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3379, 477, N'XL', N'Nâu', N'SKU-quankaki-1680', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3380, 478, N'S', N'Xanh Rêu', N'SKU-quankaki-1681', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3381, 478, N'S', N'Be', N'SKU-quankaki-1682', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3382, 478, N'S', N'Đen', N'SKU-quankaki-1683', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3383, 478, N'S', N'Nâu', N'SKU-quankaki-1684', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3384, 478, N'S', N'Xanh Navy', N'SKU-quankaki-1685', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3385, 478, N'M', N'Xanh Rêu', N'SKU-quankaki-1686', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3386, 478, N'M', N'Be', N'SKU-quankaki-1687', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3387, 478, N'M', N'Đen', N'SKU-quankaki-1688', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3388, 478, N'M', N'Nâu', N'SKU-quankaki-1689', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3389, 478, N'M', N'Xanh Navy', N'SKU-quankaki-1690', 25)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3390, 478, N'L', N'Xanh Rêu', N'SKU-quankaki-1691', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3391, 478, N'L', N'Be', N'SKU-quankaki-1692', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3392, 478, N'L', N'Đen', N'SKU-quankaki-1693', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3393, 478, N'L', N'Nâu', N'SKU-quankaki-1694', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3394, 478, N'L', N'Xanh Navy', N'SKU-quankaki-1695', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3395, 478, N'XL', N'Xanh Rêu', N'SKU-quankaki-1696', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3396, 478, N'XL', N'Be', N'SKU-quankaki-1697', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3397, 478, N'XL', N'Đen', N'SKU-quankaki-1698', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3398, 478, N'XL', N'Nâu', N'SKU-quankaki-1699', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3399, 478, N'XL', N'Xanh Navy', N'SKU-quankaki-1700', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3400, 479, N'S', N'Nâu', N'SKU-quankaki-1701', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3401, 479, N'S', N'Xanh Rêu', N'SKU-quankaki-1702', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3402, 479, N'S', N'Xanh Navy', N'SKU-quankaki-1703', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3403, 479, N'S', N'Xám', N'SKU-quankaki-1704', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3404, 479, N'S', N'Be', N'SKU-quankaki-1705', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3405, 479, N'M', N'Nâu', N'SKU-quankaki-1706', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3406, 479, N'M', N'Xanh Rêu', N'SKU-quankaki-1707', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3407, 479, N'M', N'Xanh Navy', N'SKU-quankaki-1708', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3408, 479, N'M', N'Xám', N'SKU-quankaki-1709', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3409, 479, N'M', N'Be', N'SKU-quankaki-1710', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3410, 479, N'L', N'Nâu', N'SKU-quankaki-1711', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3411, 479, N'L', N'Xanh Rêu', N'SKU-quankaki-1712', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3412, 479, N'L', N'Xanh Navy', N'SKU-quankaki-1713', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3413, 479, N'L', N'Xám', N'SKU-quankaki-1714', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3414, 479, N'L', N'Be', N'SKU-quankaki-1715', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3415, 479, N'XL', N'Nâu', N'SKU-quankaki-1716', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3416, 479, N'XL', N'Xanh Rêu', N'SKU-quankaki-1717', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3417, 479, N'XL', N'Xanh Navy', N'SKU-quankaki-1718', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3418, 479, N'XL', N'Xám', N'SKU-quankaki-1719', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3419, 479, N'XL', N'Be', N'SKU-quankaki-1720', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3420, 480, N'S', N'Xanh Rêu', N'SKU-quankaki-1721', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3421, 480, N'S', N'Đen', N'SKU-quankaki-1722', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3422, 480, N'S', N'Be', N'SKU-quankaki-1723', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3423, 480, N'S', N'Xám', N'SKU-quankaki-1724', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3424, 480, N'S', N'Xanh Navy', N'SKU-quankaki-1725', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3425, 480, N'M', N'Xanh Rêu', N'SKU-quankaki-1726', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3426, 480, N'M', N'Đen', N'SKU-quankaki-1727', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3427, 480, N'M', N'Be', N'SKU-quankaki-1728', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3428, 480, N'M', N'Xám', N'SKU-quankaki-1729', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3429, 480, N'M', N'Xanh Navy', N'SKU-quankaki-1730', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3430, 480, N'L', N'Xanh Rêu', N'SKU-quankaki-1731', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3431, 480, N'L', N'Đen', N'SKU-quankaki-1732', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3432, 480, N'L', N'Be', N'SKU-quankaki-1733', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3433, 480, N'L', N'Xám', N'SKU-quankaki-1734', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3434, 480, N'L', N'Xanh Navy', N'SKU-quankaki-1735', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3435, 480, N'XL', N'Xanh Rêu', N'SKU-quankaki-1736', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3436, 480, N'XL', N'Đen', N'SKU-quankaki-1737', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3437, 480, N'XL', N'Be', N'SKU-quankaki-1738', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3438, 480, N'XL', N'Xám', N'SKU-quankaki-1739', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3439, 480, N'XL', N'Xanh Navy', N'SKU-quankaki-1740', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3440, 481, N'S', N'Be', N'SKU-quankaki-1741', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3441, 481, N'S', N'Xám', N'SKU-quankaki-1742', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3442, 481, N'S', N'Xanh Rêu', N'SKU-quankaki-1743', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3443, 481, N'S', N'Xanh Navy', N'SKU-quankaki-1744', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3444, 481, N'S', N'Nâu', N'SKU-quankaki-1745', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3445, 481, N'M', N'Be', N'SKU-quankaki-1746', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3446, 481, N'M', N'Xám', N'SKU-quankaki-1747', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3447, 481, N'M', N'Xanh Rêu', N'SKU-quankaki-1748', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3448, 481, N'M', N'Xanh Navy', N'SKU-quankaki-1749', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3449, 481, N'M', N'Nâu', N'SKU-quankaki-1750', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3450, 481, N'L', N'Be', N'SKU-quankaki-1751', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3451, 481, N'L', N'Xám', N'SKU-quankaki-1752', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3452, 481, N'L', N'Xanh Rêu', N'SKU-quankaki-1753', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3453, 481, N'L', N'Xanh Navy', N'SKU-quankaki-1754', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3454, 481, N'L', N'Nâu', N'SKU-quankaki-1755', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3455, 481, N'XL', N'Be', N'SKU-quankaki-1756', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3456, 481, N'XL', N'Xám', N'SKU-quankaki-1757', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3457, 481, N'XL', N'Xanh Rêu', N'SKU-quankaki-1758', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3458, 481, N'XL', N'Xanh Navy', N'SKU-quankaki-1759', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3459, 481, N'XL', N'Nâu', N'SKU-quankaki-1760', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3460, 482, N'S', N'Xanh Rêu', N'SKU-quankaki-1761', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3461, 482, N'S', N'Đen', N'SKU-quankaki-1762', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3462, 482, N'S', N'Xám', N'SKU-quankaki-1763', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3463, 482, N'S', N'Xanh Navy', N'SKU-quankaki-1764', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3464, 482, N'S', N'Nâu', N'SKU-quankaki-1765', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3465, 482, N'M', N'Xanh Rêu', N'SKU-quankaki-1766', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3466, 482, N'M', N'Đen', N'SKU-quankaki-1767', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3467, 482, N'M', N'Xám', N'SKU-quankaki-1768', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3468, 482, N'M', N'Xanh Navy', N'SKU-quankaki-1769', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3469, 482, N'M', N'Nâu', N'SKU-quankaki-1770', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3470, 482, N'L', N'Xanh Rêu', N'SKU-quankaki-1771', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3471, 482, N'L', N'Đen', N'SKU-quankaki-1772', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3472, 482, N'L', N'Xám', N'SKU-quankaki-1773', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3473, 482, N'L', N'Xanh Navy', N'SKU-quankaki-1774', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3474, 482, N'L', N'Nâu', N'SKU-quankaki-1775', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3475, 482, N'XL', N'Xanh Rêu', N'SKU-quankaki-1776', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3476, 482, N'XL', N'Đen', N'SKU-quankaki-1777', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3477, 482, N'XL', N'Xám', N'SKU-quankaki-1778', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3478, 482, N'XL', N'Xanh Navy', N'SKU-quankaki-1779', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3479, 482, N'XL', N'Nâu', N'SKU-quankaki-1780', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3480, 483, N'S', N'Be', N'SKU-quankaki-1781', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3481, 483, N'S', N'Xám', N'SKU-quankaki-1782', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3482, 483, N'S', N'Nâu', N'SKU-quankaki-1783', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3483, 483, N'S', N'Xanh Navy', N'SKU-quankaki-1784', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3484, 483, N'S', N'Xanh Rêu', N'SKU-quankaki-1785', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3485, 483, N'M', N'Be', N'SKU-quankaki-1786', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3486, 483, N'M', N'Xám', N'SKU-quankaki-1787', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3487, 483, N'M', N'Nâu', N'SKU-quankaki-1788', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3488, 483, N'M', N'Xanh Navy', N'SKU-quankaki-1789', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3489, 483, N'M', N'Xanh Rêu', N'SKU-quankaki-1790', 53)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3490, 483, N'L', N'Be', N'SKU-quankaki-1791', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3491, 483, N'L', N'Xám', N'SKU-quankaki-1792', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3492, 483, N'L', N'Nâu', N'SKU-quankaki-1793', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3493, 483, N'L', N'Xanh Navy', N'SKU-quankaki-1794', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3494, 483, N'L', N'Xanh Rêu', N'SKU-quankaki-1795', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3495, 483, N'XL', N'Be', N'SKU-quankaki-1796', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3496, 483, N'XL', N'Xám', N'SKU-quankaki-1797', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3497, 483, N'XL', N'Nâu', N'SKU-quankaki-1798', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3498, 483, N'XL', N'Xanh Navy', N'SKU-quankaki-1799', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3499, 483, N'XL', N'Xanh Rêu', N'SKU-quankaki-1800', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3500, 484, N'S', N'Đen', N'SKU-quanboxer-1801', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3501, 484, N'S', N'Trắng', N'SKU-quanboxer-1802', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3502, 484, N'S', N'Đỏ', N'SKU-quanboxer-1803', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3503, 484, N'S', N'Xám', N'SKU-quanboxer-1804', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3504, 484, N'S', N'Xanh Navy', N'SKU-quanboxer-1805', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3505, 484, N'M', N'Đen', N'SKU-quanboxer-1806', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3506, 484, N'M', N'Trắng', N'SKU-quanboxer-1807', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3507, 484, N'M', N'Đỏ', N'SKU-quanboxer-1808', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3508, 484, N'M', N'Xám', N'SKU-quanboxer-1809', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3509, 484, N'M', N'Xanh Navy', N'SKU-quanboxer-1810', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3510, 484, N'L', N'Đen', N'SKU-quanboxer-1811', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3511, 484, N'L', N'Trắng', N'SKU-quanboxer-1812', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3512, 484, N'L', N'Đỏ', N'SKU-quanboxer-1813', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3513, 484, N'L', N'Xám', N'SKU-quanboxer-1814', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3514, 484, N'L', N'Xanh Navy', N'SKU-quanboxer-1815', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3515, 484, N'XL', N'Đen', N'SKU-quanboxer-1816', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3516, 484, N'XL', N'Trắng', N'SKU-quanboxer-1817', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3517, 484, N'XL', N'Đỏ', N'SKU-quanboxer-1818', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3518, 484, N'XL', N'Xám', N'SKU-quanboxer-1819', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3519, 484, N'XL', N'Xanh Navy', N'SKU-quanboxer-1820', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3520, 485, N'S', N'Đỏ', N'SKU-quanboxer-1821', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3521, 485, N'S', N'Trắng', N'SKU-quanboxer-1822', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3522, 485, N'S', N'Xanh Navy', N'SKU-quanboxer-1823', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3523, 485, N'S', N'Xanh Dương', N'SKU-quanboxer-1824', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3524, 485, N'S', N'Xám', N'SKU-quanboxer-1825', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3525, 485, N'M', N'Đỏ', N'SKU-quanboxer-1826', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3526, 485, N'M', N'Trắng', N'SKU-quanboxer-1827', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3527, 485, N'M', N'Xanh Navy', N'SKU-quanboxer-1828', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3528, 485, N'M', N'Xanh Dương', N'SKU-quanboxer-1829', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3529, 485, N'M', N'Xám', N'SKU-quanboxer-1830', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3530, 485, N'L', N'Đỏ', N'SKU-quanboxer-1831', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3531, 485, N'L', N'Trắng', N'SKU-quanboxer-1832', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3532, 485, N'L', N'Xanh Navy', N'SKU-quanboxer-1833', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3533, 485, N'L', N'Xanh Dương', N'SKU-quanboxer-1834', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3534, 485, N'L', N'Xám', N'SKU-quanboxer-1835', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3535, 485, N'XL', N'Đỏ', N'SKU-quanboxer-1836', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3536, 485, N'XL', N'Trắng', N'SKU-quanboxer-1837', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3537, 485, N'XL', N'Xanh Navy', N'SKU-quanboxer-1838', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3538, 485, N'XL', N'Xanh Dương', N'SKU-quanboxer-1839', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3539, 485, N'XL', N'Xám', N'SKU-quanboxer-1840', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3540, 486, N'S', N'Xanh Navy', N'SKU-quanboxer-1841', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3541, 486, N'S', N'Xanh Dương', N'SKU-quanboxer-1842', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3542, 486, N'S', N'Đỏ', N'SKU-quanboxer-1843', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3543, 486, N'S', N'Trắng', N'SKU-quanboxer-1844', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3544, 486, N'S', N'Đen', N'SKU-quanboxer-1845', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3545, 486, N'M', N'Xanh Navy', N'SKU-quanboxer-1846', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3546, 486, N'M', N'Xanh Dương', N'SKU-quanboxer-1847', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3547, 486, N'M', N'Đỏ', N'SKU-quanboxer-1848', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3548, 486, N'M', N'Trắng', N'SKU-quanboxer-1849', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3549, 486, N'M', N'Đen', N'SKU-quanboxer-1850', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3550, 486, N'L', N'Xanh Navy', N'SKU-quanboxer-1851', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3551, 486, N'L', N'Xanh Dương', N'SKU-quanboxer-1852', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3552, 486, N'L', N'Đỏ', N'SKU-quanboxer-1853', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3553, 486, N'L', N'Trắng', N'SKU-quanboxer-1854', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3554, 486, N'L', N'Đen', N'SKU-quanboxer-1855', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3555, 486, N'XL', N'Xanh Navy', N'SKU-quanboxer-1856', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3556, 486, N'XL', N'Xanh Dương', N'SKU-quanboxer-1857', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3557, 486, N'XL', N'Đỏ', N'SKU-quanboxer-1858', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3558, 486, N'XL', N'Trắng', N'SKU-quanboxer-1859', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3559, 486, N'XL', N'Đen', N'SKU-quanboxer-1860', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3560, 487, N'S', N'Trắng', N'SKU-quanboxer-1861', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3561, 487, N'S', N'Đỏ', N'SKU-quanboxer-1862', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3562, 487, N'S', N'Xanh Dương', N'SKU-quanboxer-1863', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3563, 487, N'S', N'Đen', N'SKU-quanboxer-1864', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3564, 487, N'S', N'Xanh Navy', N'SKU-quanboxer-1865', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3565, 487, N'M', N'Trắng', N'SKU-quanboxer-1866', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3566, 487, N'M', N'Đỏ', N'SKU-quanboxer-1867', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3567, 487, N'M', N'Xanh Dương', N'SKU-quanboxer-1868', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3568, 487, N'M', N'Đen', N'SKU-quanboxer-1869', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3569, 487, N'M', N'Xanh Navy', N'SKU-quanboxer-1870', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3570, 487, N'L', N'Trắng', N'SKU-quanboxer-1871', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3571, 487, N'L', N'Đỏ', N'SKU-quanboxer-1872', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3572, 487, N'L', N'Xanh Dương', N'SKU-quanboxer-1873', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3573, 487, N'L', N'Đen', N'SKU-quanboxer-1874', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3574, 487, N'L', N'Xanh Navy', N'SKU-quanboxer-1875', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3575, 487, N'XL', N'Trắng', N'SKU-quanboxer-1876', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3576, 487, N'XL', N'Đỏ', N'SKU-quanboxer-1877', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3577, 487, N'XL', N'Xanh Dương', N'SKU-quanboxer-1878', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3578, 487, N'XL', N'Đen', N'SKU-quanboxer-1879', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3579, 487, N'XL', N'Xanh Navy', N'SKU-quanboxer-1880', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3580, 488, N'S', N'Trắng', N'SKU-quanboxer-1881', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3581, 488, N'S', N'Xanh Navy', N'SKU-quanboxer-1882', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3582, 488, N'S', N'Đen', N'SKU-quanboxer-1883', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3583, 488, N'S', N'Xanh Dương', N'SKU-quanboxer-1884', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3584, 488, N'S', N'Xám', N'SKU-quanboxer-1885', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3585, 488, N'M', N'Trắng', N'SKU-quanboxer-1886', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3586, 488, N'M', N'Xanh Navy', N'SKU-quanboxer-1887', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3587, 488, N'M', N'Đen', N'SKU-quanboxer-1888', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3588, 488, N'M', N'Xanh Dương', N'SKU-quanboxer-1889', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3589, 488, N'M', N'Xám', N'SKU-quanboxer-1890', 32)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3590, 488, N'L', N'Trắng', N'SKU-quanboxer-1891', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3591, 488, N'L', N'Xanh Navy', N'SKU-quanboxer-1892', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3592, 488, N'L', N'Đen', N'SKU-quanboxer-1893', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3593, 488, N'L', N'Xanh Dương', N'SKU-quanboxer-1894', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3594, 488, N'L', N'Xám', N'SKU-quanboxer-1895', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3595, 488, N'XL', N'Trắng', N'SKU-quanboxer-1896', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3596, 488, N'XL', N'Xanh Navy', N'SKU-quanboxer-1897', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3597, 488, N'XL', N'Đen', N'SKU-quanboxer-1898', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3598, 488, N'XL', N'Xanh Dương', N'SKU-quanboxer-1899', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3599, 488, N'XL', N'Xám', N'SKU-quanboxer-1900', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3600, 489, N'S', N'Trắng', N'SKU-quanboxer-1901', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3601, 489, N'S', N'Đỏ', N'SKU-quanboxer-1902', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3602, 489, N'S', N'Xanh Navy', N'SKU-quanboxer-1903', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3603, 489, N'S', N'Đen', N'SKU-quanboxer-1904', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3604, 489, N'S', N'Xám', N'SKU-quanboxer-1905', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3605, 489, N'M', N'Trắng', N'SKU-quanboxer-1906', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3606, 489, N'M', N'Đỏ', N'SKU-quanboxer-1907', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3607, 489, N'M', N'Xanh Navy', N'SKU-quanboxer-1908', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3608, 489, N'M', N'Đen', N'SKU-quanboxer-1909', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3609, 489, N'M', N'Xám', N'SKU-quanboxer-1910', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3610, 489, N'L', N'Trắng', N'SKU-quanboxer-1911', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3611, 489, N'L', N'Đỏ', N'SKU-quanboxer-1912', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3612, 489, N'L', N'Xanh Navy', N'SKU-quanboxer-1913', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3613, 489, N'L', N'Đen', N'SKU-quanboxer-1914', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3614, 489, N'L', N'Xám', N'SKU-quanboxer-1915', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3615, 489, N'XL', N'Trắng', N'SKU-quanboxer-1916', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3616, 489, N'XL', N'Đỏ', N'SKU-quanboxer-1917', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3617, 489, N'XL', N'Xanh Navy', N'SKU-quanboxer-1918', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3618, 489, N'XL', N'Đen', N'SKU-quanboxer-1919', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3619, 489, N'XL', N'Xám', N'SKU-quanboxer-1920', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3620, 490, N'S', N'Xám', N'SKU-quanboxer-1921', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3621, 490, N'S', N'Trắng', N'SKU-quanboxer-1922', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3622, 490, N'S', N'Xanh Navy', N'SKU-quanboxer-1923', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3623, 490, N'S', N'Xanh Dương', N'SKU-quanboxer-1924', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3624, 490, N'S', N'Đen', N'SKU-quanboxer-1925', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3625, 490, N'M', N'Xám', N'SKU-quanboxer-1926', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3626, 490, N'M', N'Trắng', N'SKU-quanboxer-1927', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3627, 490, N'M', N'Xanh Navy', N'SKU-quanboxer-1928', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3628, 490, N'M', N'Xanh Dương', N'SKU-quanboxer-1929', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3629, 490, N'M', N'Đen', N'SKU-quanboxer-1930', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3630, 490, N'L', N'Xám', N'SKU-quanboxer-1931', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3631, 490, N'L', N'Trắng', N'SKU-quanboxer-1932', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3632, 490, N'L', N'Xanh Navy', N'SKU-quanboxer-1933', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3633, 490, N'L', N'Xanh Dương', N'SKU-quanboxer-1934', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3634, 490, N'L', N'Đen', N'SKU-quanboxer-1935', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3635, 490, N'XL', N'Xám', N'SKU-quanboxer-1936', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3636, 490, N'XL', N'Trắng', N'SKU-quanboxer-1937', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3637, 490, N'XL', N'Xanh Navy', N'SKU-quanboxer-1938', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3638, 490, N'XL', N'Xanh Dương', N'SKU-quanboxer-1939', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3639, 490, N'XL', N'Đen', N'SKU-quanboxer-1940', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3640, 491, N'S', N'Xám', N'SKU-quanboxer-1941', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3641, 491, N'S', N'Trắng', N'SKU-quanboxer-1942', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3642, 491, N'S', N'Xanh Navy', N'SKU-quanboxer-1943', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3643, 491, N'S', N'Đen', N'SKU-quanboxer-1944', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3644, 491, N'S', N'Đỏ', N'SKU-quanboxer-1945', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3645, 491, N'M', N'Xám', N'SKU-quanboxer-1946', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3646, 491, N'M', N'Trắng', N'SKU-quanboxer-1947', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3647, 491, N'M', N'Xanh Navy', N'SKU-quanboxer-1948', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3648, 491, N'M', N'Đen', N'SKU-quanboxer-1949', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3649, 491, N'M', N'Đỏ', N'SKU-quanboxer-1950', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3650, 491, N'L', N'Xám', N'SKU-quanboxer-1951', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3651, 491, N'L', N'Trắng', N'SKU-quanboxer-1952', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3652, 491, N'L', N'Xanh Navy', N'SKU-quanboxer-1953', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3653, 491, N'L', N'Đen', N'SKU-quanboxer-1954', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3654, 491, N'L', N'Đỏ', N'SKU-quanboxer-1955', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3655, 491, N'XL', N'Xám', N'SKU-quanboxer-1956', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3656, 491, N'XL', N'Trắng', N'SKU-quanboxer-1957', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3657, 491, N'XL', N'Xanh Navy', N'SKU-quanboxer-1958', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3658, 491, N'XL', N'Đen', N'SKU-quanboxer-1959', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3659, 491, N'XL', N'Đỏ', N'SKU-quanboxer-1960', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3660, 492, N'S', N'Xám', N'SKU-quanboxer-1961', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3661, 492, N'S', N'Xanh Dương', N'SKU-quanboxer-1962', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3662, 492, N'S', N'Trắng', N'SKU-quanboxer-1963', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3663, 492, N'S', N'Xanh Navy', N'SKU-quanboxer-1964', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3664, 492, N'S', N'Đỏ', N'SKU-quanboxer-1965', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3665, 492, N'M', N'Xám', N'SKU-quanboxer-1966', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3666, 492, N'M', N'Xanh Dương', N'SKU-quanboxer-1967', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3667, 492, N'M', N'Trắng', N'SKU-quanboxer-1968', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3668, 492, N'M', N'Xanh Navy', N'SKU-quanboxer-1969', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3669, 492, N'M', N'Đỏ', N'SKU-quanboxer-1970', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3670, 492, N'L', N'Xám', N'SKU-quanboxer-1971', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3671, 492, N'L', N'Xanh Dương', N'SKU-quanboxer-1972', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3672, 492, N'L', N'Trắng', N'SKU-quanboxer-1973', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3673, 492, N'L', N'Xanh Navy', N'SKU-quanboxer-1974', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3674, 492, N'L', N'Đỏ', N'SKU-quanboxer-1975', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3675, 492, N'XL', N'Xám', N'SKU-quanboxer-1976', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3676, 492, N'XL', N'Xanh Dương', N'SKU-quanboxer-1977', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3677, 492, N'XL', N'Trắng', N'SKU-quanboxer-1978', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3678, 492, N'XL', N'Xanh Navy', N'SKU-quanboxer-1979', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3679, 492, N'XL', N'Đỏ', N'SKU-quanboxer-1980', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3680, 493, N'S', N'Xanh Navy', N'SKU-quanboxer-1981', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3681, 493, N'S', N'Đỏ', N'SKU-quanboxer-1982', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3682, 493, N'S', N'Trắng', N'SKU-quanboxer-1983', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3683, 493, N'S', N'Xanh Dương', N'SKU-quanboxer-1984', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3684, 493, N'S', N'Đen', N'SKU-quanboxer-1985', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3685, 493, N'M', N'Xanh Navy', N'SKU-quanboxer-1986', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3686, 493, N'M', N'Đỏ', N'SKU-quanboxer-1987', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3687, 493, N'M', N'Trắng', N'SKU-quanboxer-1988', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3688, 493, N'M', N'Xanh Dương', N'SKU-quanboxer-1989', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3689, 493, N'M', N'Đen', N'SKU-quanboxer-1990', 34)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3690, 493, N'L', N'Xanh Navy', N'SKU-quanboxer-1991', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3691, 493, N'L', N'Đỏ', N'SKU-quanboxer-1992', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3692, 493, N'L', N'Trắng', N'SKU-quanboxer-1993', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3693, 493, N'L', N'Xanh Dương', N'SKU-quanboxer-1994', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3694, 493, N'L', N'Đen', N'SKU-quanboxer-1995', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3695, 493, N'XL', N'Xanh Navy', N'SKU-quanboxer-1996', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3696, 493, N'XL', N'Đỏ', N'SKU-quanboxer-1997', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3697, 493, N'XL', N'Trắng', N'SKU-quanboxer-1998', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3698, 493, N'XL', N'Xanh Dương', N'SKU-quanboxer-1999', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3699, 493, N'XL', N'Đen', N'SKU-quanboxer-2000', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3700, 494, N'S', N'Trắng', N'SKU-aolot-2001', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3701, 494, N'S', N'Xanh Navy', N'SKU-aolot-2002', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3702, 494, N'S', N'Be', N'SKU-aolot-2003', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3703, 494, N'S', N'Xám', N'SKU-aolot-2004', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3704, 494, N'S', N'Đen', N'SKU-aolot-2005', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3705, 494, N'M', N'Trắng', N'SKU-aolot-2006', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3706, 494, N'M', N'Xanh Navy', N'SKU-aolot-2007', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3707, 494, N'M', N'Be', N'SKU-aolot-2008', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3708, 494, N'M', N'Xám', N'SKU-aolot-2009', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3709, 494, N'M', N'Đen', N'SKU-aolot-2010', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3710, 494, N'L', N'Trắng', N'SKU-aolot-2011', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3711, 494, N'L', N'Xanh Navy', N'SKU-aolot-2012', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3712, 494, N'L', N'Be', N'SKU-aolot-2013', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3713, 494, N'L', N'Xám', N'SKU-aolot-2014', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3714, 494, N'L', N'Đen', N'SKU-aolot-2015', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3715, 494, N'XL', N'Trắng', N'SKU-aolot-2016', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3716, 494, N'XL', N'Xanh Navy', N'SKU-aolot-2017', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3717, 494, N'XL', N'Be', N'SKU-aolot-2018', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3718, 494, N'XL', N'Xám', N'SKU-aolot-2019', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3719, 494, N'XL', N'Đen', N'SKU-aolot-2020', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3720, 495, N'S', N'Trắng', N'SKU-aolot-2021', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3721, 495, N'S', N'Be', N'SKU-aolot-2022', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3722, 495, N'S', N'Xanh Navy', N'SKU-aolot-2023', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3723, 495, N'S', N'Xám', N'SKU-aolot-2024', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3724, 495, N'S', N'Đen', N'SKU-aolot-2025', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3725, 495, N'M', N'Trắng', N'SKU-aolot-2026', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3726, 495, N'M', N'Be', N'SKU-aolot-2027', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3727, 495, N'M', N'Xanh Navy', N'SKU-aolot-2028', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3728, 495, N'M', N'Xám', N'SKU-aolot-2029', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3729, 495, N'M', N'Đen', N'SKU-aolot-2030', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3730, 495, N'L', N'Trắng', N'SKU-aolot-2031', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3731, 495, N'L', N'Be', N'SKU-aolot-2032', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3732, 495, N'L', N'Xanh Navy', N'SKU-aolot-2033', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3733, 495, N'L', N'Xám', N'SKU-aolot-2034', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3734, 495, N'L', N'Đen', N'SKU-aolot-2035', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3735, 495, N'XL', N'Trắng', N'SKU-aolot-2036', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3736, 495, N'XL', N'Be', N'SKU-aolot-2037', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3737, 495, N'XL', N'Xanh Navy', N'SKU-aolot-2038', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3738, 495, N'XL', N'Xám', N'SKU-aolot-2039', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3739, 495, N'XL', N'Đen', N'SKU-aolot-2040', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3740, 496, N'S', N'Xanh Navy', N'SKU-aolot-2041', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3741, 496, N'S', N'Đen', N'SKU-aolot-2042', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3742, 496, N'S', N'Xám', N'SKU-aolot-2043', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3743, 496, N'S', N'Trắng', N'SKU-aolot-2044', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3744, 496, N'S', N'Be', N'SKU-aolot-2045', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3745, 496, N'M', N'Xanh Navy', N'SKU-aolot-2046', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3746, 496, N'M', N'Đen', N'SKU-aolot-2047', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3747, 496, N'M', N'Xám', N'SKU-aolot-2048', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3748, 496, N'M', N'Trắng', N'SKU-aolot-2049', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3749, 496, N'M', N'Be', N'SKU-aolot-2050', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3750, 496, N'L', N'Xanh Navy', N'SKU-aolot-2051', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3751, 496, N'L', N'Đen', N'SKU-aolot-2052', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3752, 496, N'L', N'Xám', N'SKU-aolot-2053', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3753, 496, N'L', N'Trắng', N'SKU-aolot-2054', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3754, 496, N'L', N'Be', N'SKU-aolot-2055', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3755, 496, N'XL', N'Xanh Navy', N'SKU-aolot-2056', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3756, 496, N'XL', N'Đen', N'SKU-aolot-2057', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3757, 496, N'XL', N'Xám', N'SKU-aolot-2058', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3758, 496, N'XL', N'Trắng', N'SKU-aolot-2059', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3759, 496, N'XL', N'Be', N'SKU-aolot-2060', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3760, 497, N'S', N'Xanh Navy', N'SKU-aolot-2061', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3761, 497, N'S', N'Xám', N'SKU-aolot-2062', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3762, 497, N'S', N'Trắng', N'SKU-aolot-2063', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3763, 497, N'S', N'Đen', N'SKU-aolot-2064', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3764, 497, N'S', N'Be', N'SKU-aolot-2065', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3765, 497, N'M', N'Xanh Navy', N'SKU-aolot-2066', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3766, 497, N'M', N'Xám', N'SKU-aolot-2067', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3767, 497, N'M', N'Trắng', N'SKU-aolot-2068', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3768, 497, N'M', N'Đen', N'SKU-aolot-2069', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3769, 497, N'M', N'Be', N'SKU-aolot-2070', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3770, 497, N'L', N'Xanh Navy', N'SKU-aolot-2071', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3771, 497, N'L', N'Xám', N'SKU-aolot-2072', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3772, 497, N'L', N'Trắng', N'SKU-aolot-2073', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3773, 497, N'L', N'Đen', N'SKU-aolot-2074', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3774, 497, N'L', N'Be', N'SKU-aolot-2075', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3775, 497, N'XL', N'Xanh Navy', N'SKU-aolot-2076', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3776, 497, N'XL', N'Xám', N'SKU-aolot-2077', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3777, 497, N'XL', N'Trắng', N'SKU-aolot-2078', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3778, 497, N'XL', N'Đen', N'SKU-aolot-2079', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3779, 497, N'XL', N'Be', N'SKU-aolot-2080', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3780, 498, N'S', N'Be', N'SKU-aolot-2081', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3781, 498, N'S', N'Trắng', N'SKU-aolot-2082', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3782, 498, N'S', N'Đen', N'SKU-aolot-2083', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3783, 498, N'S', N'Xám', N'SKU-aolot-2084', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3784, 498, N'S', N'Xanh Navy', N'SKU-aolot-2085', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3785, 498, N'M', N'Be', N'SKU-aolot-2086', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3786, 498, N'M', N'Trắng', N'SKU-aolot-2087', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3787, 498, N'M', N'Đen', N'SKU-aolot-2088', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3788, 498, N'M', N'Xám', N'SKU-aolot-2089', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3789, 498, N'M', N'Xanh Navy', N'SKU-aolot-2090', 22)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3790, 498, N'L', N'Be', N'SKU-aolot-2091', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3791, 498, N'L', N'Trắng', N'SKU-aolot-2092', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3792, 498, N'L', N'Đen', N'SKU-aolot-2093', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3793, 498, N'L', N'Xám', N'SKU-aolot-2094', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3794, 498, N'L', N'Xanh Navy', N'SKU-aolot-2095', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3795, 498, N'XL', N'Be', N'SKU-aolot-2096', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3796, 498, N'XL', N'Trắng', N'SKU-aolot-2097', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3797, 498, N'XL', N'Đen', N'SKU-aolot-2098', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3798, 498, N'XL', N'Xám', N'SKU-aolot-2099', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3799, 498, N'XL', N'Xanh Navy', N'SKU-aolot-2100', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3800, 499, N'S', N'Xanh Navy', N'SKU-aolot-2101', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3801, 499, N'S', N'Xám', N'SKU-aolot-2102', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3802, 499, N'S', N'Be', N'SKU-aolot-2103', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3803, 499, N'S', N'Trắng', N'SKU-aolot-2104', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3804, 499, N'S', N'Đen', N'SKU-aolot-2105', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3805, 499, N'M', N'Xanh Navy', N'SKU-aolot-2106', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3806, 499, N'M', N'Xám', N'SKU-aolot-2107', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3807, 499, N'M', N'Be', N'SKU-aolot-2108', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3808, 499, N'M', N'Trắng', N'SKU-aolot-2109', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3809, 499, N'M', N'Đen', N'SKU-aolot-2110', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3810, 499, N'L', N'Xanh Navy', N'SKU-aolot-2111', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3811, 499, N'L', N'Xám', N'SKU-aolot-2112', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3812, 499, N'L', N'Be', N'SKU-aolot-2113', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3813, 499, N'L', N'Trắng', N'SKU-aolot-2114', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3814, 499, N'L', N'Đen', N'SKU-aolot-2115', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3815, 499, N'XL', N'Xanh Navy', N'SKU-aolot-2116', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3816, 499, N'XL', N'Xám', N'SKU-aolot-2117', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3817, 499, N'XL', N'Be', N'SKU-aolot-2118', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3818, 499, N'XL', N'Trắng', N'SKU-aolot-2119', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3819, 499, N'XL', N'Đen', N'SKU-aolot-2120', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3820, 500, N'S', N'Xám', N'SKU-aolot-2121', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3821, 500, N'S', N'Be', N'SKU-aolot-2122', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3822, 500, N'S', N'Trắng', N'SKU-aolot-2123', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3823, 500, N'S', N'Đen', N'SKU-aolot-2124', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3824, 500, N'S', N'Xanh Navy', N'SKU-aolot-2125', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3825, 500, N'M', N'Xám', N'SKU-aolot-2126', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3826, 500, N'M', N'Be', N'SKU-aolot-2127', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3827, 500, N'M', N'Trắng', N'SKU-aolot-2128', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3828, 500, N'M', N'Đen', N'SKU-aolot-2129', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3829, 500, N'M', N'Xanh Navy', N'SKU-aolot-2130', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3830, 500, N'L', N'Xám', N'SKU-aolot-2131', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3831, 500, N'L', N'Be', N'SKU-aolot-2132', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3832, 500, N'L', N'Trắng', N'SKU-aolot-2133', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3833, 500, N'L', N'Đen', N'SKU-aolot-2134', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3834, 500, N'L', N'Xanh Navy', N'SKU-aolot-2135', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3835, 500, N'XL', N'Xám', N'SKU-aolot-2136', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3836, 500, N'XL', N'Be', N'SKU-aolot-2137', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3837, 500, N'XL', N'Trắng', N'SKU-aolot-2138', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3838, 500, N'XL', N'Đen', N'SKU-aolot-2139', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3839, 500, N'XL', N'Xanh Navy', N'SKU-aolot-2140', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3840, 501, N'S', N'Đen', N'SKU-aolot-2141', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3841, 501, N'S', N'Be', N'SKU-aolot-2142', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3842, 501, N'S', N'Xám', N'SKU-aolot-2143', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3843, 501, N'S', N'Trắng', N'SKU-aolot-2144', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3844, 501, N'S', N'Xanh Navy', N'SKU-aolot-2145', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3845, 501, N'M', N'Đen', N'SKU-aolot-2146', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3846, 501, N'M', N'Be', N'SKU-aolot-2147', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3847, 501, N'M', N'Xám', N'SKU-aolot-2148', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3848, 501, N'M', N'Trắng', N'SKU-aolot-2149', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3849, 501, N'M', N'Xanh Navy', N'SKU-aolot-2150', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3850, 501, N'L', N'Đen', N'SKU-aolot-2151', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3851, 501, N'L', N'Be', N'SKU-aolot-2152', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3852, 501, N'L', N'Xám', N'SKU-aolot-2153', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3853, 501, N'L', N'Trắng', N'SKU-aolot-2154', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3854, 501, N'L', N'Xanh Navy', N'SKU-aolot-2155', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3855, 501, N'XL', N'Đen', N'SKU-aolot-2156', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3856, 501, N'XL', N'Be', N'SKU-aolot-2157', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3857, 501, N'XL', N'Xám', N'SKU-aolot-2158', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3858, 501, N'XL', N'Trắng', N'SKU-aolot-2159', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3859, 501, N'XL', N'Xanh Navy', N'SKU-aolot-2160', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3860, 502, N'S', N'Đen', N'SKU-aolot-2161', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3861, 502, N'S', N'Xanh Navy', N'SKU-aolot-2162', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3862, 502, N'S', N'Trắng', N'SKU-aolot-2163', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3863, 502, N'S', N'Be', N'SKU-aolot-2164', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3864, 502, N'S', N'Xám', N'SKU-aolot-2165', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3865, 502, N'M', N'Đen', N'SKU-aolot-2166', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3866, 502, N'M', N'Xanh Navy', N'SKU-aolot-2167', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3867, 502, N'M', N'Trắng', N'SKU-aolot-2168', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3868, 502, N'M', N'Be', N'SKU-aolot-2169', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3869, 502, N'M', N'Xám', N'SKU-aolot-2170', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3870, 502, N'L', N'Đen', N'SKU-aolot-2171', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3871, 502, N'L', N'Xanh Navy', N'SKU-aolot-2172', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3872, 502, N'L', N'Trắng', N'SKU-aolot-2173', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3873, 502, N'L', N'Be', N'SKU-aolot-2174', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3874, 502, N'L', N'Xám', N'SKU-aolot-2175', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3875, 502, N'XL', N'Đen', N'SKU-aolot-2176', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3876, 502, N'XL', N'Xanh Navy', N'SKU-aolot-2177', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3877, 502, N'XL', N'Trắng', N'SKU-aolot-2178', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3878, 502, N'XL', N'Be', N'SKU-aolot-2179', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3879, 502, N'XL', N'Xám', N'SKU-aolot-2180', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3880, 503, N'S', N'Trắng', N'SKU-aolot-2181', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3881, 503, N'S', N'Xanh Navy', N'SKU-aolot-2182', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3882, 503, N'S', N'Xám', N'SKU-aolot-2183', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3883, 503, N'S', N'Be', N'SKU-aolot-2184', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3884, 503, N'S', N'Đen', N'SKU-aolot-2185', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3885, 503, N'M', N'Trắng', N'SKU-aolot-2186', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3886, 503, N'M', N'Xanh Navy', N'SKU-aolot-2187', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3887, 503, N'M', N'Xám', N'SKU-aolot-2188', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3888, 503, N'M', N'Be', N'SKU-aolot-2189', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3889, 503, N'M', N'Đen', N'SKU-aolot-2190', 12)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3890, 503, N'L', N'Trắng', N'SKU-aolot-2191', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3891, 503, N'L', N'Xanh Navy', N'SKU-aolot-2192', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3892, 503, N'L', N'Xám', N'SKU-aolot-2193', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3893, 503, N'L', N'Be', N'SKU-aolot-2194', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3894, 503, N'L', N'Đen', N'SKU-aolot-2195', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3895, 503, N'XL', N'Trắng', N'SKU-aolot-2196', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3896, 503, N'XL', N'Xanh Navy', N'SKU-aolot-2197', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3897, 503, N'XL', N'Xám', N'SKU-aolot-2198', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3898, 503, N'XL', N'Be', N'SKU-aolot-2199', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3899, 503, N'XL', N'Đen', N'SKU-aolot-2200', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3900, 504, N'S', N'Nâu', N'SKU-bosuit-2201', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3901, 504, N'S', N'Xanh Navy', N'SKU-bosuit-2202', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3902, 504, N'S', N'Xám', N'SKU-bosuit-2203', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3903, 504, N'S', N'Đen', N'SKU-bosuit-2204', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3904, 504, N'M', N'Nâu', N'SKU-bosuit-2205', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3905, 504, N'M', N'Xanh Navy', N'SKU-bosuit-2206', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3906, 504, N'M', N'Xám', N'SKU-bosuit-2207', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3907, 504, N'M', N'Đen', N'SKU-bosuit-2208', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3908, 504, N'L', N'Nâu', N'SKU-bosuit-2209', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3909, 504, N'L', N'Xanh Navy', N'SKU-bosuit-2210', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3910, 504, N'L', N'Xám', N'SKU-bosuit-2211', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3911, 504, N'L', N'Đen', N'SKU-bosuit-2212', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3912, 504, N'XL', N'Nâu', N'SKU-bosuit-2213', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3913, 504, N'XL', N'Xanh Navy', N'SKU-bosuit-2214', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3914, 504, N'XL', N'Xám', N'SKU-bosuit-2215', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3915, 504, N'XL', N'Đen', N'SKU-bosuit-2216', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3916, 505, N'S', N'Xanh Navy', N'SKU-bosuit-2217', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3917, 505, N'S', N'Xám', N'SKU-bosuit-2218', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3918, 505, N'S', N'Nâu', N'SKU-bosuit-2219', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3919, 505, N'S', N'Đen', N'SKU-bosuit-2220', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3920, 505, N'M', N'Xanh Navy', N'SKU-bosuit-2221', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3921, 505, N'M', N'Xám', N'SKU-bosuit-2222', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3922, 505, N'M', N'Nâu', N'SKU-bosuit-2223', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3923, 505, N'M', N'Đen', N'SKU-bosuit-2224', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3924, 505, N'L', N'Xanh Navy', N'SKU-bosuit-2225', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3925, 505, N'L', N'Xám', N'SKU-bosuit-2226', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3926, 505, N'L', N'Nâu', N'SKU-bosuit-2227', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3927, 505, N'L', N'Đen', N'SKU-bosuit-2228', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3928, 505, N'XL', N'Xanh Navy', N'SKU-bosuit-2229', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3929, 505, N'XL', N'Xám', N'SKU-bosuit-2230', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3930, 505, N'XL', N'Nâu', N'SKU-bosuit-2231', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3931, 505, N'XL', N'Đen', N'SKU-bosuit-2232', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3932, 506, N'S', N'Xám', N'SKU-bosuit-2233', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3933, 506, N'S', N'Nâu', N'SKU-bosuit-2234', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3934, 506, N'S', N'Đen', N'SKU-bosuit-2235', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3935, 506, N'S', N'Xanh Navy', N'SKU-bosuit-2236', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3936, 506, N'M', N'Xám', N'SKU-bosuit-2237', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3937, 506, N'M', N'Nâu', N'SKU-bosuit-2238', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3938, 506, N'M', N'Đen', N'SKU-bosuit-2239', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3939, 506, N'M', N'Xanh Navy', N'SKU-bosuit-2240', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3940, 506, N'L', N'Xám', N'SKU-bosuit-2241', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3941, 506, N'L', N'Nâu', N'SKU-bosuit-2242', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3942, 506, N'L', N'Đen', N'SKU-bosuit-2243', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3943, 506, N'L', N'Xanh Navy', N'SKU-bosuit-2244', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3944, 506, N'XL', N'Xám', N'SKU-bosuit-2245', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3945, 506, N'XL', N'Nâu', N'SKU-bosuit-2246', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3946, 506, N'XL', N'Đen', N'SKU-bosuit-2247', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3947, 506, N'XL', N'Xanh Navy', N'SKU-bosuit-2248', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3948, 507, N'S', N'Nâu', N'SKU-bosuit-2249', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3949, 507, N'S', N'Xanh Navy', N'SKU-bosuit-2250', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3950, 507, N'S', N'Đen', N'SKU-bosuit-2251', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3951, 507, N'S', N'Xám', N'SKU-bosuit-2252', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3952, 507, N'M', N'Nâu', N'SKU-bosuit-2253', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3953, 507, N'M', N'Xanh Navy', N'SKU-bosuit-2254', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3954, 507, N'M', N'Đen', N'SKU-bosuit-2255', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3955, 507, N'M', N'Xám', N'SKU-bosuit-2256', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3956, 507, N'L', N'Nâu', N'SKU-bosuit-2257', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3957, 507, N'L', N'Xanh Navy', N'SKU-bosuit-2258', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3958, 507, N'L', N'Đen', N'SKU-bosuit-2259', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3959, 507, N'L', N'Xám', N'SKU-bosuit-2260', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3960, 507, N'XL', N'Nâu', N'SKU-bosuit-2261', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3961, 507, N'XL', N'Xanh Navy', N'SKU-bosuit-2262', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3962, 507, N'XL', N'Đen', N'SKU-bosuit-2263', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3963, 507, N'XL', N'Xám', N'SKU-bosuit-2264', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3964, 508, N'S', N'Xanh Navy', N'SKU-bosuit-2265', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3965, 508, N'S', N'Xám', N'SKU-bosuit-2266', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3966, 508, N'S', N'Nâu', N'SKU-bosuit-2267', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3967, 508, N'S', N'Đen', N'SKU-bosuit-2268', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3968, 508, N'M', N'Xanh Navy', N'SKU-bosuit-2269', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3969, 508, N'M', N'Xám', N'SKU-bosuit-2270', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3970, 508, N'M', N'Nâu', N'SKU-bosuit-2271', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3971, 508, N'M', N'Đen', N'SKU-bosuit-2272', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3972, 508, N'L', N'Xanh Navy', N'SKU-bosuit-2273', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3973, 508, N'L', N'Xám', N'SKU-bosuit-2274', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3974, 508, N'L', N'Nâu', N'SKU-bosuit-2275', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3975, 508, N'L', N'Đen', N'SKU-bosuit-2276', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3976, 508, N'XL', N'Xanh Navy', N'SKU-bosuit-2277', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3977, 508, N'XL', N'Xám', N'SKU-bosuit-2278', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3978, 508, N'XL', N'Nâu', N'SKU-bosuit-2279', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3979, 508, N'XL', N'Đen', N'SKU-bosuit-2280', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3980, 509, N'S', N'Đen', N'SKU-bosuit-2281', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3981, 509, N'S', N'Xám', N'SKU-bosuit-2282', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3982, 509, N'S', N'Nâu', N'SKU-bosuit-2283', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3983, 509, N'S', N'Xanh Navy', N'SKU-bosuit-2284', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3984, 509, N'M', N'Đen', N'SKU-bosuit-2285', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3985, 509, N'M', N'Xám', N'SKU-bosuit-2286', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3986, 509, N'M', N'Nâu', N'SKU-bosuit-2287', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3987, 509, N'M', N'Xanh Navy', N'SKU-bosuit-2288', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3988, 509, N'L', N'Đen', N'SKU-bosuit-2289', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3989, 509, N'L', N'Xám', N'SKU-bosuit-2290', 57)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3990, 509, N'L', N'Nâu', N'SKU-bosuit-2291', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3991, 509, N'L', N'Xanh Navy', N'SKU-bosuit-2292', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3992, 509, N'XL', N'Đen', N'SKU-bosuit-2293', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3993, 509, N'XL', N'Xám', N'SKU-bosuit-2294', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3994, 509, N'XL', N'Nâu', N'SKU-bosuit-2295', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3995, 509, N'XL', N'Xanh Navy', N'SKU-bosuit-2296', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3996, 510, N'S', N'Nâu', N'SKU-bosuit-2297', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3997, 510, N'S', N'Xám', N'SKU-bosuit-2298', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3998, 510, N'S', N'Xanh Navy', N'SKU-bosuit-2299', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (3999, 510, N'S', N'Đen', N'SKU-bosuit-2300', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4000, 510, N'M', N'Nâu', N'SKU-bosuit-2301', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4001, 510, N'M', N'Xám', N'SKU-bosuit-2302', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4002, 510, N'M', N'Xanh Navy', N'SKU-bosuit-2303', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4003, 510, N'M', N'Đen', N'SKU-bosuit-2304', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4004, 510, N'L', N'Nâu', N'SKU-bosuit-2305', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4005, 510, N'L', N'Xám', N'SKU-bosuit-2306', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4006, 510, N'L', N'Xanh Navy', N'SKU-bosuit-2307', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4007, 510, N'L', N'Đen', N'SKU-bosuit-2308', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4008, 510, N'XL', N'Nâu', N'SKU-bosuit-2309', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4009, 510, N'XL', N'Xám', N'SKU-bosuit-2310', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4010, 510, N'XL', N'Xanh Navy', N'SKU-bosuit-2311', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4011, 510, N'XL', N'Đen', N'SKU-bosuit-2312', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4012, 511, N'S', N'Đen', N'SKU-bosuit-2313', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4013, 511, N'S', N'Nâu', N'SKU-bosuit-2314', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4014, 511, N'S', N'Xanh Navy', N'SKU-bosuit-2315', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4015, 511, N'S', N'Xám', N'SKU-bosuit-2316', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4016, 511, N'M', N'Đen', N'SKU-bosuit-2317', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4017, 511, N'M', N'Nâu', N'SKU-bosuit-2318', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4018, 511, N'M', N'Xanh Navy', N'SKU-bosuit-2319', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4019, 511, N'M', N'Xám', N'SKU-bosuit-2320', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4020, 511, N'L', N'Đen', N'SKU-bosuit-2321', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4021, 511, N'L', N'Nâu', N'SKU-bosuit-2322', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4022, 511, N'L', N'Xanh Navy', N'SKU-bosuit-2323', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4023, 511, N'L', N'Xám', N'SKU-bosuit-2324', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4024, 511, N'XL', N'Đen', N'SKU-bosuit-2325', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4025, 511, N'XL', N'Nâu', N'SKU-bosuit-2326', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4026, 511, N'XL', N'Xanh Navy', N'SKU-bosuit-2327', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4027, 511, N'XL', N'Xám', N'SKU-bosuit-2328', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4028, 512, N'S', N'Nâu', N'SKU-bosuit-2329', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4029, 512, N'S', N'Xanh Navy', N'SKU-bosuit-2330', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4030, 512, N'S', N'Đen', N'SKU-bosuit-2331', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4031, 512, N'S', N'Xám', N'SKU-bosuit-2332', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4032, 512, N'M', N'Nâu', N'SKU-bosuit-2333', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4033, 512, N'M', N'Xanh Navy', N'SKU-bosuit-2334', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4034, 512, N'M', N'Đen', N'SKU-bosuit-2335', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4035, 512, N'M', N'Xám', N'SKU-bosuit-2336', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4036, 512, N'L', N'Nâu', N'SKU-bosuit-2337', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4037, 512, N'L', N'Xanh Navy', N'SKU-bosuit-2338', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4038, 512, N'L', N'Đen', N'SKU-bosuit-2339', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4039, 512, N'L', N'Xám', N'SKU-bosuit-2340', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4040, 512, N'XL', N'Nâu', N'SKU-bosuit-2341', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4041, 512, N'XL', N'Xanh Navy', N'SKU-bosuit-2342', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4042, 512, N'XL', N'Đen', N'SKU-bosuit-2343', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4043, 512, N'XL', N'Xám', N'SKU-bosuit-2344', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4044, 513, N'S', N'Nâu', N'SKU-bosuit-2345', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4045, 513, N'S', N'Xanh Navy', N'SKU-bosuit-2346', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4046, 513, N'S', N'Xám', N'SKU-bosuit-2347', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4047, 513, N'S', N'Đen', N'SKU-bosuit-2348', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4048, 513, N'M', N'Nâu', N'SKU-bosuit-2349', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4049, 513, N'M', N'Xanh Navy', N'SKU-bosuit-2350', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4050, 513, N'M', N'Xám', N'SKU-bosuit-2351', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4051, 513, N'M', N'Đen', N'SKU-bosuit-2352', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4052, 513, N'L', N'Nâu', N'SKU-bosuit-2353', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4053, 513, N'L', N'Xanh Navy', N'SKU-bosuit-2354', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4054, 513, N'L', N'Xám', N'SKU-bosuit-2355', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4055, 513, N'L', N'Đen', N'SKU-bosuit-2356', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4056, 513, N'XL', N'Nâu', N'SKU-bosuit-2357', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4057, 513, N'XL', N'Xanh Navy', N'SKU-bosuit-2358', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4058, 513, N'XL', N'Xám', N'SKU-bosuit-2359', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4059, 513, N'XL', N'Đen', N'SKU-bosuit-2360', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4060, 514, N'S', N'Nâu', N'SKU-blazer-2361', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4061, 514, N'S', N'Xám', N'SKU-blazer-2362', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4062, 514, N'S', N'Đen', N'SKU-blazer-2363', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4063, 514, N'S', N'Be', N'SKU-blazer-2364', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4064, 514, N'S', N'Xanh Navy', N'SKU-blazer-2365', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4065, 514, N'M', N'Nâu', N'SKU-blazer-2366', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4066, 514, N'M', N'Xám', N'SKU-blazer-2367', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4067, 514, N'M', N'Đen', N'SKU-blazer-2368', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4068, 514, N'M', N'Be', N'SKU-blazer-2369', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4069, 514, N'M', N'Xanh Navy', N'SKU-blazer-2370', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4070, 514, N'L', N'Nâu', N'SKU-blazer-2371', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4071, 514, N'L', N'Xám', N'SKU-blazer-2372', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4072, 514, N'L', N'Đen', N'SKU-blazer-2373', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4073, 514, N'L', N'Be', N'SKU-blazer-2374', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4074, 514, N'L', N'Xanh Navy', N'SKU-blazer-2375', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4075, 514, N'XL', N'Nâu', N'SKU-blazer-2376', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4076, 514, N'XL', N'Xám', N'SKU-blazer-2377', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4077, 514, N'XL', N'Đen', N'SKU-blazer-2378', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4078, 514, N'XL', N'Be', N'SKU-blazer-2379', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4079, 514, N'XL', N'Xanh Navy', N'SKU-blazer-2380', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4080, 515, N'S', N'Đen', N'SKU-blazer-2381', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4081, 515, N'S', N'Be', N'SKU-blazer-2382', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4082, 515, N'S', N'Nâu', N'SKU-blazer-2383', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4083, 515, N'S', N'Xanh Navy', N'SKU-blazer-2384', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4084, 515, N'S', N'Xám', N'SKU-blazer-2385', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4085, 515, N'M', N'Đen', N'SKU-blazer-2386', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4086, 515, N'M', N'Be', N'SKU-blazer-2387', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4087, 515, N'M', N'Nâu', N'SKU-blazer-2388', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4088, 515, N'M', N'Xanh Navy', N'SKU-blazer-2389', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4089, 515, N'M', N'Xám', N'SKU-blazer-2390', 43)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4090, 515, N'L', N'Đen', N'SKU-blazer-2391', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4091, 515, N'L', N'Be', N'SKU-blazer-2392', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4092, 515, N'L', N'Nâu', N'SKU-blazer-2393', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4093, 515, N'L', N'Xanh Navy', N'SKU-blazer-2394', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4094, 515, N'L', N'Xám', N'SKU-blazer-2395', 34)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4095, 515, N'XL', N'Đen', N'SKU-blazer-2396', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4096, 515, N'XL', N'Be', N'SKU-blazer-2397', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4097, 515, N'XL', N'Nâu', N'SKU-blazer-2398', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4098, 515, N'XL', N'Xanh Navy', N'SKU-blazer-2399', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4099, 515, N'XL', N'Xám', N'SKU-blazer-2400', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4100, 516, N'S', N'Đen', N'SKU-blazer-2401', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4101, 516, N'S', N'Nâu', N'SKU-blazer-2402', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4102, 516, N'S', N'Xanh Navy', N'SKU-blazer-2403', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4103, 516, N'S', N'Xám', N'SKU-blazer-2404', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4104, 516, N'S', N'Be', N'SKU-blazer-2405', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4105, 516, N'M', N'Đen', N'SKU-blazer-2406', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4106, 516, N'M', N'Nâu', N'SKU-blazer-2407', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4107, 516, N'M', N'Xanh Navy', N'SKU-blazer-2408', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4108, 516, N'M', N'Xám', N'SKU-blazer-2409', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4109, 516, N'M', N'Be', N'SKU-blazer-2410', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4110, 516, N'L', N'Đen', N'SKU-blazer-2411', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4111, 516, N'L', N'Nâu', N'SKU-blazer-2412', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4112, 516, N'L', N'Xanh Navy', N'SKU-blazer-2413', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4113, 516, N'L', N'Xám', N'SKU-blazer-2414', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4114, 516, N'L', N'Be', N'SKU-blazer-2415', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4115, 516, N'XL', N'Đen', N'SKU-blazer-2416', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4116, 516, N'XL', N'Nâu', N'SKU-blazer-2417', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4117, 516, N'XL', N'Xanh Navy', N'SKU-blazer-2418', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4118, 516, N'XL', N'Xám', N'SKU-blazer-2419', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4119, 516, N'XL', N'Be', N'SKU-blazer-2420', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4120, 517, N'S', N'Nâu', N'SKU-blazer-2421', 46)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4121, 517, N'S', N'Đen', N'SKU-blazer-2422', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4122, 517, N'S', N'Be', N'SKU-blazer-2423', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4123, 517, N'S', N'Xám', N'SKU-blazer-2424', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4124, 517, N'S', N'Xanh Navy', N'SKU-blazer-2425', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4125, 517, N'M', N'Nâu', N'SKU-blazer-2426', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4126, 517, N'M', N'Đen', N'SKU-blazer-2427', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4127, 517, N'M', N'Be', N'SKU-blazer-2428', 38)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4128, 517, N'M', N'Xám', N'SKU-blazer-2429', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4129, 517, N'M', N'Xanh Navy', N'SKU-blazer-2430', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4130, 517, N'L', N'Nâu', N'SKU-blazer-2431', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4131, 517, N'L', N'Đen', N'SKU-blazer-2432', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4132, 517, N'L', N'Be', N'SKU-blazer-2433', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4133, 517, N'L', N'Xám', N'SKU-blazer-2434', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4134, 517, N'L', N'Xanh Navy', N'SKU-blazer-2435', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4135, 517, N'XL', N'Nâu', N'SKU-blazer-2436', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4136, 517, N'XL', N'Đen', N'SKU-blazer-2437', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4137, 517, N'XL', N'Be', N'SKU-blazer-2438', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4138, 517, N'XL', N'Xám', N'SKU-blazer-2439', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4139, 517, N'XL', N'Xanh Navy', N'SKU-blazer-2440', 16)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4140, 518, N'S', N'Nâu', N'SKU-blazer-2441', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4141, 518, N'S', N'Xám', N'SKU-blazer-2442', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4142, 518, N'S', N'Be', N'SKU-blazer-2443', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4143, 518, N'S', N'Đen', N'SKU-blazer-2444', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4144, 518, N'S', N'Xanh Navy', N'SKU-blazer-2445', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4145, 518, N'M', N'Nâu', N'SKU-blazer-2446', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4146, 518, N'M', N'Xám', N'SKU-blazer-2447', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4147, 518, N'M', N'Be', N'SKU-blazer-2448', 41)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4148, 518, N'M', N'Đen', N'SKU-blazer-2449', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4149, 518, N'M', N'Xanh Navy', N'SKU-blazer-2450', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4150, 518, N'L', N'Nâu', N'SKU-blazer-2451', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4151, 518, N'L', N'Xám', N'SKU-blazer-2452', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4152, 518, N'L', N'Be', N'SKU-blazer-2453', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4153, 518, N'L', N'Đen', N'SKU-blazer-2454', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4154, 518, N'L', N'Xanh Navy', N'SKU-blazer-2455', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4155, 518, N'XL', N'Nâu', N'SKU-blazer-2456', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4156, 518, N'XL', N'Xám', N'SKU-blazer-2457', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4157, 518, N'XL', N'Be', N'SKU-blazer-2458', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4158, 518, N'XL', N'Đen', N'SKU-blazer-2459', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4159, 518, N'XL', N'Xanh Navy', N'SKU-blazer-2460', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4160, 519, N'S', N'Đen', N'SKU-blazer-2461', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4161, 519, N'S', N'Be', N'SKU-blazer-2462', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4162, 519, N'S', N'Xanh Navy', N'SKU-blazer-2463', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4163, 519, N'S', N'Nâu', N'SKU-blazer-2464', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4164, 519, N'S', N'Xám', N'SKU-blazer-2465', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4165, 519, N'M', N'Đen', N'SKU-blazer-2466', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4166, 519, N'M', N'Be', N'SKU-blazer-2467', 22)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4167, 519, N'M', N'Xanh Navy', N'SKU-blazer-2468', 60)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4168, 519, N'M', N'Nâu', N'SKU-blazer-2469', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4169, 519, N'M', N'Xám', N'SKU-blazer-2470', 35)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4170, 519, N'L', N'Đen', N'SKU-blazer-2471', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4171, 519, N'L', N'Be', N'SKU-blazer-2472', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4172, 519, N'L', N'Xanh Navy', N'SKU-blazer-2473', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4173, 519, N'L', N'Nâu', N'SKU-blazer-2474', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4174, 519, N'L', N'Xám', N'SKU-blazer-2475', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4175, 519, N'XL', N'Đen', N'SKU-blazer-2476', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4176, 519, N'XL', N'Be', N'SKU-blazer-2477', 54)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4177, 519, N'XL', N'Xanh Navy', N'SKU-blazer-2478', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4178, 519, N'XL', N'Nâu', N'SKU-blazer-2479', 11)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4179, 519, N'XL', N'Xám', N'SKU-blazer-2480', 57)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4180, 520, N'S', N'Đen', N'SKU-blazer-2481', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4181, 520, N'S', N'Be', N'SKU-blazer-2482', 49)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4182, 520, N'S', N'Xám', N'SKU-blazer-2483', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4183, 520, N'S', N'Xanh Navy', N'SKU-blazer-2484', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4184, 520, N'S', N'Nâu', N'SKU-blazer-2485', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4185, 520, N'M', N'Đen', N'SKU-blazer-2486', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4186, 520, N'M', N'Be', N'SKU-blazer-2487', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4187, 520, N'M', N'Xám', N'SKU-blazer-2488', 39)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4188, 520, N'M', N'Xanh Navy', N'SKU-blazer-2489', 17)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4189, 520, N'M', N'Nâu', N'SKU-blazer-2490', 31)
+GO
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4190, 520, N'L', N'Đen', N'SKU-blazer-2491', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4191, 520, N'L', N'Be', N'SKU-blazer-2492', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4192, 520, N'L', N'Xám', N'SKU-blazer-2493', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4193, 520, N'L', N'Xanh Navy', N'SKU-blazer-2494', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4194, 520, N'L', N'Nâu', N'SKU-blazer-2495', 19)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4195, 520, N'XL', N'Đen', N'SKU-blazer-2496', 23)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4196, 520, N'XL', N'Be', N'SKU-blazer-2497', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4197, 520, N'XL', N'Xám', N'SKU-blazer-2498', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4198, 520, N'XL', N'Xanh Navy', N'SKU-blazer-2499', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4199, 520, N'XL', N'Nâu', N'SKU-blazer-2500', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4200, 521, N'S', N'Xanh Navy', N'SKU-blazer-2501', 37)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4201, 521, N'S', N'Xám', N'SKU-blazer-2502', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4202, 521, N'S', N'Đen', N'SKU-blazer-2503', 56)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4203, 521, N'S', N'Be', N'SKU-blazer-2504', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4204, 521, N'S', N'Nâu', N'SKU-blazer-2505', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4205, 521, N'M', N'Xanh Navy', N'SKU-blazer-2506', 25)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4206, 521, N'M', N'Xám', N'SKU-blazer-2507', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4207, 521, N'M', N'Đen', N'SKU-blazer-2508', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4208, 521, N'M', N'Be', N'SKU-blazer-2509', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4209, 521, N'M', N'Nâu', N'SKU-blazer-2510', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4210, 521, N'L', N'Xanh Navy', N'SKU-blazer-2511', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4211, 521, N'L', N'Xám', N'SKU-blazer-2512', 52)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4212, 521, N'L', N'Đen', N'SKU-blazer-2513', 32)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4213, 521, N'L', N'Be', N'SKU-blazer-2514', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4214, 521, N'L', N'Nâu', N'SKU-blazer-2515', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4215, 521, N'XL', N'Xanh Navy', N'SKU-blazer-2516', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4216, 521, N'XL', N'Xám', N'SKU-blazer-2517', 14)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4217, 521, N'XL', N'Đen', N'SKU-blazer-2518', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4218, 521, N'XL', N'Be', N'SKU-blazer-2519', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4219, 521, N'XL', N'Nâu', N'SKU-blazer-2520', 50)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4220, 522, N'S', N'Xanh Navy', N'SKU-blazer-2521', 47)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4221, 522, N'S', N'Nâu', N'SKU-blazer-2522', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4222, 522, N'S', N'Xám', N'SKU-blazer-2523', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4223, 522, N'S', N'Be', N'SKU-blazer-2524', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4224, 522, N'S', N'Đen', N'SKU-blazer-2525', 31)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4225, 522, N'M', N'Xanh Navy', N'SKU-blazer-2526', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4226, 522, N'M', N'Nâu', N'SKU-blazer-2527', 42)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4227, 522, N'M', N'Xám', N'SKU-blazer-2528', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4228, 522, N'M', N'Be', N'SKU-blazer-2529', 18)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4229, 522, N'M', N'Đen', N'SKU-blazer-2530', 28)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4230, 522, N'L', N'Xanh Navy', N'SKU-blazer-2531', 58)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4231, 522, N'L', N'Nâu', N'SKU-blazer-2532', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4232, 522, N'L', N'Xám', N'SKU-blazer-2533', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4233, 522, N'L', N'Be', N'SKU-blazer-2534', 53)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4234, 522, N'L', N'Đen', N'SKU-blazer-2535', 40)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4235, 522, N'XL', N'Xanh Navy', N'SKU-blazer-2536', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4236, 522, N'XL', N'Nâu', N'SKU-blazer-2537', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4237, 522, N'XL', N'Xám', N'SKU-blazer-2538', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4238, 522, N'XL', N'Be', N'SKU-blazer-2539', 36)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4239, 522, N'XL', N'Đen', N'SKU-blazer-2540', 33)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4240, 523, N'S', N'Đen', N'SKU-blazer-2541', 15)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4241, 523, N'S', N'Be', N'SKU-blazer-2542', 27)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4242, 523, N'S', N'Xanh Navy', N'SKU-blazer-2543', 12)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4243, 523, N'S', N'Xám', N'SKU-blazer-2544', 51)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4244, 523, N'S', N'Nâu', N'SKU-blazer-2545', 55)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4245, 523, N'M', N'Đen', N'SKU-blazer-2546', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4246, 523, N'M', N'Be', N'SKU-blazer-2547', 20)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4247, 523, N'M', N'Xanh Navy', N'SKU-blazer-2548', 26)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4248, 523, N'M', N'Xám', N'SKU-blazer-2549', 29)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4249, 523, N'M', N'Nâu', N'SKU-blazer-2550', 44)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4250, 523, N'L', N'Đen', N'SKU-blazer-2551', 59)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4251, 523, N'L', N'Be', N'SKU-blazer-2552', 48)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4252, 523, N'L', N'Xanh Navy', N'SKU-blazer-2553', 21)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4253, 523, N'L', N'Xám', N'SKU-blazer-2554', 24)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4254, 523, N'L', N'Nâu', N'SKU-blazer-2555', 13)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4255, 523, N'XL', N'Đen', N'SKU-blazer-2556', 43)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4256, 523, N'XL', N'Be', N'SKU-blazer-2557', 10)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4257, 523, N'XL', N'Xanh Navy', N'SKU-blazer-2558', 30)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4258, 523, N'XL', N'Xám', N'SKU-blazer-2559', 45)
+INSERT [dbo].[product_variants] ([variant_id], [product_id], [size], [color], [sku], [stock_quantity]) VALUES (4259, 523, N'XL', N'Nâu', N'SKU-blazer-2560', 55)
+SET IDENTITY_INSERT [dbo].[product_variants] OFF
+SET IDENTITY_INSERT [dbo].[products] ON 
 
-IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.orders') AND name = 'shipping_address')
-    ALTER TABLE dbo.orders ALTER COLUMN shipping_address NVARCHAR(500) NULL;
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (1, N'Áo thun basic cotton', N'ao-thun-basic-cotton-001', N'Áo thun cotton 100%, form regular fit, thoáng mát.', 1, 1, CAST(199000.00 AS Decimal(12, 2)), CAST(149000.00 AS Decimal(12, 2)), N'Cotton 100%', N'ACTIVE', CAST(N'2026-08-02T20:35:57.8485914' AS DateTime2), CAST(N'2026-08-02T20:35:57.8485914' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (2, N'Áo sơ mi trắng công sở', N'ao-so-mi-trang-cong-so-002', N'Sơ mi trắng vải Oxford, phù hợp đi làm/đi học.', 2, 1, CAST(350000.00 AS Decimal(12, 2)), NULL, N'Oxford', N'ACTIVE', CAST(N'2026-08-02T20:35:57.8485914' AS DateTime2), CAST(N'2026-08-02T20:35:57.8485914' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (3, N'Quần jean slim fit', N'quan-jean-slim-fit-003', N'Quần jean xanh đậm, form slim fit trẻ trung.', 3, 1, CAST(450000.00 AS Decimal(12, 2)), CAST(399000.00 AS Decimal(12, 2)), N'Denim', N'ACTIVE', CAST(N'2026-08-02T20:35:57.8485914' AS DateTime2), CAST(N'2026-08-02T20:35:57.8485914' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (394, N'Áo thun basic cotton', N'ao-thun-basic-cotton-aothun1', N'Áo thun basic cotton. Chất liệu cotton 100%, thiết kế tối giản, dễ mặc, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 1, 2, CAST(307000.00 AS Decimal(12, 2)), NULL, N'Cotton 100%', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2266667' AS DateTime2), CAST(N'2026-08-04T00:01:12.2266667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (395, N'Áo thun cổ tròn trơn', N'ao-thun-co-tron-tron-aothun2', N'Áo thun cổ tròn trơn. Chất liệu cotton lạnh, form slim fit hiện đại, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 1, 1, CAST(184000.00 AS Decimal(12, 2)), CAST(148000.00 AS Decimal(12, 2)), N'Cotton lạnh', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2400000' AS DateTime2), CAST(N'2026-08-04T00:01:12.2400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (396, N'Áo thun in họa tiết', N'ao-thun-in-hoa-tiet-aothun3', N'Áo thun in họa tiết. Chất liệu cá sấu pique, thiết kế tối giản, dễ mặc, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 1, 1, CAST(280000.00 AS Decimal(12, 2)), CAST(230000.00 AS Decimal(12, 2)), N'Cá sấu Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2466667' AS DateTime2), CAST(N'2026-08-04T00:01:12.2466667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (397, N'Áo thun phối màu', N'ao-thun-phoi-mau-aothun4', N'Áo thun phối màu. Chất liệu cotton 100%, form slim fit hiện đại, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 1, 2, CAST(281000.00 AS Decimal(12, 2)), CAST(237000.00 AS Decimal(12, 2)), N'Cotton 100%', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2533333' AS DateTime2), CAST(N'2026-08-04T00:01:12.2533333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (398, N'Áo thun tay lỡ', N'ao-thun-tay-lo-aothun5', N'Áo thun tay lỡ. Chất liệu cotton lạnh, form regular fit dễ phối đồ, phù hợp đi làm, đi học hằng ngày. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 1, 1, CAST(267000.00 AS Decimal(12, 2)), NULL, N'Cotton lạnh', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2566667' AS DateTime2), CAST(N'2026-08-04T00:01:12.2566667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (399, N'Áo thun form rộng oversize', N'ao-thun-form-rong-oversize-aothun6', N'Áo thun form rộng oversize. Chất liệu cá sấu pique, form regular fit dễ phối đồ, phù hợp phối đồ đi chơi cuối tuần. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 1, 1, CAST(211000.00 AS Decimal(12, 2)), NULL, N'Cá sấu Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2666667' AS DateTime2), CAST(N'2026-08-04T00:01:12.2666667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (400, N'Áo thun cotton lạnh thể thao', N'ao-thun-cotton-lanh-the-thao-aothun7', N'Áo thun cotton lạnh thể thao. Chất liệu cotton 100%, form regular fit dễ phối đồ, phù hợp mặc thể thao, vận động nhẹ. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 1, 2, CAST(286000.00 AS Decimal(12, 2)), NULL, N'Cotton 100%', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2733333' AS DateTime2), CAST(N'2026-08-04T00:01:12.2733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (401, N'Áo thun cổ tim', N'ao-thun-co-tim-aothun8', N'Áo thun cổ tim. Chất liệu cotton lạnh, thiết kế tối giản, dễ mặc, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 1, 1, CAST(298000.00 AS Decimal(12, 2)), NULL, N'Cotton lạnh', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2800000' AS DateTime2), CAST(N'2026-08-04T00:01:12.2800000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (402, N'Áo thun in chữ graphic', N'ao-thun-in-chu-graphic-aothun9', N'Áo thun in chữ graphic. Chất liệu cá sấu pique, dáng chuẩn Á Đông, phù hợp phối đồ đi chơi cuối tuần. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 1, 1, CAST(313000.00 AS Decimal(12, 2)), CAST(269000.00 AS Decimal(12, 2)), N'Cá sấu Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2866667' AS DateTime2), CAST(N'2026-08-04T00:01:12.2866667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (403, N'Áo thun basic form ôm', N'ao-thun-basic-form-om-aothun10', N'Áo thun basic form ôm. Chất liệu cotton 100%, form ôm vừa vặn tôn dáng, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 1, 2, CAST(193000.00 AS Decimal(12, 2)), NULL, N'Cotton 100%', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2933333' AS DateTime2), CAST(N'2026-08-04T00:01:12.2933333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (404, N'Áo sơ mi trắng công sở', N'ao-so-mi-trang-cong-so-aosomi1', N'Áo sơ mi trắng công sở. Chất liệu cotton oxford, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 2, 2, CAST(357000.00 AS Decimal(12, 2)), CAST(291000.00 AS Decimal(12, 2)), N'Cotton Oxford', N'ACTIVE', CAST(N'2026-08-04T00:01:12.2966667' AS DateTime2), CAST(N'2026-08-04T00:01:12.2966667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (405, N'Áo sơ mi oxford kẻ sọc', N'ao-so-mi-oxford-ke-soc-aosomi2', N'Áo sơ mi oxford kẻ sọc. Chất liệu linen, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 2, 1, CAST(424000.00 AS Decimal(12, 2)), NULL, N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3033333' AS DateTime2), CAST(N'2026-08-04T00:01:12.3033333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (406, N'Áo sơ mi linen mùa hè', N'ao-so-mi-linen-mua-he-aosomi3', N'Áo sơ mi linen mùa hè. Chất liệu kate lụa, form regular fit dễ phối đồ, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 2, 1, CAST(467000.00 AS Decimal(12, 2)), CAST(417000.00 AS Decimal(12, 2)), N'Kate lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3100000' AS DateTime2), CAST(N'2026-08-04T00:01:12.3100000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (407, N'Áo sơ mi tay ngắn caro', N'ao-so-mi-tay-ngan-caro-aosomi4', N'Áo sơ mi tay ngắn caro. Chất liệu cotton oxford, form rộng rãi thoải mái, phù hợp đi làm, đi học hằng ngày. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 2, 2, CAST(405000.00 AS Decimal(12, 2)), NULL, N'Cotton Oxford', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3166667' AS DateTime2), CAST(N'2026-08-04T00:01:12.3166667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (408, N'Áo sơ mi form slim', N'ao-so-mi-form-slim-aosomi5', N'Áo sơ mi form slim. Chất liệu linen, form regular fit dễ phối đồ, phù hợp phối đồ đi chơi cuối tuần. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 2, 1, CAST(302000.00 AS Decimal(12, 2)), CAST(257000.00 AS Decimal(12, 2)), N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3200000' AS DateTime2), CAST(N'2026-08-04T00:01:12.3200000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (409, N'Áo sơ mi flannel', N'ao-so-mi-flannel-aosomi6', N'Áo sơ mi flannel. Chất liệu kate lụa, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 2, 1, CAST(435000.00 AS Decimal(12, 2)), NULL, N'Kate lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3266667' AS DateTime2), CAST(N'2026-08-04T00:01:12.3266667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (410, N'Áo sơ mi denim', N'ao-so-mi-denim-aosomi7', N'Áo sơ mi denim. Chất liệu cotton oxford, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 2, 2, CAST(364000.00 AS Decimal(12, 2)), CAST(315000.00 AS Decimal(12, 2)), N'Cotton Oxford', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3333333' AS DateTime2), CAST(N'2026-08-04T00:01:12.3333333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (411, N'Áo sơ mi họa tiết hoa', N'ao-so-mi-hoa-tiet-hoa-aosomi8', N'Áo sơ mi họa tiết hoa. Chất liệu linen, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 2, 1, CAST(374000.00 AS Decimal(12, 2)), NULL, N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3400000' AS DateTime2), CAST(N'2026-08-04T00:01:12.3400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (412, N'Áo sơ mi công sở dài tay', N'ao-so-mi-cong-so-dai-tay-aosomi9', N'Áo sơ mi công sở dài tay. Chất liệu kate lụa, form regular fit dễ phối đồ, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 2, 1, CAST(295000.00 AS Decimal(12, 2)), NULL, N'Kate lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3466667' AS DateTime2), CAST(N'2026-08-04T00:01:12.3466667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (413, N'Áo sơ mi trơn basic', N'ao-so-mi-tron-basic-aosomi10', N'Áo sơ mi trơn basic. Chất liệu cotton oxford, form slim fit hiện đại, phù hợp đi làm, đi học hằng ngày. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 2, 2, CAST(273000.00 AS Decimal(12, 2)), NULL, N'Cotton Oxford', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3533333' AS DateTime2), CAST(N'2026-08-04T00:01:12.3533333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (414, N'Quần jean slim fit', N'quan-jean-slim-fit-quanjean1', N'Quần jean slim fit. Chất liệu denim, form rộng rãi thoải mái, phù hợp đi làm, đi học hằng ngày. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 3, 2, CAST(366000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3566667' AS DateTime2), CAST(N'2026-08-04T00:01:12.3566667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (415, N'Quần jean skinny rách gối', N'quan-jean-skinny-rach-goi-quanjean2', N'Quần jean skinny rách gối. Chất liệu denim co giãn, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 3, 1, CAST(491000.00 AS Decimal(12, 2)), CAST(437000.00 AS Decimal(12, 2)), N'Denim co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3666667' AS DateTime2), CAST(N'2026-08-04T00:01:12.3666667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (416, N'Quần jean ống suông', N'quan-jean-ong-suong-quanjean3', N'Quần jean ống suông. Chất liệu denim, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 3, 1, CAST(457000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3733333' AS DateTime2), CAST(N'2026-08-04T00:01:12.3733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (417, N'Quần jean baggy', N'quan-jean-baggy-quanjean4', N'Quần jean baggy. Chất liệu denim co giãn, form slim fit hiện đại, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 3, 2, CAST(551000.00 AS Decimal(12, 2)), CAST(495000.00 AS Decimal(12, 2)), N'Denim co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3800000' AS DateTime2), CAST(N'2026-08-04T00:01:12.3800000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (418, N'Quần jean lưng cao', N'quan-jean-lung-cao-quanjean5', N'Quần jean lưng cao. Chất liệu denim, form regular fit dễ phối đồ, phù hợp phối đồ đi chơi cuối tuần. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 3, 1, CAST(368000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3866667' AS DateTime2), CAST(N'2026-08-04T00:01:12.3866667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (419, N'Quần jean xanh nhạt wash', N'quan-jean-xanh-nhat-wash-quanjean6', N'Quần jean xanh nhạt wash. Chất liệu denim co giãn, form regular fit dễ phối đồ, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 3, 1, CAST(555000.00 AS Decimal(12, 2)), NULL, N'Denim co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.3933333' AS DateTime2), CAST(N'2026-08-04T00:01:12.3933333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (420, N'Quần jean đen basic', N'quan-jean-den-basic-quanjean7', N'Quần jean đen basic. Chất liệu denim, dáng chuẩn Á Đông, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 3, 2, CAST(463000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4000000' AS DateTime2), CAST(N'2026-08-04T00:01:12.4000000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (421, N'Quần jean straight fit', N'quan-jean-straight-fit-quanjean8', N'Quần jean straight fit. Chất liệu denim co giãn, form ôm vừa vặn tôn dáng, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 3, 1, CAST(372000.00 AS Decimal(12, 2)), CAST(333000.00 AS Decimal(12, 2)), N'Denim co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4100000' AS DateTime2), CAST(N'2026-08-04T00:01:12.4100000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (422, N'Quần jean túi hộp', N'quan-jean-tui-hop-quanjean9', N'Quần jean túi hộp. Chất liệu denim, thiết kế tối giản, dễ mặc, phù hợp phối đồ đi chơi cuối tuần. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 3, 1, CAST(411000.00 AS Decimal(12, 2)), CAST(346000.00 AS Decimal(12, 2)), N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4133333' AS DateTime2), CAST(N'2026-08-04T00:01:12.4133333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (423, N'Quần jean form regular', N'quan-jean-form-regular-quanjean10', N'Quần jean form regular. Chất liệu denim co giãn, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 3, 2, CAST(450000.00 AS Decimal(12, 2)), NULL, N'Denim co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4200000' AS DateTime2), CAST(N'2026-08-04T00:01:12.4200000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (424, N'Quần tây ống suông', N'quan-tay-ong-suong-quantay1', N'Quần tây ống suông. Chất liệu wool blend, thiết kế tối giản, dễ mặc, phù hợp đi làm, đi học hằng ngày. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 4, 2, CAST(355000.00 AS Decimal(12, 2)), CAST(318000.00 AS Decimal(12, 2)), N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4300000' AS DateTime2), CAST(N'2026-08-04T00:01:12.4300000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (425, N'Quần tây công sở slim fit', N'quan-tay-cong-so-slim-fit-quantay2', N'Quần tây công sở slim fit. Chất liệu kaki cao cấp, form slim fit hiện đại, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 4, 1, CAST(459000.00 AS Decimal(12, 2)), CAST(369000.00 AS Decimal(12, 2)), N'Kaki cao cấp', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4333333' AS DateTime2), CAST(N'2026-08-04T00:01:12.4333333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (426, N'Quần tây kẻ sọc', N'quan-tay-ke-soc-quantay3', N'Quần tây kẻ sọc. Chất liệu vải co giãn, thiết kế tối giản, dễ mặc, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 4, 1, CAST(451000.00 AS Decimal(12, 2)), NULL, N'Vải co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4400000' AS DateTime2), CAST(N'2026-08-04T00:01:12.4400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (427, N'Quần tây âu classic', N'quan-tay-au-classic-quantay4', N'Quần tây âu classic. Chất liệu wool blend, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 4, 2, CAST(511000.00 AS Decimal(12, 2)), CAST(444000.00 AS Decimal(12, 2)), N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4466667' AS DateTime2), CAST(N'2026-08-04T00:01:12.4466667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (428, N'Quần tây xếp ly', N'quan-tay-xep-ly-quantay5', N'Quần tây xếp ly. Chất liệu kaki cao cấp, form rộng rãi thoải mái, phù hợp đi làm, đi học hằng ngày. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 4, 1, CAST(452000.00 AS Decimal(12, 2)), NULL, N'Kaki cao cấp', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4533333' AS DateTime2), CAST(N'2026-08-04T00:01:12.4533333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (429, N'Quần tây không ly', N'quan-tay-khong-ly-quantay6', N'Quần tây không ly. Chất liệu vải co giãn, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 4, 1, CAST(411000.00 AS Decimal(12, 2)), NULL, N'Vải co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4600000' AS DateTime2), CAST(N'2026-08-04T00:01:12.4600000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (430, N'Quần tây vải wool blend', N'quan-tay-vai-wool-blend-quantay7', N'Quần tây vải wool blend. Chất liệu wool blend, form slim fit hiện đại, phù hợp phối đồ đi chơi cuối tuần. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 4, 2, CAST(359000.00 AS Decimal(12, 2)), NULL, N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4666667' AS DateTime2), CAST(N'2026-08-04T00:01:12.4666667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (431, N'Quần tây form baggy', N'quan-tay-form-baggy-quantay8', N'Quần tây form baggy. Chất liệu kaki cao cấp, thiết kế tối giản, dễ mặc, thích hợp dạo phố, gặp gỡ bạn bè. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 4, 1, CAST(373000.00 AS Decimal(12, 2)), NULL, N'Kaki cao cấp', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4766667' AS DateTime2), CAST(N'2026-08-04T00:01:12.4766667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (432, N'Quần tây co giãn', N'quan-tay-co-gian-quantay9', N'Quần tây co giãn. Chất liệu vải co giãn, form ôm vừa vặn tôn dáng, phù hợp phối đồ đi chơi cuối tuần. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 4, 1, CAST(515000.00 AS Decimal(12, 2)), CAST(419000.00 AS Decimal(12, 2)), N'Vải co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4833333' AS DateTime2), CAST(N'2026-08-04T00:01:12.4833333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (433, N'Quần tây caro', N'quan-tay-caro-quantay10', N'Quần tây caro. Chất liệu wool blend, form regular fit dễ phối đồ, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 4, 2, CAST(500000.00 AS Decimal(12, 2)), NULL, N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4866667' AS DateTime2), CAST(N'2026-08-04T00:01:12.4866667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (434, N'Áo khoác bomber', N'ao-khoac-bomber-aokhoac1', N'Áo khoác bomber. Chất liệu denim, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 5, 2, CAST(899000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.4933333' AS DateTime2), CAST(N'2026-08-04T00:01:12.4933333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (435, N'Áo khoác denim', N'ao-khoac-denim-aokhoac2', N'Áo khoác denim. Chất liệu da pu, form slim fit hiện đại, phù hợp đi làm, đi học hằng ngày. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 5, 1, CAST(537000.00 AS Decimal(12, 2)), NULL, N'Da PU', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5600000' AS DateTime2), CAST(N'2026-08-04T00:01:12.5600000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (436, N'Áo khoác da', N'ao-khoac-da-aokhoac3', N'Áo khoác da. Chất liệu dù 2 lớp, form ôm vừa vặn tôn dáng, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 5, 1, CAST(789000.00 AS Decimal(12, 2)), CAST(669000.00 AS Decimal(12, 2)), N'Dù 2 lớp', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5700000' AS DateTime2), CAST(N'2026-08-04T00:01:12.5700000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (437, N'Áo khoác dù chống nước', N'ao-khoac-du-chong-nuoc-aokhoac4', N'Áo khoác dù chống nước. Chất liệu len, dáng chuẩn Á Đông, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 5, 2, CAST(784000.00 AS Decimal(12, 2)), NULL, N'Len', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5733333' AS DateTime2), CAST(N'2026-08-04T00:01:12.5733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (438, N'Áo khoác gió 2 lớp', N'ao-khoac-gio-2-lop-aokhoac5', N'Áo khoác gió 2 lớp. Chất liệu denim, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 5, 1, CAST(761000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5800000' AS DateTime2), CAST(N'2026-08-04T00:01:12.5800000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (439, N'Áo khoác phao siêu nhẹ', N'ao-khoac-phao-sieu-nhe-aokhoac6', N'Áo khoác phao siêu nhẹ. Chất liệu da pu, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 5, 1, CAST(741000.00 AS Decimal(12, 2)), CAST(658000.00 AS Decimal(12, 2)), N'Da PU', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5866667' AS DateTime2), CAST(N'2026-08-04T00:01:12.5866667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (440, N'Áo khoác cardigan len', N'ao-khoac-cardigan-len-aokhoac7', N'Áo khoác cardigan len. Chất liệu dù 2 lớp, form slim fit hiện đại, phù hợp phối đồ đi chơi cuối tuần. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 5, 2, CAST(520000.00 AS Decimal(12, 2)), NULL, N'Dù 2 lớp', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5900000' AS DateTime2), CAST(N'2026-08-04T00:01:12.5900000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (441, N'Áo khoác blazer casual', N'ao-khoac-blazer-casual-aokhoac8', N'Áo khoác blazer casual. Chất liệu len, thiết kế tối giản, dễ mặc, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 5, 1, CAST(451000.00 AS Decimal(12, 2)), NULL, N'Len', N'ACTIVE', CAST(N'2026-08-04T00:01:12.5966667' AS DateTime2), CAST(N'2026-08-04T00:01:12.5966667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (442, N'Áo khoác varsity', N'ao-khoac-varsity-aokhoac9', N'Áo khoác varsity. Chất liệu denim, dáng chuẩn Á Đông, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 5, 1, CAST(734000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6033333' AS DateTime2), CAST(N'2026-08-04T00:01:12.6033333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (443, N'Áo khoác flannel lót lông', N'ao-khoac-flannel-lot-long-aokhoac10', N'Áo khoác flannel lót lông. Chất liệu da pu, form regular fit dễ phối đồ, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 5, 2, CAST(775000.00 AS Decimal(12, 2)), NULL, N'Da PU', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6100000' AS DateTime2), CAST(N'2026-08-04T00:01:12.6100000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (444, N'Áo dài nam truyền thống', N'ao-dai-nam-truyen-thong-aodai1', N'Áo dài nam truyền thống. Chất liệu lụa, thiết kế tối giản, dễ mặc, phù hợp đi làm, đi học hằng ngày. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 10, 2, CAST(913000.00 AS Decimal(12, 2)), CAST(765000.00 AS Decimal(12, 2)), N'Lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6166667' AS DateTime2), CAST(N'2026-08-04T00:01:12.6166667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (445, N'Áo dài nam cách tân', N'ao-dai-nam-cach-tan-aodai2', N'Áo dài nam cách tân. Chất liệu gấm, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 10, 1, CAST(1036000.00 AS Decimal(12, 2)), NULL, N'Gấm', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6233333' AS DateTime2), CAST(N'2026-08-04T00:01:12.6233333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (446, N'Áo dài nam gấm hoa văn', N'ao-dai-nam-gam-hoa-van-aodai3', N'Áo dài nam gấm hoa văn. Chất liệu vải the, form regular fit dễ phối đồ, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 10, 1, CAST(1029000.00 AS Decimal(12, 2)), NULL, N'Vải the', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6300000' AS DateTime2), CAST(N'2026-08-04T00:01:12.6300000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (447, N'Áo dài nam lụa cao cấp', N'ao-dai-nam-lua-cao-cap-aodai4', N'Áo dài nam lụa cao cấp. Chất liệu lụa, form ôm vừa vặn tôn dáng, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 10, 2, CAST(1030000.00 AS Decimal(12, 2)), CAST(830000.00 AS Decimal(12, 2)), N'Lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6366667' AS DateTime2), CAST(N'2026-08-04T00:01:12.6366667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (448, N'Áo dài nam dự lễ', N'ao-dai-nam-du-le-aodai5', N'Áo dài nam dự lễ. Chất liệu gấm, dáng chuẩn Á Đông, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 10, 1, CAST(982000.00 AS Decimal(12, 2)), NULL, N'Gấm', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6433333' AS DateTime2), CAST(N'2026-08-04T00:01:12.6433333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (449, N'Áo dài nam cưới hỏi', N'ao-dai-nam-cuoi-hoi-aodai6', N'Áo dài nam cưới hỏi. Chất liệu vải the, dáng chuẩn Á Đông, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 10, 1, CAST(968000.00 AS Decimal(12, 2)), NULL, N'Vải the', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6500000' AS DateTime2), CAST(N'2026-08-04T00:01:12.6500000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (450, N'Áo dài nam màu xanh dương', N'ao-dai-nam-mau-xanh-duong-aodai7', N'Áo dài nam màu xanh dương. Chất liệu lụa, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 10, 2, CAST(893000.00 AS Decimal(12, 2)), NULL, N'Lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6566667' AS DateTime2), CAST(N'2026-08-04T00:01:12.6566667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (451, N'Áo dài nam màu đỏ đô', N'ao-dai-nam-mau-do-do-aodai8', N'Áo dài nam màu đỏ đô. Chất liệu gấm, dáng chuẩn Á Đông, phù hợp đi làm, đi học hằng ngày. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 10, 1, CAST(618000.00 AS Decimal(12, 2)), NULL, N'Gấm', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6600000' AS DateTime2), CAST(N'2026-08-04T00:01:12.6600000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (452, N'Áo dài nam họa tiết rồng', N'ao-dai-nam-hoa-tiet-rong-aodai9', N'Áo dài nam họa tiết rồng. Chất liệu vải the, form slim fit hiện đại, phù hợp đi làm, đi học hằng ngày. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 10, 1, CAST(1024000.00 AS Decimal(12, 2)), NULL, N'Vải the', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6666667' AS DateTime2), CAST(N'2026-08-04T00:01:12.6666667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (453, N'Áo dài nam vải the', N'ao-dai-nam-vai-the-aodai10', N'Áo dài nam vải the. Chất liệu lụa, form regular fit dễ phối đồ, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 10, 2, CAST(1130000.00 AS Decimal(12, 2)), NULL, N'Lụa', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6733333' AS DateTime2), CAST(N'2026-08-04T00:01:12.6733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (454, N'Áo polo trơn basic', N'ao-polo-tron-basic-aopolo1', N'Áo polo trơn basic. Chất liệu cotton pique, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 11, 2, CAST(339000.00 AS Decimal(12, 2)), CAST(289000.00 AS Decimal(12, 2)), N'Cotton Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6800000' AS DateTime2), CAST(N'2026-08-04T00:01:12.6800000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (455, N'Áo polo phối viền cổ', N'ao-polo-phoi-vien-co-aopolo2', N'Áo polo phối viền cổ. Chất liệu cá sấu, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 11, 1, CAST(285000.00 AS Decimal(12, 2)), NULL, N'Cá sấu', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6866667' AS DateTime2), CAST(N'2026-08-04T00:01:12.6866667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (456, N'Áo polo cá sấu', N'ao-polo-ca-sau-aopolo3', N'Áo polo cá sấu. Chất liệu cotton pique, dáng chuẩn Á Đông, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 11, 1, CAST(211000.00 AS Decimal(12, 2)), NULL, N'Cotton Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.6933333' AS DateTime2), CAST(N'2026-08-04T00:01:12.6933333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (457, N'Áo polo tay ngắn kẻ sọc', N'ao-polo-tay-ngan-ke-soc-aopolo4', N'Áo polo tay ngắn kẻ sọc. Chất liệu cá sấu, dáng chuẩn Á Đông, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 11, 2, CAST(316000.00 AS Decimal(12, 2)), NULL, N'Cá sấu', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7000000' AS DateTime2), CAST(N'2026-08-04T00:01:12.7000000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (458, N'Áo polo golf thể thao', N'ao-polo-golf-the-thao-aopolo5', N'Áo polo golf thể thao. Chất liệu cotton pique, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 11, 1, CAST(271000.00 AS Decimal(12, 2)), CAST(232000.00 AS Decimal(12, 2)), N'Cotton Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7066667' AS DateTime2), CAST(N'2026-08-04T00:01:12.7066667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (459, N'Áo polo form ôm', N'ao-polo-form-om-aopolo6', N'Áo polo form ôm. Chất liệu cá sấu, form regular fit dễ phối đồ, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 11, 1, CAST(339000.00 AS Decimal(12, 2)), CAST(298000.00 AS Decimal(12, 2)), N'Cá sấu', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7133333' AS DateTime2), CAST(N'2026-08-04T00:01:12.7133333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (460, N'Áo polo cotton pique', N'ao-polo-cotton-pique-aopolo7', N'Áo polo cotton pique. Chất liệu cotton pique, dáng chuẩn Á Đông, phù hợp đi làm, đi học hằng ngày. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 11, 2, CAST(305000.00 AS Decimal(12, 2)), CAST(273000.00 AS Decimal(12, 2)), N'Cotton Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7200000' AS DateTime2), CAST(N'2026-08-04T00:01:12.7200000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (461, N'Áo polo có túi ngực', N'ao-polo-co-tui-nguc-aopolo8', N'Áo polo có túi ngực. Chất liệu cá sấu, form ôm vừa vặn tôn dáng, phù hợp đi làm, đi học hằng ngày. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 11, 1, CAST(240000.00 AS Decimal(12, 2)), CAST(210000.00 AS Decimal(12, 2)), N'Cá sấu', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7266667' AS DateTime2), CAST(N'2026-08-04T00:01:12.7266667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (462, N'Áo polo phối 2 màu', N'ao-polo-phoi-2-mau-aopolo9', N'Áo polo phối 2 màu. Chất liệu cotton pique, thiết kế tối giản, dễ mặc, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 11, 1, CAST(277000.00 AS Decimal(12, 2)), NULL, N'Cotton Pique', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7333333' AS DateTime2), CAST(N'2026-08-04T00:01:12.7333333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (463, N'Áo polo cổ trụ', N'ao-polo-co-tru-aopolo10', N'Áo polo cổ trụ. Chất liệu cá sấu, form regular fit dễ phối đồ, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 11, 2, CAST(271000.00 AS Decimal(12, 2)), NULL, N'Cá sấu', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7400000' AS DateTime2), CAST(N'2026-08-04T00:01:12.7400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (464, N'Quần short kaki', N'quan-short-kaki-quanshort1', N'Quần short kaki. Chất liệu kaki, form ôm vừa vặn tôn dáng, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 12, 2, CAST(318000.00 AS Decimal(12, 2)), NULL, N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7466667' AS DateTime2), CAST(N'2026-08-04T00:01:12.7466667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (465, N'Quần short jean', N'quan-short-jean-quanshort2', N'Quần short jean. Chất liệu denim, form slim fit hiện đại, phù hợp phối đồ đi chơi cuối tuần. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 12, 1, CAST(182000.00 AS Decimal(12, 2)), CAST(162000.00 AS Decimal(12, 2)), N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7533333' AS DateTime2), CAST(N'2026-08-04T00:01:12.7533333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (466, N'Quần short thể thao', N'quan-short-the-thao-quanshort3', N'Quần short thể thao. Chất liệu thun co giãn, form rộng rãi thoải mái, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 12, 1, CAST(222000.00 AS Decimal(12, 2)), CAST(179000.00 AS Decimal(12, 2)), N'Thun co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7600000' AS DateTime2), CAST(N'2026-08-04T00:01:12.7600000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (467, N'Quần short denim rách', N'quan-short-denim-rach-quanshort4', N'Quần short denim rách. Chất liệu kaki, dáng chuẩn Á Đông, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 12, 2, CAST(292000.00 AS Decimal(12, 2)), CAST(255000.00 AS Decimal(12, 2)), N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7666667' AS DateTime2), CAST(N'2026-08-04T00:01:12.7666667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (468, N'Quần short túi hộp', N'quan-short-tui-hop-quanshort5', N'Quần short túi hộp. Chất liệu denim, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 12, 1, CAST(198000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7733333' AS DateTime2), CAST(N'2026-08-04T00:01:12.7733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (469, N'Quần short nỉ', N'quan-short-ni-quanshort6', N'Quần short nỉ. Chất liệu thun co giãn, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 12, 1, CAST(239000.00 AS Decimal(12, 2)), CAST(191000.00 AS Decimal(12, 2)), N'Thun co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7766667' AS DateTime2), CAST(N'2026-08-04T00:01:12.7766667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (470, N'Quần short bơi', N'quan-short-boi-quanshort7', N'Quần short bơi. Chất liệu kaki, thiết kế tối giản, dễ mặc, phù hợp phối đồ đi chơi cuối tuần. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 12, 2, CAST(233000.00 AS Decimal(12, 2)), NULL, N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7833333' AS DateTime2), CAST(N'2026-08-04T00:01:12.7833333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (471, N'Quần short golf', N'quan-short-golf-quanshort8', N'Quần short golf. Chất liệu denim, form rộng rãi thoải mái, phù hợp đi làm, đi học hằng ngày. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 12, 1, CAST(185000.00 AS Decimal(12, 2)), NULL, N'Denim', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7900000' AS DateTime2), CAST(N'2026-08-04T00:01:12.7900000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (472, N'Quần short jogger', N'quan-short-jogger-quanshort9', N'Quần short jogger. Chất liệu thun co giãn, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 12, 1, CAST(316000.00 AS Decimal(12, 2)), NULL, N'Thun co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.7966667' AS DateTime2), CAST(N'2026-08-04T00:01:12.7966667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (473, N'Quần short caro', N'quan-short-caro-quanshort10', N'Quần short caro. Chất liệu kaki, form ôm vừa vặn tôn dáng, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 12, 2, CAST(238000.00 AS Decimal(12, 2)), CAST(214000.00 AS Decimal(12, 2)), N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8033333' AS DateTime2), CAST(N'2026-08-04T00:01:12.8033333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (474, N'Quần kaki basic', N'quan-kaki-basic-quankaki1', N'Quần kaki basic. Chất liệu kaki, thiết kế tối giản, dễ mặc, thích hợp dạo phố, gặp gỡ bạn bè. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 13, 2, CAST(365000.00 AS Decimal(12, 2)), CAST(305000.00 AS Decimal(12, 2)), N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8100000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8100000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (475, N'Quần kaki ống suông', N'quan-kaki-ong-suong-quankaki2', N'Quần kaki ống suông. Chất liệu kaki co giãn, dáng chuẩn Á Đông, phù hợp phối đồ đi chơi cuối tuần. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 13, 1, CAST(319000.00 AS Decimal(12, 2)), NULL, N'Kaki co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8166667' AS DateTime2), CAST(N'2026-08-04T00:01:12.8166667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (476, N'Quần kaki túi hộp', N'quan-kaki-tui-hop-quankaki3', N'Quần kaki túi hộp. Chất liệu kaki, form regular fit dễ phối đồ, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 13, 1, CAST(381000.00 AS Decimal(12, 2)), NULL, N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8233333' AS DateTime2), CAST(N'2026-08-04T00:01:12.8233333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (477, N'Quần kaki slim fit', N'quan-kaki-slim-fit-quankaki4', N'Quần kaki slim fit. Chất liệu kaki co giãn, form regular fit dễ phối đồ, phù hợp phối đồ đi chơi cuối tuần. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 13, 2, CAST(406000.00 AS Decimal(12, 2)), CAST(329000.00 AS Decimal(12, 2)), N'Kaki co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8300000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8300000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (478, N'Quần kaki lưng thun', N'quan-kaki-lung-thun-quankaki5', N'Quần kaki lưng thun. Chất liệu kaki, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 13, 1, CAST(312000.00 AS Decimal(12, 2)), NULL, N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8366667' AS DateTime2), CAST(N'2026-08-04T00:01:12.8366667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (479, N'Quần kaki màu be', N'quan-kaki-mau-be-quankaki6', N'Quần kaki màu be. Chất liệu kaki co giãn, form ôm vừa vặn tôn dáng, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 13, 1, CAST(286000.00 AS Decimal(12, 2)), NULL, N'Kaki co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8400000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (480, N'Quần kaki màu rêu', N'quan-kaki-mau-reu-quankaki7', N'Quần kaki màu rêu. Chất liệu kaki, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 13, 2, CAST(425000.00 AS Decimal(12, 2)), NULL, N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8466667' AS DateTime2), CAST(N'2026-08-04T00:01:12.8466667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (481, N'Quần kaki jogger', N'quan-kaki-jogger-quankaki8', N'Quần kaki jogger. Chất liệu kaki co giãn, form slim fit hiện đại, phù hợp đi làm, đi học hằng ngày. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 13, 1, CAST(346000.00 AS Decimal(12, 2)), CAST(303000.00 AS Decimal(12, 2)), N'Kaki co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8533333' AS DateTime2), CAST(N'2026-08-04T00:01:12.8533333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (482, N'Quần kaki co giãn', N'quan-kaki-co-gian-quankaki9', N'Quần kaki co giãn. Chất liệu kaki, form regular fit dễ phối đồ, phù hợp phối đồ đi chơi cuối tuần. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 13, 1, CAST(286000.00 AS Decimal(12, 2)), CAST(238000.00 AS Decimal(12, 2)), N'Kaki', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8600000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8600000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (483, N'Quần kaki form rộng', N'quan-kaki-form-rong-quankaki10', N'Quần kaki form rộng. Chất liệu kaki co giãn, form ôm vừa vặn tôn dáng, thích hợp dạo phố, gặp gỡ bạn bè. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 13, 2, CAST(447000.00 AS Decimal(12, 2)), NULL, N'Kaki co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8666667' AS DateTime2), CAST(N'2026-08-04T00:01:12.8666667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (484, N'Quần boxer cotton', N'quan-boxer-cotton-quanboxer1', N'Quần boxer cotton. Chất liệu cotton, dáng chuẩn Á Đông, phù hợp phối đồ đi chơi cuối tuần. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 14, 2, CAST(145000.00 AS Decimal(12, 2)), NULL, N'Cotton', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8700000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8700000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (485, N'Quần boxer thun lạnh', N'quan-boxer-thun-lanh-quanboxer2', N'Quần boxer thun lạnh. Chất liệu modal, form regular fit dễ phối đồ, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 14, 1, CAST(118000.00 AS Decimal(12, 2)), CAST(97000.00 AS Decimal(12, 2)), N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8800000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8800000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (486, N'Quần lót boxer in họa tiết', N'quan-lot-boxer-in-hoa-tiet-quanboxer3', N'Quần lót boxer in họa tiết. Chất liệu vải tre, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 14, 1, CAST(159000.00 AS Decimal(12, 2)), NULL, N'Vải tre', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8866667' AS DateTime2), CAST(N'2026-08-04T00:01:12.8866667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (487, N'Quần boxer modal', N'quan-boxer-modal-quanboxer4', N'Quần boxer modal. Chất liệu cotton, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 14, 2, CAST(155000.00 AS Decimal(12, 2)), NULL, N'Cotton', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8900000' AS DateTime2), CAST(N'2026-08-04T00:01:12.8900000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (488, N'Quần boxer basic trơn', N'quan-boxer-basic-tron-quanboxer5', N'Quần boxer basic trơn. Chất liệu modal, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 14, 1, CAST(111000.00 AS Decimal(12, 2)), CAST(90000.00 AS Decimal(12, 2)), N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.8966667' AS DateTime2), CAST(N'2026-08-04T00:01:12.8966667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (489, N'Combo 3 quần boxer', N'combo-3-quan-boxer-quanboxer6', N'Combo 3 quần boxer. Chất liệu vải tre, form slim fit hiện đại, phù hợp đi làm, đi học hằng ngày. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 14, 1, CAST(89000.00 AS Decimal(12, 2)), NULL, N'Vải tre', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9033333' AS DateTime2), CAST(N'2026-08-04T00:01:12.9033333' AS DateTime2), NULL)
+GO
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (490, N'Quần boxer thể thao', N'quan-boxer-the-thao-quanboxer7', N'Quần boxer thể thao. Chất liệu cotton, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 14, 2, CAST(138000.00 AS Decimal(12, 2)), NULL, N'Cotton', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9100000' AS DateTime2), CAST(N'2026-08-04T00:01:12.9100000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (491, N'Quần boxer cạp thun bản to', N'quan-boxer-cap-thun-ban-to-quanboxer8', N'Quần boxer cạp thun bản to. Chất liệu modal, form rộng rãi thoải mái, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 14, 1, CAST(123000.00 AS Decimal(12, 2)), CAST(108000.00 AS Decimal(12, 2)), N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9166667' AS DateTime2), CAST(N'2026-08-04T00:01:12.9166667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (492, N'Quần boxer vải tre', N'quan-boxer-vai-tre-quanboxer9', N'Quần boxer vải tre. Chất liệu vải tre, dáng chuẩn Á Đông, phù hợp phối đồ đi chơi cuối tuần. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 14, 1, CAST(127000.00 AS Decimal(12, 2)), CAST(104000.00 AS Decimal(12, 2)), N'Vải tre', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9200000' AS DateTime2), CAST(N'2026-08-04T00:01:12.9200000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (493, N'Quần boxer form dài', N'quan-boxer-form-dai-quanboxer10', N'Quần boxer form dài. Chất liệu cotton, form slim fit hiện đại, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 14, 2, CAST(132000.00 AS Decimal(12, 2)), NULL, N'Cotton', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9266667' AS DateTime2), CAST(N'2026-08-04T00:01:12.9266667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (494, N'Áo ba lỗ nam basic', N'ao-ba-lo-nam-basic-aolot1', N'Áo ba lỗ nam basic. Chất liệu cotton co giãn, form rộng rãi thoải mái, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 15, 2, CAST(124000.00 AS Decimal(12, 2)), NULL, N'Cotton co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9333333' AS DateTime2), CAST(N'2026-08-04T00:01:12.9333333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (495, N'Áo lót cotton co giãn', N'ao-lot-cotton-co-gian-aolot2', N'Áo lót cotton co giãn. Chất liệu modal, form regular fit dễ phối đồ, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 15, 1, CAST(89000.00 AS Decimal(12, 2)), NULL, N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9400000' AS DateTime2), CAST(N'2026-08-04T00:01:12.9400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (496, N'Áo thun lót cổ tròn', N'ao-thun-lot-co-tron-aolot3', N'Áo thun lót cổ tròn. Chất liệu cotton co giãn, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 15, 1, CAST(97000.00 AS Decimal(12, 2)), CAST(82000.00 AS Decimal(12, 2)), N'Cotton co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9500000' AS DateTime2), CAST(N'2026-08-04T00:01:12.9500000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (497, N'Combo 3 áo ba lỗ', N'combo-3-ao-ba-lo-aolot4', N'Combo 3 áo ba lỗ. Chất liệu modal, form regular fit dễ phối đồ, phù hợp mặc thể thao, vận động nhẹ. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 15, 2, CAST(100000.00 AS Decimal(12, 2)), NULL, N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9566667' AS DateTime2), CAST(N'2026-08-04T00:01:12.9566667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (498, N'Áo lót thể thao thấm hút', N'ao-lot-the-thao-tham-hut-aolot5', N'Áo lót thể thao thấm hút. Chất liệu cotton co giãn, form rộng rãi thoải mái, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 15, 1, CAST(103000.00 AS Decimal(12, 2)), NULL, N'Cotton co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9633333' AS DateTime2), CAST(N'2026-08-04T00:01:12.9633333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (499, N'Áo giữ nhiệt mùa đông', N'ao-giu-nhiet-mua-dong-aolot6', N'Áo giữ nhiệt mùa đông. Chất liệu modal, form ôm vừa vặn tôn dáng, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 15, 1, CAST(72000.00 AS Decimal(12, 2)), NULL, N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9733333' AS DateTime2), CAST(N'2026-08-04T00:01:12.9733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (500, N'Áo lót cổ V', N'ao-lot-co-v-aolot7', N'Áo lót cổ V. Chất liệu cotton co giãn, form regular fit dễ phối đồ, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 15, 2, CAST(131000.00 AS Decimal(12, 2)), CAST(107000.00 AS Decimal(12, 2)), N'Cotton co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9833333' AS DateTime2), CAST(N'2026-08-04T00:01:12.9833333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (501, N'Áo ba lỗ thể hình', N'ao-ba-lo-the-hinh-aolot8', N'Áo ba lỗ thể hình. Chất liệu modal, thiết kế tối giản, dễ mặc, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 15, 1, CAST(130000.00 AS Decimal(12, 2)), CAST(114000.00 AS Decimal(12, 2)), N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:12.9933333' AS DateTime2), CAST(N'2026-08-04T00:01:12.9933333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (502, N'Áo lót modal cao cấp', N'ao-lot-modal-cao-cap-aolot9', N'Áo lót modal cao cấp. Chất liệu cotton co giãn, form ôm vừa vặn tôn dáng, phù hợp đi làm, đi học hằng ngày. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 15, 1, CAST(116000.00 AS Decimal(12, 2)), CAST(98000.00 AS Decimal(12, 2)), N'Cotton co giãn', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0033333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0033333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (503, N'Áo lót basic trắng', N'ao-lot-basic-trang-aolot10', N'Áo lót basic trắng. Chất liệu modal, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 15, 2, CAST(128000.00 AS Decimal(12, 2)), NULL, N'Modal', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0133333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0133333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (504, N'Bộ suit công sở 2 mảnh', N'bo-suit-cong-so-2-manh-bosuit1', N'Bộ suit công sở 2 mảnh. Chất liệu wool blend, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 16, 2, CAST(2441000.00 AS Decimal(12, 2)), CAST(1987000.00 AS Decimal(12, 2)), N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0200000' AS DateTime2), CAST(N'2026-08-04T00:01:13.0200000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (505, N'Bộ suit dự tiệc', N'bo-suit-du-tiec-bosuit2', N'Bộ suit dự tiệc. Chất liệu tweed, form ôm vừa vặn tôn dáng, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 16, 1, CAST(1901000.00 AS Decimal(12, 2)), NULL, N'Tweed', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0266667' AS DateTime2), CAST(N'2026-08-04T00:01:13.0266667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (506, N'Bộ vest cưới chú rể', N'bo-vest-cuoi-chu-re-bosuit3', N'Bộ vest cưới chú rể. Chất liệu linen, dáng chuẩn Á Đông, phù hợp mặc thể thao, vận động nhẹ. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 16, 1, CAST(1559000.00 AS Decimal(12, 2)), CAST(1291000.00 AS Decimal(12, 2)), N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0333333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0333333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (507, N'Bộ suit slim fit', N'bo-suit-slim-fit-bosuit4', N'Bộ suit slim fit. Chất liệu wool blend, form ôm vừa vặn tôn dáng, phù hợp phối đồ đi chơi cuối tuần. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 16, 2, CAST(1600000.00 AS Decimal(12, 2)), NULL, N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0400000' AS DateTime2), CAST(N'2026-08-04T00:01:13.0400000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (508, N'Bộ suit dạ hội', N'bo-suit-da-hoi-bosuit5', N'Bộ suit dạ hội. Chất liệu tweed, thiết kế tối giản, dễ mặc, thích hợp dạo phố, gặp gỡ bạn bè. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 16, 1, CAST(2778000.00 AS Decimal(12, 2)), NULL, N'Tweed', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0433333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0433333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (509, N'Bộ suit len tweed', N'bo-suit-len-tweed-bosuit6', N'Bộ suit len tweed. Chất liệu linen, thiết kế tối giản, dễ mặc, phù hợp đi làm, đi học hằng ngày. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 16, 1, CAST(2071000.00 AS Decimal(12, 2)), NULL, N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0500000' AS DateTime2), CAST(N'2026-08-04T00:01:13.0500000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (510, N'Bộ suit xanh navy', N'bo-suit-xanh-navy-bosuit7', N'Bộ suit xanh navy. Chất liệu wool blend, form regular fit dễ phối đồ, phù hợp mặc thể thao, vận động nhẹ. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 16, 2, CAST(1721000.00 AS Decimal(12, 2)), NULL, N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0533333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0533333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (511, N'Bộ suit xám classic', N'bo-suit-xam-classic-bosuit8', N'Bộ suit xám classic. Chất liệu tweed, form rộng rãi thoải mái, thích hợp dạo phố, gặp gỡ bạn bè. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 16, 1, CAST(2811000.00 AS Decimal(12, 2)), NULL, N'Tweed', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0600000' AS DateTime2), CAST(N'2026-08-04T00:01:13.0600000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (512, N'Bộ suit 3 mảnh', N'bo-suit-3-manh-bosuit9', N'Bộ suit 3 mảnh. Chất liệu linen, form rộng rãi thoải mái, lý tưởng cho các dịp dự tiệc, sự kiện quan trọng. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 16, 1, CAST(2851000.00 AS Decimal(12, 2)), NULL, N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0700000' AS DateTime2), CAST(N'2026-08-04T00:01:13.0700000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (513, N'Bộ suit linen mùa hè', N'bo-suit-linen-mua-he-bosuit10', N'Bộ suit linen mùa hè. Chất liệu wool blend, dáng chuẩn Á Đông, thích hợp dạo phố, gặp gỡ bạn bè. Hạn chế phơi trực tiếp dưới nắng gắt để giữ màu vải bền đẹp.', 16, 2, CAST(2259000.00 AS Decimal(12, 2)), NULL, N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0733333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0733333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (514, N'Áo blazer basic', N'ao-blazer-basic-blazer1', N'Áo blazer basic. Chất liệu wool blend, form slim fit hiện đại, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 17, 2, CAST(1075000.00 AS Decimal(12, 2)), CAST(929000.00 AS Decimal(12, 2)), N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0833333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0833333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (515, N'Áo blazer kẻ sọc', N'ao-blazer-ke-soc-blazer2', N'Áo blazer kẻ sọc. Chất liệu nhung, form regular fit dễ phối đồ, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 17, 1, CAST(967000.00 AS Decimal(12, 2)), CAST(819000.00 AS Decimal(12, 2)), N'Nhung', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0900000' AS DateTime2), CAST(N'2026-08-04T00:01:13.0900000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (516, N'Áo blazer nhung', N'ao-blazer-nhung-blazer3', N'Áo blazer nhung. Chất liệu linen, form rộng rãi thoải mái, phù hợp phối đồ đi chơi cuối tuần. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 17, 1, CAST(1473000.00 AS Decimal(12, 2)), NULL, N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:13.0933333' AS DateTime2), CAST(N'2026-08-04T00:01:13.0933333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (517, N'Áo blazer linen', N'ao-blazer-linen-blazer4', N'Áo blazer linen. Chất liệu wool blend, thiết kế tối giản, dễ mặc, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 17, 2, CAST(1681000.00 AS Decimal(12, 2)), CAST(1415000.00 AS Decimal(12, 2)), N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1000000' AS DateTime2), CAST(N'2026-08-04T00:01:13.1000000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (518, N'Áo blazer form rộng', N'ao-blazer-form-rong-blazer5', N'Áo blazer form rộng. Chất liệu nhung, dáng chuẩn Á Đông, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 17, 1, CAST(1315000.00 AS Decimal(12, 2)), CAST(1054000.00 AS Decimal(12, 2)), N'Nhung', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1066667' AS DateTime2), CAST(N'2026-08-04T00:01:13.1066667' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (519, N'Áo blazer 1 hàng khuy', N'ao-blazer-1-hang-khuy-blazer6', N'Áo blazer 1 hàng khuy. Chất liệu linen, form regular fit dễ phối đồ, phù hợp mặc thể thao, vận động nhẹ. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 17, 1, CAST(1299000.00 AS Decimal(12, 2)), CAST(1100000.00 AS Decimal(12, 2)), N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1133333' AS DateTime2), CAST(N'2026-08-04T00:01:13.1133333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (520, N'Áo blazer 2 hàng khuy', N'ao-blazer-2-hang-khuy-blazer7', N'Áo blazer 2 hàng khuy. Chất liệu wool blend, form regular fit dễ phối đồ, thích hợp dạo phố, gặp gỡ bạn bè. Chất liệu bền màu, ít nhăn, dễ bảo quản.', 17, 2, CAST(1527000.00 AS Decimal(12, 2)), NULL, N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1200000' AS DateTime2), CAST(N'2026-08-04T00:01:13.1200000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (521, N'Áo blazer casual', N'ao-blazer-casual-blazer8', N'Áo blazer casual. Chất liệu nhung, form slim fit hiện đại, phù hợp đi làm, đi học hằng ngày. Ủi ở nhiệt độ trung bình, tránh giặt nước nóng.', 17, 1, CAST(973000.00 AS Decimal(12, 2)), NULL, N'Nhung', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1300000' AS DateTime2), CAST(N'2026-08-04T00:01:13.1300000' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (522, N'Áo blazer dự tiệc', N'ao-blazer-du-tiec-blazer9', N'Áo blazer dự tiệc. Chất liệu linen, form rộng rãi thoải mái, phù hợp mặc quanh năm, dễ phối nhiều kiểu áo/quần khác. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 17, 1, CAST(1552000.00 AS Decimal(12, 2)), CAST(1244000.00 AS Decimal(12, 2)), N'Linen', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1333333' AS DateTime2), CAST(N'2026-08-04T00:01:13.1333333' AS DateTime2), NULL)
+INSERT [dbo].[products] ([product_id], [product_name], [slug], [description], [category_id], [brand_id], [price], [sale_price], [material], [status], [created_at], [updated_at], [created_by]) VALUES (523, N'Áo blazer len tweed', N'ao-blazer-len-tweed-blazer10', N'Áo blazer len tweed. Chất liệu wool blend, thiết kế tối giản, dễ mặc, phù hợp mặc thể thao, vận động nhẹ. Nên giặt tay hoặc giặt máy ở chế độ nhẹ để giữ form lâu.', 17, 2, CAST(1033000.00 AS Decimal(12, 2)), CAST(902000.00 AS Decimal(12, 2)), N'Wool blend', N'ACTIVE', CAST(N'2026-08-04T00:01:13.1433333' AS DateTime2), CAST(N'2026-08-04T00:01:13.1433333' AS DateTime2), NULL)
+SET IDENTITY_INSERT [dbo].[products] OFF
+SET IDENTITY_INSERT [dbo].[roles] ON 
+
+INSERT [dbo].[roles] ([role_id], [role_name]) VALUES (1, N'ADMIN')
+INSERT [dbo].[roles] ([role_id], [role_name]) VALUES (2, N'CUSTOMER')
+INSERT [dbo].[roles] ([role_id], [role_name]) VALUES (3, N'STAFF')
+SET IDENTITY_INSERT [dbo].[roles] OFF
+INSERT [dbo].[user_roles] ([user_id], [role_id]) VALUES (1, 1)
+SET IDENTITY_INSERT [dbo].[users] ON
+
+-- Admin mặc định -- mật khẩu: Admin@123 (cột password bên dưới là hash BCrypt của mật khẩu này)
+INSERT [dbo].[users] ([user_id], [username], [password], [email], [full_name], [phone], [avatar_url], [is_active], [created_at], [updated_at]) VALUES (1, N'admin', N'$2b$10$WMXDnk1Ql7sDS7YIoe8KyetKu6SAB2b4GGyVld1tg/zZt8nr97xEC', N'admin@menswear.com', N'Quản trị viên', NULL, NULL, 1, CAST(N'2026-08-02T20:35:57.8210607' AS DateTime2), CAST(N'2026-08-03T21:44:37.0266667' AS DateTime2))
+SET IDENTITY_INSERT [dbo].[users] OFF
+SET IDENTITY_INSERT [dbo].[vouchers] ON 
+
+INSERT [dbo].[vouchers] ([voucher_id], [code], [discount_type], [discount_value], [min_order_value], [max_discount_amount], [used_count], [start_date], [end_date], [usage_limit], [is_active]) VALUES (1, N'GIAM10', N'PERCENT', CAST(10.00 AS Decimal(12, 2)), CAST(200000.00 AS Decimal(12, 2)), CAST(50000.00 AS Decimal(12, 2)), 0, NULL, NULL, 100, 1)
+INSERT [dbo].[vouchers] ([voucher_id], [code], [discount_type], [discount_value], [min_order_value], [max_discount_amount], [used_count], [start_date], [end_date], [usage_limit], [is_active]) VALUES (2, N'GIAM50K', N'AMOUNT', CAST(50000.00 AS Decimal(12, 2)), CAST(300000.00 AS Decimal(12, 2)), NULL, 0, NULL, NULL, 50, 1)
+SET IDENTITY_INSERT [dbo].[vouchers] OFF
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__brands__0C0C3B589B56C5C9]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[brands] ADD UNIQUE NONCLUSTERED 
+(
+	[brand_name] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [uq_cart_variant]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[cart_items] ADD  CONSTRAINT [uq_cart_variant] UNIQUE NONCLUSTERED 
+(
+	[cart_id] ASC,
+	[variant_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [UQ__carts__B9BE370EBFAC74DB]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[carts] ADD UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__categori__32DD1E4C776CD2E0]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[categories] ADD UNIQUE NONCLUSTERED 
+(
+	[slug] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [idx_order_items_order_id]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_order_items_order_id] ON [dbo].[order_items]
+(
+	[order_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__orders__99D12D3FAD5DE456]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[orders] ADD UNIQUE NONCLUSTERED 
+(
+	[order_code] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [idx_orders_status]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_orders_status] ON [dbo].[orders]
+(
+	[status] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [idx_orders_user]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_orders_user] ON [dbo].[orders]
+(
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__product___DDDF4BE7123AF48E]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[product_variants] ADD UNIQUE NONCLUSTERED 
+(
+	[sku] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [uq_product_size_color]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[product_variants] ADD  CONSTRAINT [uq_product_size_color] UNIQUE NONCLUSTERED 
+(
+	[product_id] ASC,
+	[size] ASC,
+	[color] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [idx_variants_product]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_variants_product] ON [dbo].[product_variants]
+(
+	[product_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__products__32DD1E4C63F261B1]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[products] ADD UNIQUE NONCLUSTERED 
+(
+	[slug] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [idx_products_brand_id]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_products_brand_id] ON [dbo].[products]
+(
+	[brand_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [idx_products_category]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_products_category] ON [dbo].[products]
+(
+	[category_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [idx_products_status]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_products_status] ON [dbo].[products]
+(
+	[status] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [uq_review_user_product]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[reviews] ADD  CONSTRAINT [uq_review_user_product] UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC,
+	[product_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [idx_reviews_product_id]    Script Date: 8/4/2026 3:07:55 PM ******/
+CREATE NONCLUSTERED INDEX [idx_reviews_product_id] ON [dbo].[reviews]
+(
+	[product_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__roles__783254B1832FA37B]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[roles] ADD UNIQUE NONCLUSTERED 
+(
+	[role_name] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__users__AB6E61640145D55B]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[users] ADD UNIQUE NONCLUSTERED 
+(
+	[email] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__users__F3DBC572771EE439]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[users] ADD UNIQUE NONCLUSTERED 
+(
+	[username] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+SET ANSI_PADDING ON
+GO
+/****** Object:  Index [UQ__vouchers__357D4CF9D37E832C]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[vouchers] ADD UNIQUE NONCLUSTERED 
+(
+	[code] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/****** Object:  Index [uq_wishlist_user_product]    Script Date: 8/4/2026 3:07:55 PM ******/
+ALTER TABLE [dbo].[wishlist] ADD  CONSTRAINT [uq_wishlist_user_product] UNIQUE NONCLUSTERED 
+(
+	[user_id] ASC,
+	[product_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[addresses] ADD  DEFAULT ((0)) FOR [is_default]
+GO
+ALTER TABLE [dbo].[cart_items] ADD  DEFAULT ((1)) FOR [quantity]
+GO
+ALTER TABLE [dbo].[carts] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
+GO
+ALTER TABLE [dbo].[categories] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+ALTER TABLE [dbo].[order_items] ADD  DEFAULT ((0)) FOR [subtotal]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT ((0)) FOR [discount_amount]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT ('PENDING') FOR [status]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT ('COD') FOR [payment_method]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT ('UNPAID') FOR [payment_status]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT (sysdatetime()) FOR [created_at]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT ('ONLINE') FOR [order_type]
+GO
+ALTER TABLE [dbo].[orders] ADD  DEFAULT ((0)) FOR [shipping_fee]
+GO
+ALTER TABLE [dbo].[product_images] ADD  DEFAULT ((0)) FOR [is_thumbnail]
+GO
+ALTER TABLE [dbo].[product_images] ADD  DEFAULT ((0)) FOR [display_order]
+GO
+ALTER TABLE [dbo].[product_variants] ADD  DEFAULT ((0)) FOR [stock_quantity]
+GO
+ALTER TABLE [dbo].[products] ADD  DEFAULT ('ACTIVE') FOR [status]
+GO
+ALTER TABLE [dbo].[products] ADD  DEFAULT (sysdatetime()) FOR [created_at]
+GO
+ALTER TABLE [dbo].[products] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
+GO
+ALTER TABLE [dbo].[reviews] ADD  DEFAULT (sysdatetime()) FOR [created_at]
+GO
+ALTER TABLE [dbo].[users] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+ALTER TABLE [dbo].[users] ADD  DEFAULT (sysdatetime()) FOR [created_at]
+GO
+ALTER TABLE [dbo].[users] ADD  DEFAULT (sysdatetime()) FOR [updated_at]
+GO
+ALTER TABLE [dbo].[vouchers] ADD  DEFAULT ((0)) FOR [min_order_value]
+GO
+ALTER TABLE [dbo].[vouchers] ADD  DEFAULT ((0)) FOR [used_count]
+GO
+ALTER TABLE [dbo].[vouchers] ADD  DEFAULT ((0)) FOR [usage_limit]
+GO
+ALTER TABLE [dbo].[vouchers] ADD  DEFAULT ((1)) FOR [is_active]
+GO
+ALTER TABLE [dbo].[addresses]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[cart_items]  WITH CHECK ADD FOREIGN KEY([cart_id])
+REFERENCES [dbo].[carts] ([cart_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[cart_items]  WITH CHECK ADD FOREIGN KEY([variant_id])
+REFERENCES [dbo].[product_variants] ([variant_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[carts]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[categories]  WITH CHECK ADD FOREIGN KEY([parent_id])
+REFERENCES [dbo].[categories] ([category_id])
+GO
+ALTER TABLE [dbo].[order_items]  WITH CHECK ADD FOREIGN KEY([order_id])
+REFERENCES [dbo].[orders] ([order_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[order_items]  WITH CHECK ADD FOREIGN KEY([variant_id])
+REFERENCES [dbo].[product_variants] ([variant_id])
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD FOREIGN KEY([address_id])
+REFERENCES [dbo].[addresses] ([address_id])
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD  CONSTRAINT [FK_orders_cashier] FOREIGN KEY([cashier_id])
+REFERENCES [dbo].[users] ([user_id])
+GO
+ALTER TABLE [dbo].[orders] CHECK CONSTRAINT [FK_orders_cashier]
+GO
+ALTER TABLE [dbo].[product_images]  WITH CHECK ADD FOREIGN KEY([product_id])
+REFERENCES [dbo].[products] ([product_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[product_variants]  WITH CHECK ADD FOREIGN KEY([product_id])
+REFERENCES [dbo].[products] ([product_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[products]  WITH CHECK ADD FOREIGN KEY([brand_id])
+REFERENCES [dbo].[brands] ([brand_id])
+GO
+ALTER TABLE [dbo].[products]  WITH CHECK ADD FOREIGN KEY([category_id])
+REFERENCES [dbo].[categories] ([category_id])
+GO
+ALTER TABLE [dbo].[products]  WITH CHECK ADD FOREIGN KEY([created_by])
+REFERENCES [dbo].[users] ([user_id])
+GO
+ALTER TABLE [dbo].[reviews]  WITH CHECK ADD FOREIGN KEY([product_id])
+REFERENCES [dbo].[products] ([product_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[reviews]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[user_roles]  WITH CHECK ADD FOREIGN KEY([role_id])
+REFERENCES [dbo].[roles] ([role_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[user_roles]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[wishlist]  WITH CHECK ADD  CONSTRAINT [FK6p7qhvy1bfkri13u29x6pu8au] FOREIGN KEY([product_id])
+REFERENCES [dbo].[products] ([product_id])
+GO
+ALTER TABLE [dbo].[wishlist] CHECK CONSTRAINT [FK6p7qhvy1bfkri13u29x6pu8au]
+GO
+ALTER TABLE [dbo].[wishlist]  WITH CHECK ADD  CONSTRAINT [FKtrd6335blsefl2gxpb8lr0gr7] FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+GO
+ALTER TABLE [dbo].[wishlist] CHECK CONSTRAINT [FKtrd6335blsefl2gxpb8lr0gr7]
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_method]='VNPAY' OR [payment_method]='MOMO' OR [payment_method]='BANK_TRANSFER' OR [payment_method]='COD'))
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_status]='REFUNDED' OR [payment_status]='PAID' OR [payment_status]='UNPAID'))
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD  CONSTRAINT [CK_orders_order_type] CHECK  (([order_type]='POS' OR [order_type]='ONLINE'))
+GO
+ALTER TABLE [dbo].[orders] CHECK CONSTRAINT [CK_orders_order_type]
+GO
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD  CONSTRAINT [CK_orders_status] CHECK  (([status]='RETURNED' OR [status]='RETURN_REQUESTED' OR [status]='CANCELLED' OR [status]='COMPLETED' OR [status]='DELIVERED' OR [status]='SHIPPING' OR [status]='CONFIRMED' OR [status]='PENDING'))
+GO
+ALTER TABLE [dbo].[orders] CHECK CONSTRAINT [CK_orders_status]
+GO
+ALTER TABLE [dbo].[products]  WITH CHECK ADD CHECK  (([status]='OUT_OF_STOCK' OR [status]='INACTIVE' OR [status]='ACTIVE'))
+GO
+ALTER TABLE [dbo].[reviews]  WITH CHECK ADD CHECK  (([rating]>=(1) AND [rating]<=(5)))
+GO
+ALTER TABLE [dbo].[vouchers]  WITH CHECK ADD CHECK  (([discount_type]='AMOUNT' OR [discount_type]='PERCENT'))
 GO

@@ -13,19 +13,16 @@ import java.util.Optional;
 
 public interface ProductVariantRepository extends JpaRepository<ProductVariant, Long> {
 
-    // Batch-load variant cho NHIỀU sản phẩm cùng lúc (VD: 1 trang danh sách sản phẩm admin) trong 1
-    // query riêng, thay vì product.getVariants() lazy-load từng dòng -- và thay vì nhét chung vào
-    // @EntityGraph của ProductRepository (sẽ đụng "images", 2 bag collection trong 1 query -> lỗi).
+    // Batch-load variant cho nhiều sản phẩm trong 1 query, tránh lazy-load từng dòng -- không gộp vào
+    // @EntityGraph của ProductRepository vì sẽ đụng "images", 2 bag collection trong 1 query gây lỗi.
     List<ProductVariant> findByProduct_ProductIdIn(List<Long> productIds);
 
-    // Load kèm Product ngay để CartService lấy được tên/giá/ảnh sản phẩm
-    // trong 1 lần query, không phải query thêm lần 2
+    // Load kèm Product để CartService lấy tên/giá/ảnh trong 1 lần query.
     @EntityGraph(attributePaths = {"product"})
     Optional<ProductVariant> findById(Long variantId);
 
-    // Dùng cho màn "Kho tồn hàng": tìm theo tên sản phẩm / SKU / size / màu,
-    // kèm lọc "sắp hết hàng" (tồn kho <= ngưỡng) — tất cả xử lý ngay trong 1 query
-    // để phân trang (Pageable) trả về đúng tổng số bản ghi, không lọc lại ở Java.
+    // Màn "Kho tồn hàng": tìm theo tên sản phẩm/SKU/size/màu, kèm lọc "sắp hết hàng", xử lý ngay trong
+    // 1 query để Pageable trả đúng tổng số bản ghi.
     @EntityGraph(attributePaths = {"product", "product.category"})
     @Query("SELECT v FROM ProductVariant v WHERE " +
             "(:keyword IS NULL OR :keyword = '' " +
