@@ -46,6 +46,15 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         @EntityGraph(attributePaths = { "images", "category", "brand" })
         Page<Product> findByProductNameContainingIgnoreCase(String keyword, Pageable pageable);
 
+        // Như trên nhưng khớp CẢ theo tên SẢN PHẨM lẫn SKU của biến thể -- dùng ở ô tìm kiếm POS để thu
+        // ngân gõ/quét mã SKU cũng ra đúng sản phẩm, không chỉ gõ tên mới tìm được (EXISTS + DISTINCT vì
+        // JOIN thẳng variants có thể nhân dòng nếu 1 sản phẩm có nhiều biến thể khớp).
+        @EntityGraph(attributePaths = { "images", "category", "brand" })
+        @Query("SELECT DISTINCT p FROM Product p WHERE " +
+                        "LOWER(p.productName) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+                        "OR EXISTS (SELECT 1 FROM ProductVariant v WHERE v.product = p AND LOWER(v.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+        Page<Product> findByProductNameOrVariantSkuContainingIgnoreCase(@Param("keyword") String keyword, Pageable pageable);
+
         // Override findAll(Pageable) để gắn @EntityGraph -- admin không có từ khoá tìm kiếm gọi thẳng
         // method này. Không có "variants": lý do như comment method trên.
         @Override

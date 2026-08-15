@@ -1,10 +1,12 @@
 package com.datn.repository;
 
 import com.datn.entity.ProductVariant;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -20,6 +22,15 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     // Load kèm Product để CartService lấy tên/giá/ảnh trong 1 lần query.
     @EntityGraph(attributePaths = {"product"})
     Optional<ProductVariant> findById(Long variantId);
+
+    // Dùng đúng ở các điểm ĐỌC-KIỂM TRA-RỒI-TRỪ kho (PosOrderService.addItem/updateItemQuantity,
+    // AdminOrderService.updateStatus lúc PENDING->CONFIRMED) -- khoá row tới hết transaction, chặn 2
+    // request cùng lúc đọc trùng số tồn rồi cùng trừ, có thể đẩy kho về âm. KHÔNG dùng cho findById()
+    // mặc định (đọc thường) vì khoá không cần thiết sẽ làm chậm mọi truy vấn đọc trong hệ thống.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"product"})
+    @Query("SELECT v FROM ProductVariant v WHERE v.variantId = :variantId")
+    Optional<ProductVariant> findByIdForUpdate(@Param("variantId") Long variantId);
 
     // Màn "Kho tồn hàng": tìm theo tên sản phẩm/SKU/size/màu, kèm lọc "sắp hết hàng", xử lý ngay trong
     // 1 query để Pageable trả đúng tổng số bản ghi.

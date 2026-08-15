@@ -39,4 +39,10 @@ public class AdminOrderController {
             @PathVariable Long orderId, @Valid @RequestBody UpdateOrderStatusRequest request) {
         return ResponseEntity.ok(adminOrderService.updateStatus(orderId, request.getStatus()));
     }
+
+    @PatchMapping("/{orderId}/confirm-payment")
+    @PreAuthorize("@perm.has('ORDER_UPDATE_STATUS')")
+    public ResponseEntity<AdminOrderResponse> confirmPayment(@PathVariable Long orderId) {
+        return ResponseEntity.ok(adminOrderService.confirmPayment(orderId));
+    }
 }

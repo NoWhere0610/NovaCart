@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
+  confirmAdminOrderPaymentApi,
   getAdminOrdersApi,
   updateAdminOrderStatusApi,
   type AdminOrderDto,
 } from '../api/adminApi'
+import { useAlertDialog } from '../hooks/useAlertDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -56,6 +58,7 @@ export default function AdminOrdersPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const { alertDialog, dialog } = useAlertDialog()
 
   useEffect(() => {
     loadOrders()
@@ -77,7 +80,19 @@ export default function AdminOrdersPage() {
       await updateAdminOrderStatusApi(orderId, newStatus)
       await loadOrders()
     } catch (err: any) {
-      alert(err.response?.data?.message ?? 'Không thể cập nhật trạng thái')
+      await alertDialog(err.response?.data?.message ?? 'Không thể cập nhật trạng thái')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleConfirmPayment(orderId: number) {
+    setBusyId(orderId)
+    try {
+      await confirmAdminOrderPaymentApi(orderId)
+      await loadOrders()
+    } catch (err: any) {
+      await alertDialog(err.response?.data?.message ?? 'Không thể xác nhận thanh toán')
     } finally {
       setBusyId(null)
     }
@@ -85,6 +100,7 @@ export default function AdminOrdersPage() {
 
   return (
     <div>
+      {dialog}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-stone-900">Quản lý đơn hàng</h1>
         <select
@@ -140,6 +156,15 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
+                      {o.paymentMethod === 'BANK_TRANSFER' && o.paymentStatus === 'UNPAID' && (
+                        <button
+                          disabled={busyId === o.orderId}
+                          onClick={() => handleConfirmPayment(o.orderId)}
+                          className="text-xs border border-green-300 text-green-700 hover:bg-green-50 px-2 py-1 disabled:opacity-50"
+                        >
+                          Xác nhận đã nhận CK
+                        </button>
+                      )}
                       {NEXT_STATUS[o.status]?.map((next) => (
                         <button
                           key={next.status}

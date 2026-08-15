@@ -12,7 +12,7 @@ export interface PosOrderItemDto {
   subtotal: number
 }
 
-export type PosStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED'
+export type PosStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'RETURNED'
 export type PosPaymentMethod = 'COD' | 'BANK_TRANSFER'
 
 export interface PosInvoiceDto {
@@ -94,4 +94,18 @@ export async function checkoutPosInvoiceApi(
 
 export async function cancelPosInvoiceApi(orderId: number) {
   await apiClient.delete(`/admin/pos/invoices/${orderId}`)
+}
+
+// Hoàn/huỷ hoá đơn ĐÃ THANH TOÁN (khác cancelPosInvoiceApi chỉ dùng cho hoá đơn đang chọn hàng) --
+// hoàn kho + trả voucher, chuyển trạng thái sang RETURNED.
+export async function voidPosInvoiceApi(orderId: number) {
+  const { data } = await apiClient.post<PosInvoiceDto>(`/admin/pos/invoices/${orderId}/void`)
+  return data
+}
+
+// Xác nhận đã nhận tiền chuyển khoản -- hoá đơn CHUYỂN KHOẢN không tự động PAID lúc checkout nữa
+// (xem PosOrderService.checkout), thu ngân tự kiểm tra app ngân hàng rồi bấm xác nhận riêng.
+export async function confirmPosPaymentApi(orderId: number) {
+  const { data } = await apiClient.patch<PosInvoiceDto>(`/admin/pos/invoices/${orderId}/confirm-payment`)
+  return data
 }

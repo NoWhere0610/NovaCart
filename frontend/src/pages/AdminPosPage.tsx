@@ -11,9 +11,12 @@ import {
   removePosVoucherApi,
   checkoutPosInvoiceApi,
   cancelPosInvoiceApi,
+  voidPosInvoiceApi,
+  confirmPosPaymentApi,
   type PosInvoiceDto,
   type PosPaymentMethod,
 } from '../api/posApi'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -36,6 +39,7 @@ export default function AdminPosPage() {
   const [customerPhone, setCustomerPhone] = useState('')
   const [checkingOut, setCheckingOut] = useState(false)
   const [error, setError] = useState('')
+  const { confirm, dialog } = useConfirmDialog()
 
   useEffect(() => {
     refreshPendingList()
@@ -118,10 +122,35 @@ export default function AdminPosPage() {
   }
 
   async function handleCancelInvoice() {
-    if (!invoice || !confirm('Huỷ hoá đơn này? Toàn bộ sản phẩm đã thêm sẽ được hoàn lại kho.')) return
+    if (!invoice || !(await confirm('Huỷ hoá đơn này? Toàn bộ sản phẩm đã thêm sẽ được hoàn lại kho.'))) return
     await cancelPosInvoiceApi(invoice.orderId)
     setInvoice(null)
     await refreshPendingList()
+  }
+
+  async function handleConfirmPayment() {
+    if (!invoice) return
+    setError('')
+    try {
+      setInvoice(await confirmPosPaymentApi(invoice.orderId))
+    } catch (err: any) {
+      setError(err.response?.data?.message ?? 'Không thể xác nhận thanh toán')
+    }
+  }
+
+  async function handleVoidInvoice() {
+    if (
+      !invoice ||
+      !(await confirm('Hoàn/huỷ hoá đơn ĐÃ THANH TOÁN này? Toàn bộ sản phẩm sẽ được hoàn lại kho và mã giảm giá (nếu có) được trả lại lượt dùng.'))
+    )
+      return
+    setError('')
+    try {
+      setInvoice(await voidPosInvoiceApi(invoice.orderId))
+      await refreshPendingList()
+    } catch (err: any) {
+      setError(err.response?.data?.message ?? 'Không thể hoàn/huỷ hoá đơn')
+    }
   }
 
   async function handleCheckout() {
@@ -149,6 +178,7 @@ export default function AdminPosPage() {
 
   return (
     <div className="grid grid-cols-12 gap-6">
+      {dialog}
       {/* Cột trái: hoá đơn chờ */}
       <div className="col-span-2">
         <button
@@ -172,6 +202,9 @@ export default function AdminPosPage() {
             >
               <p className="font-medium text-stone-900">{inv.orderCode}</p>
               <p className="text-stone-500">{formatVnd(inv.totalAmount)}</p>
+              {inv.cashierUsername && (
+                <p className="text-stone-400 text-[11px]">Thu ngân: {inv.cashierUsername}</p>
+              )}
             </button>
           ))}
           {pendingList.length === 0 && (
@@ -187,7 +220,7 @@ export default function AdminPosPage() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            placeholder="Tìm sản phẩm theo tên..."
+            placeholder="Tìm theo tên sản phẩm hoặc mã SKU..."
             className="flex-1 border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
           />
           <button
@@ -241,12 +274,18 @@ export default function AdminPosPage() {
                 className={`text-xs px-2 py-1 ${
                   invoice.status === 'COMPLETED'
                     ? 'bg-green-100 text-green-800'
-                    : invoice.status === 'CANCELLED'
+                    : invoice.status === 'CANCELLED' || invoice.status === 'RETURNED'
                     ? 'bg-stone-200 text-stone-600'
                     : 'bg-amber-100 text-amber-800'
                 }`}
               >
-                {invoice.status === 'COMPLETED' ? 'Đã thanh toán' : invoice.status === 'CANCELLED' ? 'Đã huỷ' : 'Đang chọn hàng'}
+                {invoice.status === 'COMPLETED'
+                  ? 'Đã thanh toán'
+                  : invoice.status === 'CANCELLED'
+                  ? 'Đã huỷ'
+                  : invoice.status === 'RETURNED'
+                  ? 'Đã hoàn/huỷ'
+                  : 'Đang chọn hàng'}
               </span>
             </div>
 
@@ -321,13 +360,41 @@ export default function AdminPosPage() {
               <span>{formatVnd(invoice.totalAmount)}</span>
             </div>
 
-            {invoice.status === 'COMPLETED' && (
-              <button
-                onClick={() => window.open(`/admin/pos/invoices/${invoice.orderId}/print`, '_blank')}
-                className="w-full mb-4 border border-stone-900 text-stone-900 hover:bg-stone-900 hover:text-white text-sm font-semibold px-4 py-2.5"
+            {invoice.status === 'COMPLETED' && invoice.paymentMethod === 'BANK_TRANSFER' && (
+              <div
+                className={`mb-3 text-xs px-3 py-2 ${
+                  invoice.paymentStatus === 'PAID' ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                }`}
               >
-                In hoá đơn
-              </button>
+                {invoice.paymentStatus === 'PAID'
+                  ? 'Đã xác nhận nhận được chuyển khoản.'
+                  : 'Chuyển khoản CHƯA được xác nhận -- kiểm tra app ngân hàng rồi bấm xác nhận bên dưới.'}
+              </div>
+            )}
+
+            {invoice.status === 'COMPLETED' && (
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => window.open(`/admin/pos/invoices/${invoice.orderId}/print`, '_blank')}
+                  className="flex-1 border border-stone-900 text-stone-900 hover:bg-stone-900 hover:text-white text-sm font-semibold px-4 py-2.5"
+                >
+                  In hoá đơn
+                </button>
+                {invoice.paymentMethod === 'BANK_TRANSFER' && invoice.paymentStatus !== 'PAID' && (
+                  <button
+                    onClick={handleConfirmPayment}
+                    className="flex-1 border border-green-700 text-green-700 hover:bg-green-50 text-sm font-semibold px-4 py-2.5"
+                  >
+                    Xác nhận đã nhận CK
+                  </button>
+                )}
+                <button
+                  onClick={handleVoidInvoice}
+                  className="flex-1 border border-red-600 text-red-600 hover:bg-red-50 text-sm font-semibold px-4 py-2.5"
+                >
+                  Hoàn/huỷ hoá đơn
+                </button>
+              </div>
             )}
 
             {isDraft && (

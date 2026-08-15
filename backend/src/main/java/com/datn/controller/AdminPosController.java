@@ -82,4 +82,14 @@ public class AdminPosController {
         posOrderService.cancelInvoice(orderId);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/invoices/{orderId}/void")
+    public ResponseEntity<PosDto.InvoiceResponse> voidCompletedInvoice(@PathVariable Long orderId) {
+        return ResponseEntity.ok(posOrderService.voidCompletedInvoice(orderId));
+    }
+
+    @PatchMapping("/invoices/{orderId}/confirm-payment")
+    public ResponseEntity<PosDto.InvoiceResponse> confirmPayment(@PathVariable Long orderId) {
+        return ResponseEntity.ok(posOrderService.confirmPayment(orderId));
+    }
 }

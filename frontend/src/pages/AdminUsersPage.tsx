@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { getAdminUsersApi, lockAdminUserApi, unlockAdminUserApi, type AdminUserDto } from '../api/adminApi'
+import { useAlertDialog } from '../hooks/useAlertDialog'
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUserDto[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const { alertDialog, dialog } = useAlertDialog()
 
   useEffect(() => {
     loadUsers()
@@ -30,7 +32,7 @@ export default function AdminUsersPage() {
       }
       await loadUsers()
     } catch (err: any) {
-      alert(err.response?.data?.message ?? 'Không thể cập nhật trạng thái tài khoản')
+      await alertDialog(err.response?.data?.message ?? 'Không thể cập nhật trạng thái tài khoản')
     } finally {
       setBusyId(null)
     }
@@ -38,6 +40,7 @@ export default function AdminUsersPage() {
 
   return (
     <div>
+      {dialog}
       <h1 className="text-2xl font-semibold text-stone-900 mb-6">Quản lý người dùng</h1>
 
       {loading ? (

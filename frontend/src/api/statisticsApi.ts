@@ -52,9 +52,19 @@ export interface StatisticsResponse {
   lowStockVariants: LowStockItem[]
 }
 
-export async function getStatisticsApi(from: string, to: string, topProductLimit = 5) {
+export interface StatisticsFilters {
+  categoryId?: number
+  orderType?: 'ONLINE' | 'POS'
+}
+
+export async function getStatisticsApi(
+  from: string,
+  to: string,
+  topProductLimit = 5,
+  filters: StatisticsFilters = {},
+) {
   const { data } = await apiClient.get<StatisticsResponse>('/admin/statistics', {
-    params: { from, to, topProductLimit },
+    params: { from, to, topProductLimit, ...filters },
   })
   return data
 }

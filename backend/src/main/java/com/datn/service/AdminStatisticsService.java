@@ -31,7 +31,8 @@ public class AdminStatisticsService {
     private final OrderRepository orderRepository;
     private final ProductVariantRepository productVariantRepository;
 
-    public StatisticsDto.StatisticsResponse getStatistics(LocalDate from, LocalDate to, int topProductLimit) {
+    public StatisticsDto.StatisticsResponse getStatistics(
+            LocalDate from, LocalDate to, int topProductLimit, Integer categoryId, Order.OrderType orderType) {
         LocalDateTime fromDateTime = from.atStartOfDay();
         LocalDateTime toDateTime = to.atTime(LocalTime.MAX);
 
@@ -39,6 +40,16 @@ public class AdminStatisticsService {
                 List.of(Order.Status.COMPLETED, Order.Status.RETURNED, Order.Status.CANCELLED,
                         Order.Status.RETURN_REQUESTED),
                 fromDateTime, toDateTime);
+
+        // 2 chiều lọc tuỳ chọn -- áp dụng ở CẤP ĐƠN HÀNG (đơn có >=1 sản phẩm thuộc đúng danh mục thì
+        // tính cả đơn, không tách riêng doanh thu từng dòng trong 1 đơn mua nhiều danh mục khác nhau --
+        // đơn giản hơn và đúng với cách chủ shop thường hình dung "đơn có bán món này").
+        if (orderType != null) {
+            orders = orders.stream().filter(o -> o.getOrderType() == orderType).toList();
+        }
+        if (categoryId != null) {
+            orders = orders.stream().filter(o -> orderHasCategory(o, categoryId)).toList();
+        }
 
         List<Order> completed = orders.stream().filter(o -> o.getStatus() == Order.Status.COMPLETED).toList();
         List<Order> returned = orders.stream().filter(o -> o.getStatus() == Order.Status.RETURNED).toList();
@@ -176,6 +187,13 @@ public class AdminStatisticsService {
                         .stockQuantity(v.getStockQuantity())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    private boolean orderHasCategory(Order order, Integer categoryId) {
+        return order.getItems().stream().anyMatch(i ->
+                i.getVariant() != null && i.getVariant().getProduct() != null
+                        && i.getVariant().getProduct().getCategory() != null
+                        && categoryId.equals(i.getVariant().getProduct().getCategory().getCategoryId()));
     }
 
     private BigDecimal sumTotal(List<Order> orders) {

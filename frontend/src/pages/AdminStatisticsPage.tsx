@@ -13,6 +13,7 @@ import {
   YAxis,
 } from 'recharts'
 import { getStatisticsApi, type StatisticsResponse } from '../api/statisticsApi'
+import { getAdminCategoriesApi, type AdminCategoryDto } from '../api/adminApi'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -78,19 +79,33 @@ export default function AdminStatisticsPage() {
 
   const [from, setFrom] = useState(toIsoDate(monthAgo))
   const [to, setTo] = useState(toIsoDate(today))
+  const [categoryId, setCategoryId] = useState('')
+  const [orderType, setOrderType] = useState<'' | 'ONLINE' | 'POS'>('')
+  const [categories, setCategories] = useState<AdminCategoryDto[]>([])
   const [data, setData] = useState<StatisticsResponse | null>(null)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     load()
+    // Chỉ lấy danh mục LÁ (có parentId) -- danh mục cha chỉ là nhóm tiêu đề, không gán trực tiếp cho
+    // sản phẩm nào nên lọc theo nó sẽ luôn ra 0 kết quả.
+    getAdminCategoriesApi()
+      .then((cats) => setCategories(cats.filter((c) => c.parentId !== null)))
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function load() {
     setLoading(true)
     setError(null)
     try {
-      setData(await getStatisticsApi(from, to))
+      setData(
+        await getStatisticsApi(from, to, 5, {
+          categoryId: categoryId ? Number(categoryId) : undefined,
+          orderType: orderType || undefined,
+        }),
+      )
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Không thể tải dữ liệu thống kê. Vui lòng thử lại.')
     } finally {
@@ -118,6 +133,33 @@ export default function AdminStatisticsPage() {
             onChange={(e) => setTo(e.target.value)}
             className="border border-stone-300 px-2 py-1.5 text-sm"
           />
+        </div>
+        <div>
+          <label className="block text-xs text-stone-500 mb-1">Danh mục</label>
+          <select
+            value={categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+            className="border border-stone-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">Tất cả danh mục</option>
+            {categories.map((c) => (
+              <option key={c.categoryId} value={c.categoryId}>
+                {c.categoryName}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-stone-500 mb-1">Kênh bán</label>
+          <select
+            value={orderType}
+            onChange={(e) => setOrderType(e.target.value as '' | 'ONLINE' | 'POS')}
+            className="border border-stone-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">Tất cả kênh</option>
+            <option value="ONLINE">Online</option>
+            <option value="POS">Tại quầy (POS)</option>
+          </select>
         </div>
         <button
           onClick={load}

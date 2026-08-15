@@ -1,6 +1,7 @@
 package com.datn.controller;
 
 import com.datn.dto.statistics.StatisticsDto;
+import com.datn.entity.Order;
 import com.datn.service.AdminStatisticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -25,10 +26,13 @@ public class AdminStatisticsController {
     public ResponseEntity<StatisticsDto.StatisticsResponse> getStatistics(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(defaultValue = "5") int topProductLimit) {
+            @RequestParam(defaultValue = "5") int topProductLimit,
+            @RequestParam(required = false) Integer categoryId,
+            @RequestParam(required = false) Order.OrderType orderType) {
         LocalDate effectiveTo = to != null ? to : LocalDate.now();
         // Mặc định: 30 ngày gần nhất nếu không truyền from
         LocalDate effectiveFrom = from != null ? from : effectiveTo.minusDays(29);
-        return ResponseEntity.ok(statisticsService.getStatistics(effectiveFrom, effectiveTo, topProductLimit));
+        return ResponseEntity.ok(
+                statisticsService.getStatistics(effectiveFrom, effectiveTo, topProductLimit, categoryId, orderType));
     }
 }
