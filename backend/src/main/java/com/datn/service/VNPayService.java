@@ -1,6 +1,7 @@
 package com.datn.service;
 
 import com.datn.entity.Order;
+import com.datn.exception.ApiException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,9 +40,10 @@ public class VNPayService {
 
     public String buildPaymentUrl(Order order, HttpServletRequest request) {
         if (tmnCode == null || tmnCode.isBlank() || hashSecret == null || hashSecret.isBlank()) {
-            throw new IllegalStateException(
-                    "Chưa cấu hình VNPay (vnpay.tmn-code / vnpay.hash-secret trong application.properties). " +
-                            "Đăng ký sandbox tại https://sandbox.vnpayment.vn/devreg/ rồi điền vào.");
+            // ApiException (không phải IllegalStateException) để GlobalExceptionHandler trả đúng 400
+            // kèm message rõ ràng, thay vì rơi xuống handler Exception chung -> 500 "lỗi hệ thống" mù mờ.
+            throw ApiException.badRequest(
+                    "Cổng thanh toán VNPay chưa được cấu hình. Vui lòng chọn phương thức thanh toán khác.");
         }
 
         Map<String, String> params = new HashMap<>();

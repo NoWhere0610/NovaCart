@@ -13,6 +13,7 @@ import java.util.List;
 @Builder
 public class AdminOrderResponse {
     private Long orderId;
+    private Order.OrderType orderType;
     private Long buyerUserId;
     private String buyerUsername;
     private String buyerEmail;
@@ -23,6 +24,7 @@ public class AdminOrderResponse {
     private BigDecimal shippingFee;
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
+    private Order.PaymentStatus paymentStatus;
     private String note;
     private String returnReason;
     private LocalDateTime createdAt;

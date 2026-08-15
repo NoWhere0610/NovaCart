@@ -1,6 +1,14 @@
 @import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap");
 @import "tailwindcss";
 
+/* Tailwind Preflight tự set cursor: default cho <button> (khớp hành vi OS gốc) -- toàn bộ site dùng
+   <button> cho hầu hết hành động click nên phải trả lại con trỏ bàn tay thủ công ở đây 1 lần, thay vì
+   thêm cursor-pointer riêng lẻ vào hàng trăm chỗ. disabled: giữ nguyên con trỏ mặc định (đúng UX). */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
 /* Bảng màu thương hiệu: nền đen/trắng, gold chỉ dùng làm điểm nhấn, không tô nền mảng lớn. */
 @theme {
   --color-gold: #c6a664;

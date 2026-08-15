@@ -56,6 +56,20 @@ export async function getProductReviewsApi(productId: number, page = 0, size = 1
   return data
 }
 
+export interface ProductRatingSummaryDto {
+  averageRating: number
+  totalReviews: number
+  // Key "1".."5" (JSON không giữ key số) -- số đánh giá ở đúng mức sao đó, luôn đủ 5 key kể cả 0.
+  ratingDistribution: Record<string, number>
+}
+
+export async function getProductRatingSummaryApi(productId: number) {
+  const { data } = await apiClient.get<ProductRatingSummaryDto>(
+    `/home/products/${productId}/reviews/summary`,
+  )
+  return data
+}
+
 // POST nằm ở path RIÊNG /api/reviews/** (không phải /home/**) — bắt buộc đăng nhập,
 // xem chú thích trong ReviewController.java ở backend để hiểu lý do tách path
 export async function createReviewApi(productId: number, rating: number, comment: string) {

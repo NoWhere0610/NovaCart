@@ -34,6 +34,7 @@ public class OrderService {
     private final ReviewRepository reviewRepository;
     private final ShippingService shippingService;
     private final VNPayService vnPayService;
+    private final VietQrService vietQrService;
 
     @Transactional
     public OrderResponse checkout(Long userId, CheckoutRequest request) {
@@ -42,6 +43,17 @@ public class OrderService {
 
         if (cart.getItems().isEmpty()) {
             throw ApiException.badRequest("Giỏ hàng trống, không thể đặt hàng");
+        }
+
+        // cartItemIds có giá trị -> chỉ đặt hàng đúng các dòng đã chọn (mua đơn lẻ 1 phần giỏ hàng),
+        // giữ lại các dòng còn lại trong giỏ. null -> đặt hàng CẢ giỏ như hành vi cũ.
+        List<CartItem> itemsToCheckout = request.getCartItemIds() == null
+                ? cart.getItems()
+                : cart.getItems().stream()
+                        .filter(ci -> request.getCartItemIds().contains(ci.getCartItemId()))
+                        .toList();
+        if (itemsToCheckout.isEmpty()) {
+            throw ApiException.badRequest("Không có sản phẩm nào được chọn để đặt hàng");
         }
 
         Address address = addressRepository.findById(request.getAddressId())
@@ -64,7 +76,7 @@ public class OrderService {
 
         BigDecimal total = BigDecimal.ZERO;
 
-        for (CartItem cartItem : cart.getItems()) {
+        for (CartItem cartItem : itemsToCheckout) {
             ProductVariant variant = variantRepository.findById(cartItem.getVariant().getVariantId())
                     .orElseThrow(() -> ApiException.notFound("Sản phẩm không còn tồn tại"));
 
@@ -100,12 +112,13 @@ public class OrderService {
             order.setVoucherCode(request.getVoucherCode().trim().toUpperCase());
         }
         order.setDiscountAmount(discount);
-        BigDecimal shippingFee = shippingService.calculateFee(address.getProvince(), total);
+        BigDecimal shippingFee = shippingService.calculateFee(address, total);
         order.setShippingFee(shippingFee);
         order.setTotalAmount(total.subtract(discount).add(shippingFee));
         Order saved = orderRepository.save(order);
 
-        cart.getItems().clear();
+        // Chỉ xoá đúng các dòng đã đặt hàng -- các dòng còn lại (nếu mua đơn lẻ 1 phần) vẫn giữ nguyên trong giỏ.
+        cart.getItems().removeAll(itemsToCheckout);
         cartRepository.save(cart);
 
         return toResponse(saved, true);
@@ -236,11 +249,18 @@ public class OrderService {
                 .status(order.getStatus())
                 .paymentMethod(order.getPaymentMethod())
                 .paymentStatus(order.getPaymentStatus())
+                .qrCodeUrl(needsQrCode(order) ? vietQrService.buildQrUrl(order.getOrderCode(), order.getTotalAmount()) : null)
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
                 .createdAt(order.getCreatedAt())
                 .items(items)
                 .build();
+    }
+
+    /** Chỉ đơn chuyển khoản CÒN CHƯA thanh toán mới cần hiện QR -- đã trả tiền hoặc phương thức khác thì không. */
+    private boolean needsQrCode(Order order) {
+        return order.getPaymentMethod() == Order.PaymentMethod.BANK_TRANSFER
+                && order.getPaymentStatus() == Order.PaymentStatus.UNPAID;
     }
 
     /** Lấy link thanh toán VNPay cho đơn đã đặt (paymentMethod=VNPAY, còn UNPAID), phải thuộc đúng người gọi. */

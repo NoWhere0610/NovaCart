@@ -24,15 +24,47 @@ export interface TopProduct {
   revenue: number
 }
 
+export interface CategoryRevenue {
+  categoryName: string
+  revenue: number
+  quantitySold: number
+}
+
+export interface PaymentMethodStat {
+  paymentMethod: string
+  orderCount: number
+  revenue: number
+}
+
+export interface LowStockItem {
+  productName: string
+  size: string
+  color: string
+  stockQuantity: number
+}
+
 export interface StatisticsResponse {
   summary: StatisticsSummary
   revenueByDay: RevenuePoint[]
   topProducts: TopProduct[]
+  revenueByCategory: CategoryRevenue[]
+  paymentMethodBreakdown: PaymentMethodStat[]
+  lowStockVariants: LowStockItem[]
 }
 
-export async function getStatisticsApi(from: string, to: string, topProductLimit = 5) {
+export interface StatisticsFilters {
+  categoryId?: number
+  orderType?: 'ONLINE' | 'POS'
+}
+
+export async function getStatisticsApi(
+  from: string,
+  to: string,
+  topProductLimit = 5,
+  filters: StatisticsFilters = {},
+) {
   const { data } = await apiClient.get<StatisticsResponse>('/admin/statistics', {
-    params: { from, to, topProductLimit },
+    params: { from, to, topProductLimit, ...filters },
   })
   return data
 }

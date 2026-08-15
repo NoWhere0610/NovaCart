@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter
 @Setter
 public class CheckoutRequest {
@@ -20,4 +22,8 @@ public class CheckoutRequest {
     private String note;
 
     private String voucherCode;
+
+    // null = checkout CẢ giỏ hàng (hành vi cũ, giữ nguyên); có giá trị = chỉ checkout đúng các dòng
+    // cartItemId này, giữ lại các dòng còn lại trong giỏ -- cho phép "mua đơn lẻ" 1 phần giỏ hàng.
+    private List<Long> cartItemIds;
 }

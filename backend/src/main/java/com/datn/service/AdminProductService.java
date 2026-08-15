@@ -38,7 +38,9 @@ public class AdminProductService {
     public PageResponse<AdminProductResponse> list(String keyword, int page, int size) {
         Page<Product> products = (keyword == null || keyword.isBlank())
                 ? productRepository.findAll(PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")))
-                : productRepository.findByProductNameContainingIgnoreCase(
+                // Khớp cả theo tên sản phẩm lẫn SKU biến thể -- ô tìm kiếm này dùng chung cho cả trang
+                // Sản phẩm lẫn ô tìm sản phẩm ở POS, thu ngân cần gõ/quét được SKU.
+                : productRepository.findByProductNameOrVariantSkuContainingIgnoreCase(
                     keyword, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
 
         // Batch 1 query lấy variants cho cả trang, tránh N+1 -- không gộp @EntityGraph vì "images" là bag collection khác.

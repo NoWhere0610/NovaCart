@@ -180,6 +180,7 @@ export async function deleteAdminBrandApi(brandId: number) {
 
 export interface AdminOrderDto {
   orderId: number
+  orderType: 'ONLINE' | 'POS'
   buyerUserId: number
   buyerUsername: string
   buyerEmail: string
@@ -196,7 +197,8 @@ export interface AdminOrderDto {
     | 'CANCELLED'
     | 'RETURN_REQUESTED'
     | 'RETURNED'
-  paymentMethod: 'COD' | 'BANK_TRANSFER'
+  paymentMethod: 'COD' | 'BANK_TRANSFER' | 'VNPAY'
+  paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED'
   note: string | null
   returnReason: string | null
   createdAt: string
@@ -217,6 +219,11 @@ export async function getAdminOrderDetailApi(orderId: number) {
 
 export async function updateAdminOrderStatusApi(orderId: number, status: string) {
   const { data } = await apiClient.put<AdminOrderDto>(`/admin/orders/${orderId}/status`, { status })
+  return data
+}
+
+export async function confirmAdminOrderPaymentApi(orderId: number) {
+  const { data } = await apiClient.patch<AdminOrderDto>(`/admin/orders/${orderId}/confirm-payment`)
   return data
 }
 

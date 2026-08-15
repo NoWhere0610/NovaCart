@@ -19,6 +19,7 @@ import AdminVouchersPage from "./pages/AdminVouchersPage";
 import AdminOrdersPage from "./pages/AdminOrdersPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminPosPage from "./pages/AdminPosPage";
+import PosInvoicePrintPage from "./pages/PosInvoicePrintPage";
 import AdminStatisticsPage from "./pages/AdminStatisticsPage";
 import VNPayResultPage from "./pages/VNPayResultPage";
 import RequireAuth from "./components/RequireAuth";
@@ -47,8 +48,10 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Các trang chính sách công khai (không cần đăng nhập) */}
+          {/* Header + Footer cố định cho mọi trang khách hàng -- gồm cả trang PUBLIC (xem tự do,
+              khớp đúng /api/home/** permitAll() ở backend) lẫn trang riêng tư (bắt buộc đăng nhập). */}
           <Route element={<Layout />}>
+            {/* Trang chính sách + trang mua sắm công khai -- KHÔNG cần đăng nhập */}
             <Route
               path="/chinh-sach-doi-tra"
               element={<ReturnPolicyPage />}
@@ -62,20 +65,17 @@ function App() {
               element={<PrivacyPolicyPage />}
             />
             <Route path="/dieu-khoan-su-dung" element={<TermsPage />} />
-          </Route>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/categories" element={<CategoriesPage />} />
+            <Route path="/shop" element={<ShopPage />} />
+            <Route
+              path="/products/:productId"
+              element={<ProductDetailPage />}
+            />
 
-          {/* MỌI route còn lại — kể cả trang chủ — bắt buộc đăng nhập */}
-          <Route element={<RequireAuth />}>
-            {/* Header + Footer cố định cho mọi trang khách hàng */}
-            <Route element={<Layout />}>
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/categories" element={<CategoriesPage />} />
-              <Route path="/shop" element={<ShopPage />} />
+            {/* Từ đây trở xuống mới bắt buộc đăng nhập -- giỏ hàng, thanh toán, đơn hàng, tài khoản */}
+            <Route element={<RequireAuth />}>
               <Route path="/account" element={<AccountPage />} />
-              <Route
-                path="/products/:productId"
-                element={<ProductDetailPage />}
-              />
               <Route path="/cart" element={<CartPage />} />
               <Route path="/wishlist" element={<WishlistPage />} />
               <Route path="/checkout" element={<CheckoutPage />} />
@@ -83,8 +83,13 @@ function App() {
               <Route path="/orders/:orderId" element={<OrderDetailPage />} />
               <Route path="/vnpay-result" element={<VNPayResultPage />} />
             </Route>
+          </Route>
 
-            <Route element={<RequireAdminRoute />}>
+          {/* MỌI route quản trị vẫn bắt buộc đăng nhập */}
+          <Route element={<RequireAuth />}>
+            {/* allowStaff -- STAFF được vào khu vực /admin nói chung, quyền THẬT theo từng trang/hành
+                động cụ thể do backend (ma trận role_permission) quyết định. */}
+            <Route element={<RequireAdminRoute allowStaff />}>
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminStatisticsPage />} />
                 <Route path="statistics" element={<AdminStatisticsPage />} />
@@ -93,15 +98,18 @@ function App() {
                 <Route path="categories" element={<AdminCategoriesPage />} />
                 <Route path="vouchers" element={<AdminVouchersPage />} />
                 <Route path="orders" element={<AdminOrdersPage />} />
-                <Route path="users" element={<AdminUsersPage />} />
 
-                {/* Kho tồn hàng: chặn kép bằng RequireAdminRoute lần 2 — phòng trường hợp
-                    sau này nhóm route /admin phía trên được nới cho role khác (vd STAFF),
-                    riêng màn Inventory vẫn bắt buộc đúng role ADMIN. */}
+                {/* Kho tồn hàng + Người dùng: chặn kép bằng RequireAdminRoute lần 2 (mặc định CHỈ
+                    ADMIN, không allowStaff) — khớp đúng SecurityConfig backend, 2 khu vực này luôn
+                    khoá cứng ADMIN, không qua ma trận STAFF. */}
                 <Route element={<RequireAdminRoute />}>
                   <Route path="inventory" element={<AdminInventoryPage />} />
+                  <Route path="users" element={<AdminUsersPage />} />
                 </Route>
               </Route>
+
+              {/* Cố tình NẰM NGOÀI AdminLayout -- không sidebar/header quản trị, mở ở tab riêng để in. */}
+              <Route path="/admin/pos/invoices/:orderId/print" element={<PosInvoicePrintPage />} />
             </Route>
           </Route>
         </Routes>

@@ -2,6 +2,7 @@ package com.datn.dto.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -29,5 +30,8 @@ public class RegisterRequest {
 
     private String fullName;
 
+    // Không bắt buộc (để trống hợp lệ) nhưng ĐÃ NHẬP thì phải đúng định dạng số VN thật (đầu 03/05/07/08/09).
+    @Pattern(regexp = "^$|^(0|\\+84)(3|5|7|8|9)[0-9]{8}$",
+            message = "Số điện thoại không đúng định dạng (10 số, bắt đầu bằng 03/05/07/08/09, vd 0912345678)")
     private String phone;
 }

@@ -41,9 +41,37 @@ public class StatisticsDto {
 
     @Getter
     @Builder
+    public static class CategoryRevenue {
+        private String categoryName;
+        private BigDecimal revenue;
+        private long quantitySold;
+    }
+
+    @Getter
+    @Builder
+    public static class PaymentMethodStat {
+        private String paymentMethod;
+        private long orderCount;
+        private BigDecimal revenue;
+    }
+
+    @Getter
+    @Builder
+    public static class LowStockItem {
+        private String productName;
+        private String size;
+        private String color;
+        private Integer stockQuantity;
+    }
+
+    @Getter
+    @Builder
     public static class StatisticsResponse {
         private Summary summary;
         private List<RevenuePoint> revenueByDay;
         private List<TopProduct> topProducts;
+        private List<CategoryRevenue> revenueByCategory;
+        private List<PaymentMethodStat> paymentMethodBreakdown;
+        private List<LowStockItem> lowStockVariants;
     }
 }

@@ -21,6 +21,9 @@ export default function Header() {
   const { user, logout } = useAuth()
   const { cartCount } = useCart()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
+  // Nút vào trang quản trị: cả ADMIN lẫn STAFF -- quyền THẬT theo từng trang/hành động cụ thể
+  // do backend (ma trận role_permission) quyết định, ở đây chỉ quyết có cho vào khu vực /admin không.
+  const canAccessAdmin = isAdmin || (user?.roles.includes('STAFF') ?? false)
   const [categories, setCategories] = useState<MegaMenuCategory[]>(DEMO_CATEGORIES)
   // Ô tìm kiếm chính ẩn trên mobile -- thêm nút icon riêng, bấm vào xổ hàng tìm kiếm full-width dưới header.
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -111,7 +114,7 @@ export default function Header() {
             >
               <IconSearch size={20} stroke={1.7} />
             </button>
-            {isAdmin && (
+            {canAccessAdmin && (
               <Link
                 to="/admin"
                 className="hidden sm:flex items-center gap-1.5 bg-stone-900 border-gold-metallic gold-glow text-white text-xs font-semibold px-3 py-1.5"
@@ -123,10 +126,15 @@ export default function Header() {
             <button onClick={() => navigate('/wishlist')} aria-label="Sản phẩm yêu thích" className={ICON_BUTTON_CLASS}>
               <IconHeart size={20} stroke={1.7} />
             </button>
-            <button onClick={() => navigate('/orders')} aria-label="Đơn hàng của tôi" className={ICON_BUTTON_CLASS}>
-              <IconPackage size={20} stroke={1.7} />
+            <button onClick={() => navigate('/cart')} aria-label="Giỏ hàng" className={`relative ${ICON_BUTTON_CLASS}`}>
+              <IconShoppingBag size={20} stroke={1.7} />
+              {cartCount > 0 && (
+                <span className="absolute top-0 right-0 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] leading-4 font-semibold text-center">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
             </button>
-            <div className="relative" onMouseLeave={() => setAccountMenuOpen(false)}>
+            <div className="relative flex items-center" onMouseLeave={() => setAccountMenuOpen(false)}>
               <button
                 onClick={() => setAccountMenuOpen((v) => !v)}
                 aria-label="Tài khoản"
@@ -137,13 +145,22 @@ export default function Header() {
               </button>
               {accountMenuOpen && (
                 <div className="absolute right-0 top-full pt-2 z-50">
-                  <div className="w-40 bg-white border border-stone-200 shadow-xl py-1">
+                  <div className="w-44 bg-white border border-stone-200 shadow-xl py-1">
                     <Link
                       to="/account"
                       onClick={() => setAccountMenuOpen(false)}
-                      className="block px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
                     >
+                      <IconUserCircle size={16} stroke={1.7} />
                       Tài khoản
+                    </Link>
+                    <Link
+                      to="/orders"
+                      onClick={() => setAccountMenuOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                    >
+                      <IconPackage size={16} stroke={1.7} />
+                      Đơn hàng của tôi
                     </Link>
                     <button
                       onClick={() => {
@@ -158,14 +175,6 @@ export default function Header() {
                 </div>
               )}
             </div>
-            <button onClick={() => navigate('/cart')} aria-label="Giỏ hàng" className={`relative ${ICON_BUTTON_CLASS}`}>
-              <IconShoppingBag size={20} stroke={1.7} />
-              {cartCount > 0 && (
-                <span className="absolute top-0 right-0 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] leading-4 font-semibold text-center">
-                  {cartCount > 99 ? '99+' : cartCount}
-                </span>
-              )}
-            </button>
           </div>
         </div>
 

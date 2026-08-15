@@ -8,6 +8,8 @@ export interface AddressDto {
   district: string | null
   ward: string | null
   detailAddress: string | null
+  latitude: number | null
+  longitude: number | null
   isDefault: boolean
 }
 
@@ -20,6 +22,11 @@ export async function getMyAddressesApi(): Promise<AddressDto[]> {
 
 export async function createAddressApi(payload: AddressPayload): Promise<AddressDto> {
   const { data } = await apiClient.post<AddressDto>('/addresses', payload)
+  return data
+}
+
+export async function updateAddressApi(addressId: number, payload: AddressPayload): Promise<AddressDto> {
+  const { data } = await apiClient.put<AddressDto>(`/addresses/${addressId}`, payload)
   return data
 }
 

@@ -84,6 +84,7 @@ export default function RegisterPage() {
             label="Số điện thoại (không bắt buộc)"
             value={form.phone}
             onChange={(v) => updateField('phone', v)}
+            error={fieldErrors.phone}
           />
 
           <button

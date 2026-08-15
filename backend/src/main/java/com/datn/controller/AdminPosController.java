@@ -7,17 +7,19 @@ import com.datn.service.PosOrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * Bán hàng tại quầy (POS). Nằm dưới /api/admin/** nên tự động được bảo vệ
- * bởi rule hasRole("ADMIN") đã có sẵn trong SecurityConfig — không cần khai
- * báo thêm gì (đồ án bỏ qua việc tách riêng role STAFF).
+ * Bán hàng tại quầy (POS). Nằm dưới /api/admin/** nên ADMIN hoặc STAFF đều qua được tầng route (xem
+ * SecurityConfig) -- toàn bộ thao tác POS gộp chung 1 quyền POS_USE (không tách nhỏ hơn vì "được thêm
+ * sản phẩm nhưng không được thanh toán" không có ý nghĩa nghiệp vụ thực tế).
  */
 @RestController
 @RequestMapping("/api/admin/pos")
 @RequiredArgsConstructor
+@PreAuthorize("@perm.has('POS_USE')")
 public class AdminPosController {
 
     private final PosOrderService posOrderService;
@@ -79,5 +81,15 @@ public class AdminPosController {
     public ResponseEntity<Void> cancelInvoice(@PathVariable Long orderId) {
         posOrderService.cancelInvoice(orderId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/invoices/{orderId}/void")
+    public ResponseEntity<PosDto.InvoiceResponse> voidCompletedInvoice(@PathVariable Long orderId) {
+        return ResponseEntity.ok(posOrderService.voidCompletedInvoice(orderId));
+    }
+
+    @PatchMapping("/invoices/{orderId}/confirm-payment")
+    public ResponseEntity<PosDto.InvoiceResponse> confirmPayment(@PathVariable Long orderId) {
+        return ResponseEntity.ok(posOrderService.confirmPayment(orderId));
     }
 }

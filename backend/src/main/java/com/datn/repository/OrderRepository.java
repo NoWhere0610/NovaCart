@@ -23,6 +23,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     // ----- POS (bán tại quầy) -----
     Page<Order> findByOrderTypeAndStatus(Order.OrderType orderType, Order.Status status, Pageable pageable);
 
+    // "Quản lý đơn hàng" (AdminOrderService) chỉ quản lý đơn ONLINE -- đơn POS có luồng/trạng thái
+    // riêng (trừ kho ngay lúc thêm item), quản lý chung sẽ trừ kho 2 lần + khoá cứng hoá đơn POS.
+    Page<Order> findByOrderType(Order.OrderType orderType, Pageable pageable);
+
     @EntityGraph(attributePaths = { "items" })
     Optional<Order> findByOrderIdAndOrderType(Long orderId, Order.OrderType orderType);
 

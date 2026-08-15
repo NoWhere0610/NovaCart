@@ -181,11 +181,11 @@ export default function LandingPage() {
           </div>
           <p className="text-gold text-xs font-semibold tracking-widest uppercase mb-4">Bộ sưu tập mới</p>
           <h1 className="font-display text-4xl md:text-5xl font-bold leading-tight mb-6">
-            May đo
+            Phong cách
             <br />
-            phong cách
+            chuẩn form
             <br />
-            của riêng bạn.
+            mỗi ngày.
           </h1>
           <p className="text-stone-300 max-w-md mb-8">
             Trang phục nam tối giản, chất liệu bền và form dáng chuẩn — từ áo sơ mi công sở đến
@@ -292,9 +292,9 @@ export default function LandingPage() {
           <div className="absolute inset-0 bg-linear-to-t from-stone-900/80 via-stone-900/15 to-transparent" />
           <div className="relative h-full max-w-[1600px] mx-auto px-6 flex items-end pb-10">
             <div>
-              <p className="text-gold text-xs font-semibold tracking-widest uppercase mb-2">May đo tối giản</p>
+              <p className="text-gold text-xs font-semibold tracking-widest uppercase mb-2">Phong cách mỗi ngày</p>
               <h2 className="font-display text-2xl md:text-3xl font-semibold text-stone-50 max-w-md">
-                Từng đường may, đúng form dáng của bạn.
+                Chọn đúng món đồ, tự tin mọi lúc.
               </h2>
             </div>
           </div>
