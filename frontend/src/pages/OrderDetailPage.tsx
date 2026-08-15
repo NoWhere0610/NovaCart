@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { IconCheck } from "@tabler/icons-react";
 import {
   cancelOrderApi,
@@ -12,6 +12,8 @@ import {
 } from "../api/orderApi";
 import { createReviewApi } from "../api/productApi";
 import BackButton from "../components/BackButton";
+import { useConfirmDialog } from "../hooks/useConfirmDialog";
+import { useAlertDialog } from "../hooks/useAlertDialog";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
@@ -164,6 +166,10 @@ function ReviewItemForm({ productId, onDone }: { productId: number; onDone: () =
 export default function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // CheckoutPage điều hướng sang đây kèm state này khi đơn đã tạo xong nhưng bước lấy link
+  // VNPay thất bại ngay sau đó (vd chưa cấu hình VNPay) -- báo lỗi ở đây thay vì ở trang checkout.
+  const paymentError = (location.state as { paymentError?: string } | null)?.paymentError;
   const [order, setOrder] = useState<OrderDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
@@ -173,6 +179,8 @@ export default function OrderDetailPage() {
   const [returnReason, setReturnReason] = useState("");
   const [returnSubmitting, setReturnSubmitting] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirmDialog();
+  const { alertDialog, dialog: alertDialogEl } = useAlertDialog();
 
   useEffect(() => {
     if (orderId) {
@@ -189,12 +197,12 @@ export default function OrderDetailPage() {
   }
 
   async function handleCancel() {
-    if (!order || !confirm("Bạn chắc chắn muốn huỷ đơn hàng này?")) return;
+    if (!order || !(await confirm("Bạn chắc chắn muốn huỷ đơn hàng này?"))) return;
     setCancelling(true);
     try {
       setOrder(await cancelOrderApi(order.orderId));
     } catch (err: any) {
-      alert(err.response?.data?.message ?? "Không thể huỷ đơn hàng");
+      await alertDialog(err.response?.data?.message ?? "Không thể huỷ đơn hàng");
     } finally {
       setCancelling(false);
     }
@@ -206,7 +214,7 @@ export default function OrderDetailPage() {
     try {
       setOrder(await completeOrderApi(order.orderId));
     } catch (err: any) {
-      alert(err.response?.data?.message ?? "Không thể hoàn thành đơn hàng");
+      await alertDialog(err.response?.data?.message ?? "Không thể hoàn thành đơn hàng");
     } finally {
       setCompleting(false);
     }
@@ -256,7 +264,7 @@ export default function OrderDetailPage() {
       const url = await getVnpayUrlApi(order.orderId);
       window.location.href = url;
     } catch (err: any) {
-      alert(err.response?.data?.message ?? "Không thể tạo link thanh toán VNPay");
+      await alertDialog(err.response?.data?.message ?? "Không thể tạo link thanh toán VNPay");
       setPayingVnpay(false);
     }
   }
@@ -268,7 +276,15 @@ export default function OrderDetailPage() {
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
       <div className="max-w-2xl mx-auto">
+        {dialog}
+        {alertDialogEl}
         <BackButton />
+        {paymentError && (
+          <div className="mb-4 bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            Đơn hàng đã được tạo thành công, nhưng {paymentError.charAt(0).toLowerCase() + paymentError.slice(1)}
+            {" "}Vui lòng thử "Thanh toán qua VNPay" lại bên dưới hoặc chuyển sang phương thức khác.
+          </div>
+        )}
         <div className="bg-white border border-stone-200 p-8">
           <div className="flex items-center justify-between mb-4">
             <h1 className="font-display text-2xl font-semibold text-stone-900">
@@ -325,6 +341,22 @@ export default function OrderDetailPage() {
               </p>
             )}
           </div>
+
+          {order.qrCodeUrl && (
+            <div className="mb-6 border border-stone-200 p-4 text-center">
+              <p className="text-sm font-medium text-stone-700 mb-3">
+                Quét mã để chuyển khoản — nội dung chuyển khoản đã tự điền sẵn mã đơn hàng
+              </p>
+              <img
+                src={order.qrCodeUrl}
+                alt="Mã QR chuyển khoản"
+                className="mx-auto w-56 h-56 object-contain border border-stone-100"
+              />
+              <p className="text-xs text-stone-400 mt-3">
+                Sau khi chuyển khoản, đơn hàng sẽ được xác nhận thanh toán trong ít phút.
+              </p>
+            </div>
+          )}
 
           <div className="border-t border-stone-200 divide-y divide-stone-100">
             {order.items?.map((item, idx) => (

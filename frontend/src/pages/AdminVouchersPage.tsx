@@ -6,6 +6,7 @@ import {
   type AdminVoucherDto,
   type AdminVoucherPayload,
 } from '../api/adminApi'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -26,6 +27,7 @@ export default function AdminVouchersPage() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { confirm, dialog } = useConfirmDialog()
 
   useEffect(() => {
     loadVouchers()
@@ -56,13 +58,14 @@ export default function AdminVouchersPage() {
   }
 
   async function handleDelete(voucherId: number) {
-    if (!confirm('Ngừng hoạt động mã giảm giá này?')) return
+    if (!(await confirm('Ngừng hoạt động mã giảm giá này?'))) return
     await deleteAdminVoucherApi(voucherId)
     await loadVouchers()
   }
 
   return (
     <div>
+      {dialog}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-stone-900">Mã giảm giá</h1>
         <button

@@ -38,9 +38,18 @@ public class ReviewService {
     public ProductRatingSummary getRatingSummary(Long productId) {
         Double avg = reviewRepository.findAverageRatingByProductId(productId);
         long count = reviewRepository.countByProduct_ProductId(productId);
+
+        // Bắt đầu đủ 5 mức = 0, rồi ghi đè bằng số thật -- frontend luôn nhận đủ 5 dòng để vẽ phân bố.
+        java.util.Map<Integer, Long> distribution = new java.util.LinkedHashMap<>();
+        for (int star = 1; star <= 5; star++) distribution.put(star, 0L);
+        for (Object[] row : reviewRepository.countByRatingGrouped(productId)) {
+            distribution.put((Integer) row[0], (Long) row[1]);
+        }
+
         return ProductRatingSummary.builder()
                 .averageRating(avg == null ? 0.0 : Math.round(avg * 10) / 10.0)
                 .totalReviews(count)
+                .ratingDistribution(distribution)
                 .build();
     }
 

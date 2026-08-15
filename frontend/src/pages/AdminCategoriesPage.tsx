@@ -9,6 +9,8 @@ import {
   type AdminBrandDto,
   type AdminCategoryDto,
 } from '../api/adminApi'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
+import { useAlertDialog } from '../hooks/useAlertDialog'
 
 export default function AdminCategoriesPage() {
   const [categories, setCategories] = useState<AdminCategoryDto[]>([])
@@ -16,6 +18,8 @@ export default function AdminCategoriesPage() {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newBrandName, setNewBrandName] = useState('')
   const [loading, setLoading] = useState(true)
+  const { confirm, dialog } = useConfirmDialog()
+  const { alertDialog, dialog: alertDialogEl } = useAlertDialog()
 
   useEffect(() => {
     loadAll()
@@ -41,7 +45,7 @@ export default function AdminCategoriesPage() {
   }
 
   async function handleDeleteCategory(id: number) {
-    if (!confirm('Ẩn danh mục này? (sản phẩm cũ vẫn giữ nguyên, chỉ ẩn khỏi trang chủ)')) return
+    if (!(await confirm('Ẩn danh mục này? (sản phẩm cũ vẫn giữ nguyên, chỉ ẩn khỏi trang chủ)'))) return
     await deleteAdminCategoryApi(id)
     await loadAll()
   }
@@ -55,12 +59,12 @@ export default function AdminCategoriesPage() {
   }
 
   async function handleDeleteBrand(id: number) {
-    if (!confirm('Xoá thương hiệu này? (chỉ xoá được nếu không còn sản phẩm nào dùng)')) return
+    if (!(await confirm('Xoá thương hiệu này? (chỉ xoá được nếu không còn sản phẩm nào dùng)'))) return
     try {
       await deleteAdminBrandApi(id)
       await loadAll()
     } catch {
-      alert('Không thể xoá — vẫn còn sản phẩm đang dùng thương hiệu này')
+      await alertDialog('Không thể xoá — vẫn còn sản phẩm đang dùng thương hiệu này')
     }
   }
 
@@ -68,6 +72,8 @@ export default function AdminCategoriesPage() {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      {dialog}
+      {alertDialogEl}
       {/* Danh mục */}
       <div>
         <h1 className="text-xl font-semibold text-stone-900 mb-4">Danh mục</h1>

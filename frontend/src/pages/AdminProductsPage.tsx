@@ -12,8 +12,14 @@ import {
   type AdminProductPayload,
   type AdminVariantDto,
 } from '../api/adminApi'
+import { COLOR_SWATCHES, colorToHex } from '../utils/colorSwatches'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
+
+// Khớp đúng FULL_SIZES ở ProductDetailPage/ShopPage -- admin chọn từ đúng danh sách khách hàng thấy,
+// không gõ tay để tránh lệch chính tả (vd "XL " thừa dấu cách sẽ không khớp filter bên Shop).
+const FULL_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL']
 
 const EMPTY_FORM: AdminProductPayload = {
   productName: '',
@@ -40,6 +46,7 @@ export default function AdminProductsPage() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { confirm, dialog } = useConfirmDialog()
 
   useEffect(() => {
     Promise.all([getAdminCategoriesApi(), getAdminBrandsApi()]).then(([cats, brs]) => {
@@ -118,7 +125,7 @@ export default function AdminProductsPage() {
   }
 
   async function handleDelete(productId: number) {
-    if (!confirm('Ẩn sản phẩm này? (dữ liệu đơn hàng cũ vẫn được giữ nguyên)')) return
+    if (!(await confirm('Ẩn sản phẩm này? (dữ liệu đơn hàng cũ vẫn được giữ nguyên)'))) return
     await deleteAdminProductApi(productId)
     await loadProducts()
   }
@@ -148,6 +155,7 @@ export default function AdminProductsPage() {
 
   return (
     <div>
+      {dialog}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-stone-900">Quản lý sản phẩm</h1>
         <button onClick={openCreateForm} className="bg-orange-700 hover:bg-orange-600 text-white text-sm px-4 py-2">
@@ -318,18 +326,36 @@ export default function AdminProductsPage() {
             <p className="text-xs font-medium text-stone-600 mb-2">Phân loại (size/màu/tồn kho)</p>
             {form.variants.map((v, i) => (
               <div key={i} className="flex gap-2 mb-2">
-                <input
-                  placeholder="Size"
+                <select
                   value={v.size}
                   onChange={(e) => updateVariant(i, { size: e.target.value })}
                   className="w-20 border border-stone-300 px-2 py-2 text-sm"
-                />
-                <input
-                  placeholder="Màu"
-                  value={v.color}
-                  onChange={(e) => updateVariant(i, { color: e.target.value })}
-                  className="w-24 border border-stone-300 px-2 py-2 text-sm"
-                />
+                >
+                  <option value="">Size</option>
+                  {FULL_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-1.5 border border-stone-300 px-2 py-2">
+                  <span
+                    className="w-4 h-4 rounded-full border border-stone-300 shrink-0"
+                    style={{ backgroundColor: v.color ? colorToHex(v.color) : 'transparent' }}
+                  />
+                  <select
+                    value={v.color}
+                    onChange={(e) => updateVariant(i, { color: e.target.value })}
+                    className="w-24 text-sm outline-none"
+                  >
+                    <option value="">Màu</option>
+                    {Object.keys(COLOR_SWATCHES).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <input
                   type="number"
                   placeholder="Tồn kho"

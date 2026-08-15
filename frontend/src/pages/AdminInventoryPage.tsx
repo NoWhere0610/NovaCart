@@ -10,6 +10,8 @@ import {
   type AdminInventoryUpdatePayload,
   type AdminProductDto,
 } from '../api/adminApi'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
+import { useAlertDialog } from '../hooks/useAlertDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -33,6 +35,8 @@ export default function AdminInventoryPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [createForm, setCreateForm] = useState<AdminInventoryCreatePayload>(EMPTY_CREATE_FORM)
   const [saving, setSaving] = useState(false)
+  const { confirm, dialog } = useConfirmDialog()
+  const { alertDialog, dialog: alertDialogEl } = useAlertDialog()
 
   useEffect(() => {
     // Không lọc theo status vì admin có thể muốn nhập tồn cho sản phẩm đang ẩn
@@ -108,12 +112,12 @@ export default function AdminInventoryPage() {
   }
 
   async function handleDelete(item: AdminInventoryItemDto) {
-    if (!confirm(`Xoá mặt hàng tồn kho "${item.productName} - ${item.size}/${item.color}"?`)) return
+    if (!(await confirm(`Xoá mặt hàng tồn kho "${item.productName} - ${item.size}/${item.color}"?`))) return
     try {
       await deleteAdminInventoryItemApi(item.variantId)
       await loadItems()
     } catch (err: any) {
-      alert(err.response?.data?.message ?? 'Không thể xoá mặt hàng này')
+      await alertDialog(err.response?.data?.message ?? 'Không thể xoá mặt hàng này')
     }
   }
 
@@ -134,6 +138,8 @@ export default function AdminInventoryPage() {
 
   return (
     <div>
+      {dialog}
+      {alertDialogEl}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-stone-900 flex items-center gap-2.5">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-orange-700">

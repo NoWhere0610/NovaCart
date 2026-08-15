@@ -37,6 +37,8 @@ export interface OrderDto {
   status: OrderStatus
   paymentMethod: PaymentMethod
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED'
+  // Chỉ có giá trị khi paymentMethod=BANK_TRANSFER và còn UNPAID -- ảnh mã QR VietQR để quét chuyển khoản.
+  qrCodeUrl: string | null
   note: string | null
   returnReason: string | null
   createdAt: string
@@ -56,6 +58,8 @@ export interface CheckoutPayload {
   paymentMethod: PaymentMethod
   note?: string
   voucherCode?: string
+  // Không truyền = đặt hàng CẢ giỏ (như cũ). Có giá trị = chỉ đặt đúng các dòng này, giữ lại phần còn lại.
+  cartItemIds?: number[]
 }
 
 export async function checkoutApi(payload: CheckoutPayload): Promise<OrderDto> {

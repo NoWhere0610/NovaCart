@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
@@ -20,4 +21,8 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     Double findAverageRatingByProductId(Long productId);
 
     long countByProduct_ProductId(Long productId);
+
+    // Phân bố số lượng đánh giá theo từng mức sao (1-5) -- mỗi phần tử: Object[]{ rating, count }.
+    @Query("select r.rating, count(r) from Review r where r.product.productId = :productId group by r.rating")
+    List<Object[]> countByRatingGrouped(Long productId);
 }

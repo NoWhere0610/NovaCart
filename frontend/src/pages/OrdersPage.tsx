@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { cancelOrderApi, getMyOrdersApi, type OrderDto, type OrderStatus } from '../api/orderApi'
 import { IconPackage } from '@tabler/icons-react'
 import BackButton from '../components/BackButton'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
+import { useAlertDialog } from '../hooks/useAlertDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -54,6 +56,8 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const { confirm, dialog } = useConfirmDialog()
+  const { alertDialog, dialog: alertDialogEl } = useAlertDialog()
 
   useEffect(() => {
     load()
@@ -76,13 +80,13 @@ export default function OrdersPage() {
   const filtered = useMemo(() => orders.filter((o) => matchesTab(o, activeTab)), [orders, activeTab])
 
   async function handleCancel(orderId: number) {
-    if (!confirm('Bạn chắc chắn muốn huỷ đơn hàng này?')) return
+    if (!(await confirm('Bạn chắc chắn muốn huỷ đơn hàng này?'))) return
     setBusyId(orderId)
     try {
       const updated = await cancelOrderApi(orderId)
       setOrders((prev) => prev.map((o) => (o.orderId === orderId ? updated : o)))
     } catch (err: any) {
-      alert(err.response?.data?.message ?? 'Không thể huỷ đơn hàng')
+      await alertDialog(err.response?.data?.message ?? 'Không thể huỷ đơn hàng')
     } finally {
       setBusyId(null)
     }
@@ -90,6 +94,8 @@ export default function OrdersPage() {
 
   return (
     <div className="min-h-screen bg-stone-50 px-4 py-10">
+      {dialog}
+      {alertDialogEl}
       <div className="max-w-3xl mx-auto">
         <BackButton />
         <h1 className="font-display text-2xl font-semibold text-stone-900 mb-6">Đơn hàng của tôi</h1>

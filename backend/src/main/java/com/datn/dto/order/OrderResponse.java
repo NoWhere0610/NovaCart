@@ -25,6 +25,8 @@ public class OrderResponse {
     private Order.Status status;
     private Order.PaymentMethod paymentMethod;
     private Order.PaymentStatus paymentStatus;
+    // Chỉ có giá trị khi paymentMethod=BANK_TRANSFER và còn UNPAID -- xem VietQrService.
+    private String qrCodeUrl;
     private String note;
     private String returnReason;
     private LocalDateTime createdAt;
