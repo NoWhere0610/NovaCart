@@ -321,6 +321,15 @@ export default function AdminPosPage() {
               <span>{formatVnd(invoice.totalAmount)}</span>
             </div>
 
+            {invoice.status === 'COMPLETED' && (
+              <button
+                onClick={() => window.open(`/admin/pos/invoices/${invoice.orderId}/print`, '_blank')}
+                className="w-full mb-4 border border-stone-900 text-stone-900 hover:bg-stone-900 hover:text-white text-sm font-semibold px-4 py-2.5"
+              >
+                In hoá đơn
+              </button>
+            )}
+
             {isDraft && (
               <>
                 <div className="grid grid-cols-2 gap-2 mb-3">

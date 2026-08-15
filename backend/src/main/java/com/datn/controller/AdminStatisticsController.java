@@ -5,6 +5,7 @@ import com.datn.service.AdminStatisticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,6 +21,7 @@ public class AdminStatisticsController {
     private final AdminStatisticsService statisticsService;
 
     @GetMapping
+    @PreAuthorize("@perm.has('STATISTICS_VIEW')")
     public ResponseEntity<StatisticsDto.StatisticsResponse> getStatistics(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,

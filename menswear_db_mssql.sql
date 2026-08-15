@@ -142,16 +142,16 @@ CREATE TABLE [dbo].[orders](
 	[status] [nvarchar](20) NULL,
 	[payment_method] [nvarchar](20) NULL,
 	[payment_status] [nvarchar](20) NULL,
-	[note] [varchar](500) NULL,
+	[note] [nvarchar](500) NULL,
 	[created_at] [datetime2](7) NULL,
 	[updated_at] [datetime2](7) NULL,
 	[return_reason] [nvarchar](500) NULL,
 	[order_type] [nvarchar](10) NOT NULL,
 	[cashier_id] [bigint] NULL,
 	[shipping_fee] [decimal](12, 2) NOT NULL,
-	[phone] [varchar](20) NULL,
-	[receiver_name] [varchar](100) NULL,
-	[shipping_address] [varchar](500) NULL,
+	[phone] [nvarchar](20) NULL,
+	[receiver_name] [nvarchar](100) NULL,
+	[shipping_address] [nvarchar](500) NULL,
 PRIMARY KEY CLUSTERED 
 (
 	[order_id] ASC

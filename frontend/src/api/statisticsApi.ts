@@ -24,10 +24,32 @@ export interface TopProduct {
   revenue: number
 }
 
+export interface CategoryRevenue {
+  categoryName: string
+  revenue: number
+  quantitySold: number
+}
+
+export interface PaymentMethodStat {
+  paymentMethod: string
+  orderCount: number
+  revenue: number
+}
+
+export interface LowStockItem {
+  productName: string
+  size: string
+  color: string
+  stockQuantity: number
+}
+
 export interface StatisticsResponse {
   summary: StatisticsSummary
   revenueByDay: RevenuePoint[]
   topProducts: TopProduct[]
+  revenueByCategory: CategoryRevenue[]
+  paymentMethodBreakdown: PaymentMethodStat[]
+  lowStockVariants: LowStockItem[]
 }
 
 export async function getStatisticsApi(from: string, to: string, topProductLimit = 5) {

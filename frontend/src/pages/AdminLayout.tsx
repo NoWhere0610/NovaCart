@@ -88,14 +88,14 @@ const NAV_ITEMS = [
   { to: '/admin/categories', label: 'Danh mục & Thương hiệu', icon: IconTag },
   { to: '/admin/vouchers', label: 'Mã giảm giá', icon: IconTicket },
   { to: '/admin/orders', label: 'Đơn hàng', icon: IconOrders },
-  { to: '/admin/users', label: 'Người dùng', icon: IconUsers },
+  { to: '/admin/users', label: 'Người dùng', icon: IconUsers, adminOnly: true },
 ]
 
 export default function AdminLayout() {
   const { user } = useAuth()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
 
-  // "Kho tồn hàng" chỉ hiện với ADMIN -- ẩn UI chỉ là lớp UX phụ, chặn thật sự ở route guard + backend.
+  // "Kho tồn hàng"/"Người dùng" chỉ hiện với ADMIN -- ẩn UI chỉ là lớp UX phụ, chặn thật sự ở route guard + backend.
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
 
   return (

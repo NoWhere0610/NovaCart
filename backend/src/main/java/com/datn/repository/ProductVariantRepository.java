@@ -38,4 +38,8 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
             Pageable pageable);
 
     boolean existsByProduct_ProductIdAndSizeAndColor(Long productId, String size, String color);
+
+    // Cảnh báo tồn kho thấp cho trang Thống kê -- top 10 biến thể ít hàng nhất, kèm sẵn Product để lấy tên.
+    @EntityGraph(attributePaths = {"product"})
+    List<ProductVariant> findTop10ByStockQuantityLessThanEqualOrderByStockQuantityAsc(int threshold);
 }

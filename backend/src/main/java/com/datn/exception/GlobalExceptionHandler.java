@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -44,6 +45,15 @@ public class GlobalExceptionHandler {
                 .forEach(err -> fieldErrors.put(err.getField(), err.getDefaultMessage()));
         return ResponseEntity.badRequest()
                 .body(buildError(HttpStatus.BAD_REQUEST, "Dữ liệu không hợp lệ", fieldErrors));
+    }
+
+    // @PreAuthorize("@perm.has(...)") từ chối (đã đăng nhập nhưng không đủ quyền theo ma trận STAFF) --
+    // KHÔNG được rơi xuống handler Exception.class chung bên dưới (trả nhầm 500 "lỗi hệ thống" thay vì
+    // đúng bản chất 403 "không có quyền").
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(buildError(HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này", null));
     }
 
     // Lưới an toàn cuối cùng: bắt mọi lỗi không lường trước, tránh lộ stack trace ra client

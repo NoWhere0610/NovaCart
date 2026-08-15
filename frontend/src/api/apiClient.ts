@@ -17,7 +17,10 @@ apiClient.interceptors.request.use((config) => {
   return config
 })
 
-// Backend trả 401 (token hết hạn/không hợp lệ) thì tự đăng xuất + đá về trang login.
+// Backend trả 401 (chưa đăng nhập / token hết hạn-không hợp lệ) thì tự đăng xuất + đá về trang login.
+// KHÔNG xử lý 403 ở đây -- SecurityConfig backend giờ đã tắt "ẩn danh tự động" nên 403 chỉ còn đúng 1
+// nghĩa: đã đăng nhập thật nhưng không đủ quyền cho hành động này (vd nhân viên thiếu quyền trong ma
+// trận) -- KHÔNG nên đăng xuất người dùng vì việc đó, chỉ cần hiện đúng thông báo lỗi.
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {

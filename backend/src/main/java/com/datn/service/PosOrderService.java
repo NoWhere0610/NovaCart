@@ -60,8 +60,12 @@ public class PosOrderService {
         return PageResponse.from(orders.map(this::toResponse));
     }
 
+    /** Xem lại hoá đơn (kể cả để in) — KHÔNG dùng findPendingInvoice(), vì đó là để chặn SỬA hoá đơn đã
+     * chốt, không phải để chặn XEM. Hoá đơn đã thanh toán/huỷ vẫn phải xem/in lại được bình thường. */
     public PosDto.InvoiceResponse getInvoice(Long orderId) {
-        return toResponse(findPendingInvoice(orderId));
+        Order order = orderRepository.findByOrderIdAndOrderType(orderId, Order.OrderType.POS)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy hoá đơn"));
+        return toResponse(order);
     }
 
     @Transactional

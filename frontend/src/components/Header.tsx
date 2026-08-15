@@ -21,6 +21,9 @@ export default function Header() {
   const { user, logout } = useAuth()
   const { cartCount } = useCart()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
+  // Nút vào trang quản trị: cả ADMIN lẫn STAFF -- quyền THẬT theo từng trang/hành động cụ thể
+  // do backend (ma trận role_permission) quyết định, ở đây chỉ quyết có cho vào khu vực /admin không.
+  const canAccessAdmin = isAdmin || (user?.roles.includes('STAFF') ?? false)
   const [categories, setCategories] = useState<MegaMenuCategory[]>(DEMO_CATEGORIES)
   // Ô tìm kiếm chính ẩn trên mobile -- thêm nút icon riêng, bấm vào xổ hàng tìm kiếm full-width dưới header.
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -111,7 +114,7 @@ export default function Header() {
             >
               <IconSearch size={20} stroke={1.7} />
             </button>
-            {isAdmin && (
+            {canAccessAdmin && (
               <Link
                 to="/admin"
                 className="hidden sm:flex items-center gap-1.5 bg-stone-900 border-gold-metallic gold-glow text-white text-xs font-semibold px-3 py-1.5"
