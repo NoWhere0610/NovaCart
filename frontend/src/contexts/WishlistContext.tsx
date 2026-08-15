@@ -31,6 +31,12 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
   }
 
   function toggle(productId: number) {
+    // Trang sản phẩm/shop giờ xem được không cần đăng nhập -- khách bấm tim thì đưa sang login
+    // luôn (giống hành vi nút "Thêm vào giỏ") thay vì gọi API 401 rồi âm thầm revert như trước.
+    if (!isAuthenticated) {
+      window.location.href = '/login'
+      return
+    }
     const wasWishlisted = ids.has(productId)
     setIds((prev) => {
       const next = new Set(prev)

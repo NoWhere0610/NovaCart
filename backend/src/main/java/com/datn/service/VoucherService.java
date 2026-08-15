@@ -66,6 +66,28 @@ public class VoucherService {
      */
     @Transactional
     public BigDecimal applyVoucher(String code, BigDecimal subtotal) {
+        Voucher voucher = validateVoucher(code, subtotal);
+        BigDecimal discount = computeDiscount(voucher, subtotal);
+
+        int currentUsedCount = voucher.getUsedCount() != null ? voucher.getUsedCount() : 0;
+        voucher.setUsedCount(currentUsedCount + 1);
+        voucherRepository.save(voucher);
+
+        return discount;
+    }
+
+    /**
+     * Xem trước số tiền được giảm mà KHÔNG tăng usedCount -- dùng ở trang checkout để hiện đúng
+     * tổng tiền trước khi khách bấm "Đặt hàng" (applyVoucher() thật sự chỉ chạy lúc đó, bên trong
+     * transaction tạo đơn của OrderService).
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal previewDiscount(String code, BigDecimal subtotal) {
+        Voucher voucher = validateVoucher(code, subtotal);
+        return computeDiscount(voucher, subtotal);
+    }
+
+    private Voucher validateVoucher(String code, BigDecimal subtotal) {
         Voucher voucher = voucherRepository.findByCodeIgnoreCase(code)
                 .orElseThrow(() -> ApiException.badRequest("Mã giảm giá không tồn tại"));
 
@@ -91,7 +113,10 @@ public class VoucherService {
             throw ApiException.badRequest(
                     "Đơn hàng cần tối thiểu " + voucher.getMinOrderValue() + " để áp dụng mã này");
         }
+        return voucher;
+    }
 
+    private BigDecimal computeDiscount(Voucher voucher, BigDecimal subtotal) {
         BigDecimal discount;
         if (voucher.getDiscountType() == Voucher.DiscountType.PERCENT) {
             discount = subtotal.multiply(voucher.getDiscountValue())
@@ -108,10 +133,6 @@ public class VoucherService {
         if (discount.compareTo(subtotal) > 0) {
             discount = subtotal;
         }
-
-        voucher.setUsedCount(currentUsedCount + 1);
-        voucherRepository.save(voucher);
-
         return discount;
     }
 
