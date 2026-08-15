@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getMyCartApi, type CartDto } from "../api/cartApi";
 import { getMyAddressesApi, type AddressDto } from "../api/addressApi";
 import { checkoutApi, getVnpayUrlApi, type PaymentMethod } from "../api/orderApi";
 import { getShippingFeeApi } from "../api/shippingApi";
+import { previewVoucherApi } from "../api/voucherApi";
 import { useCart } from "../contexts/CartContext";
 import BackButton from "../components/BackButton";
 
@@ -11,7 +12,12 @@ const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { applyCart, clearCartCount } = useCart();
+
+  // Từ CartPage điều hướng sang kèm state -- có giá trị = chỉ đặt đúng các dòng đã chọn (mua đơn lẻ 1
+  // phần giỏ hàng); không có (vd vào thẳng /checkout) = đặt cả giỏ như hành vi cũ.
+  const cartItemIds = (location.state as { cartItemIds?: number[] } | null)?.cartItemIds;
 
   const [cart, setCart] = useState<CartDto | null>(null);
   const [addresses, setAddresses] = useState<AddressDto[]>([]);
@@ -26,25 +32,63 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voucherCode, setVoucherCode] = useState("");
+  const [voucherDiscount, setVoucherDiscount] = useState(0);
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [checkingVoucher, setCheckingVoucher] = useState(false);
   const [shippingFee, setShippingFee] = useState(0);
   const [loadingFee, setLoadingFee] = useState(false);
+
+  // Chỉ đúng các dòng đang thực sự đặt hàng ở lượt này -- cả giỏ nếu cartItemIds không có.
+  const checkoutItems = cart
+    ? cartItemIds
+      ? cart.items.filter((i) => cartItemIds.includes(i.cartItemId))
+      : cart.items
+    : [];
+  const checkoutSubtotal = checkoutItems.reduce((sum, i) => sum + i.subtotal, 0);
 
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
-    const addr = addresses.find((a) => a.addressId === selectedAddressId);
-    if (!addr || !cart) {
+    if (!selectedAddressId || !cart) {
       setShippingFee(0);
       return;
     }
     setLoadingFee(true);
-    getShippingFeeApi(addr.province ?? "", cart.totalAmount)
+    getShippingFeeApi(selectedAddressId, checkoutSubtotal)
       .then(setShippingFee)
       .catch(() => setShippingFee(0))
       .finally(() => setLoadingFee(false));
-  }, [selectedAddressId, addresses, cart]);
+  }, [selectedAddressId, cart]);
+
+  // Xem trước số tiền giảm ngay khi khách gõ mã -- debounce để không gọi API mỗi lần gõ 1 ký tự.
+  useEffect(() => {
+    const code = voucherCode.trim();
+    if (!code || checkoutSubtotal <= 0) {
+      setVoucherDiscount(0);
+      setVoucherError(null);
+      return;
+    }
+    setCheckingVoucher(true);
+    const timer = setTimeout(() => {
+      previewVoucherApi(code, checkoutSubtotal)
+        .then((discount) => {
+          setVoucherDiscount(discount);
+          setVoucherError(null);
+        })
+        .catch((err) => {
+          setVoucherDiscount(0);
+          setVoucherError(err.response?.data?.message ?? "Mã giảm giá không hợp lệ");
+        })
+        .finally(() => setCheckingVoucher(false));
+    }, 500);
+    return () => {
+      clearTimeout(timer);
+      setCheckingVoucher(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voucherCode, checkoutSubtotal]);
 
   async function loadData() {
     setLoading(true);
@@ -76,15 +120,25 @@ export default function CheckoutPage() {
     }
     setError(null);
     setSubmitting(true);
+    let createdOrderId: number | null = null;
     try {
       const order = await checkoutApi({
         addressId: selectedAddressId,
         paymentMethod,
         note: note || undefined,
         voucherCode: voucherCode.trim() || undefined,
+        cartItemIds,
       });
-      // Server đã xoá giỏ hàng ngay -- clear count ở đây luôn vì COD/BANK_TRANSFER điều hướng nội bộ SPA, Header sẽ giữ state cũ nếu không clear.
-      clearCartCount();
+      createdOrderId = order.orderId;
+      // Server đã xoá đúng các item vừa mua -- clear count ở đây luôn vì COD/BANK_TRANSFER điều
+      // hướng nội bộ SPA, Header sẽ giữ state cũ nếu không cập nhật.
+      if (cartItemIds) {
+        // Mua lẻ 1 phần giỏ -- giỏ hàng CÒN LẠI các item chưa mua, không phải về 0. Lấy lại đúng
+        // số lượng thật từ server thay vì đoán (item.quantity trừ tay dễ lệch nếu có thao tác khác).
+        getMyCartApi().then(applyCart).catch(() => {});
+      } else {
+        clearCartCount();
+      }
       if (paymentMethod === "VNPAY") {
         const paymentUrl = await getVnpayUrlApi(order.orderId);
         window.location.href = paymentUrl;
@@ -93,9 +147,19 @@ export default function CheckoutPage() {
       // Đặt hàng xong -> điều hướng thẳng tới trang chi tiết đơn vừa tạo
       navigate(`/orders/${order.orderId}`, { replace: true });
     } catch (err: any) {
-      setError(
-        err.response?.data?.message ?? "Đặt hàng thất bại, vui lòng thử lại",
-      );
+      const message =
+        err.response?.data?.message ?? "Đặt hàng thất bại, vui lòng thử lại";
+      if (createdOrderId) {
+        // Đơn đã tạo xong (checkoutApi thành công) -- lỗi xảy ra ở bước lấy link VNPay sau đó,
+        // KHÔNG hiện lỗi trên trang checkout (dễ khiến user bấm "Đặt hàng" lại, tạo trùng đơn) --
+        // điều hướng thẳng tới đơn vừa tạo, báo lỗi ở đó để user chọn cách thanh toán khác.
+        navigate(`/orders/${createdOrderId}`, {
+          replace: true,
+          state: { paymentError: message },
+        });
+        return;
+      }
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -125,7 +189,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (!cart || cart.items.length === 0) {
+  if (!cart || cart.items.length === 0 || checkoutItems.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-stone-500">
         <p>Giỏ hàng trống, không thể đặt hàng.</p>
@@ -242,24 +306,57 @@ export default function CheckoutPage() {
           className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900 mb-6"
         />
         {voucherCode && (
-          <p className="text-xs text-stone-400 mb-2">
-            Mã giảm giá sẽ được kiểm tra và trừ trực tiếp vào tổng tiền khi bấm
-            Đặt hàng.
+          <p
+            className={`text-xs mb-2 ${
+              voucherError ? "text-red-600" : voucherDiscount > 0 ? "text-green-700" : "text-stone-400"
+            }`}
+          >
+            {checkingVoucher
+              ? "Đang kiểm tra mã..."
+              : voucherError
+              ? voucherError
+              : voucherDiscount > 0
+              ? `Áp dụng thành công, giảm ${formatVnd(voucherDiscount)}`
+              : "Mã giảm giá sẽ được kiểm tra khi bấm Đặt hàng."}
           </p>
+        )}
+
+        {/* Chỉ hiện danh sách khi mua đơn lẻ 1 phần giỏ (cartItemIds có giá trị) -- mua cả giỏ thì khách
+            vừa xem qua ở CartPage rồi, không cần lặp lại. */}
+        {cartItemIds && (
+          <div className="border-t border-stone-200 pt-4 mb-2">
+            <h2 className="text-sm font-semibold text-stone-700 mb-2">Sản phẩm đặt mua</h2>
+            <ul className="space-y-1 mb-2">
+              {checkoutItems.map((i) => (
+                <li key={i.cartItemId} className="flex items-center justify-between text-sm text-stone-600">
+                  <span>
+                    {i.productName} ({i.size}/{i.color}) × {i.quantity}
+                  </span>
+                  <span>{formatVnd(i.subtotal)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         <div className="border-t border-stone-200 pt-4 mb-2 flex items-center justify-between text-sm text-stone-500">
           <span>Tạm tính</span>
-          <span>{formatVnd(cart.totalAmount)}</span>
+          <span>{formatVnd(checkoutSubtotal)}</span>
         </div>
-        <div className="mb-6 flex items-center justify-between text-sm text-stone-500">
+        <div className="mb-2 flex items-center justify-between text-sm text-stone-500">
           <span>Phí vận chuyển</span>
           <span>{loadingFee ? "Đang tính..." : formatVnd(shippingFee)}</span>
         </div>
+        {voucherDiscount > 0 && (
+          <div className="mb-2 flex items-center justify-between text-sm text-green-700">
+            <span>Giảm giá ({voucherCode.trim()})</span>
+            <span>-{formatVnd(voucherDiscount)}</span>
+          </div>
+        )}
         <div className="border-t border-stone-200 pt-4 mb-6 flex items-center justify-between">
           <span className="text-stone-600">Tổng thanh toán</span>
           <span className="text-xl font-semibold text-stone-900">
-            {formatVnd(cart.totalAmount + shippingFee)}
+            {formatVnd(Math.max(0, checkoutSubtotal + shippingFee - voucherDiscount))}
           </span>
         </div>
 

@@ -13,5 +13,7 @@ public class AddressResponse {
     private String district;
     private String ward;
     private String detailAddress;
+    private Double latitude;
+    private Double longitude;
     private Boolean isDefault;
 }

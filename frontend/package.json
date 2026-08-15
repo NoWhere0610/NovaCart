@@ -12,6 +12,7 @@
   "dependencies": {
     "@tabler/icons-react": "^3.46.0",
     "@tailwindcss/vite": "^4.3.2",
+    "@vietmap/vietmap-gl-js": "^7.0.0-pre.1",
     "axios": "^1.16.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

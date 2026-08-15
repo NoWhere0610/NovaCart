@@ -48,6 +48,15 @@ public class Address {
     @Column(name = "detail_address", length = 255)
     private String detailAddress;
 
+    // Toạ độ lấy từ VietMap Place API lúc chọn địa chỉ qua Autocomplete -- dùng tính phí ship theo
+    // khoảng cách thật (ShippingService). NULL với địa chỉ tạo trước khi có tính năng này -- các chỗ
+    // dùng phải tự fallback, không được coi NULL là lỗi.
+    @Column(name = "latitude")
+    private Double latitude;
+
+    @Column(name = "longitude")
+    private Double longitude;
+
     // true = địa chỉ mặc định, chỉ 1 địa chỉ/user được true tại 1 thời điểm
     // (logic đảm bảo tính duy nhất này nằm ở AddressService, không phải DB constraint)
     @Column(name = "is_default")

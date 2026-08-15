@@ -86,6 +86,8 @@ public class AddressService {
         address.setDistrict(request.getDistrict());
         address.setWard(request.getWard());
         address.setDetailAddress(request.getDetailAddress());
+        address.setLatitude(request.getLatitude());
+        address.setLongitude(request.getLongitude());
     }
 
     /** Tạo reference User chỉ chứa id để gán vào @ManyToOne mà không cần query cả bản ghi User. */
@@ -104,7 +106,14 @@ public class AddressService {
                 .district(a.getDistrict())
                 .ward(a.getWard())
                 .detailAddress(a.getDetailAddress())
+                .latitude(a.getLatitude())
+                .longitude(a.getLongitude())
                 .isDefault(a.getIsDefault())
                 .build();
+    }
+
+    /** Dùng bởi ShippingController để lấy Address (kèm toạ độ) khi tính phí ship trước lúc đặt hàng. */
+    public Address getOwnedAddress(Long userId, Long addressId) {
+        return getOwnedAddressOrThrow(userId, addressId);
     }
 }
