@@ -198,6 +198,7 @@ public class AdminProductService {
                     .variantId(v.getVariantId())
                     .size(v.getSize())
                     .color(v.getColor())
+                    .sku(v.getSku())
                     .stockQuantity(v.getStockQuantity())
                     .build()).toList();
 

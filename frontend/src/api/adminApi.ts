@@ -25,7 +25,7 @@ export interface AdminProductDto {
   material: string | null
   status: 'ACTIVE' | 'INACTIVE' | 'OUT_OF_STOCK'
   imageUrls: string[]
-  variants: { variantId: number; size: string; color: string; stockQuantity: number }[]
+  variants: { variantId: number; size: string; color: string; sku: string | null; stockQuantity: number }[]
   createdAt: string
   updatedAt: string
 }
@@ -64,29 +64,9 @@ export async function deleteAdminProductApi(productId: number) {
   await apiClient.delete(`/admin/products/${productId}`)
 }
 
-// ================== INVENTORY (Kho tồn hàng) ==================
-
-export interface AdminInventoryItemDto {
-  variantId: number
-  productId: number
-  productName: string
-  categoryName: string | null
-  size: string
-  color: string
-  sku: string | null
-  stockQuantity: number
-  price: number
-  productStatus: 'ACTIVE' | 'INACTIVE' | 'OUT_OF_STOCK'
-  lowStock: boolean
-}
-
-export interface AdminInventoryCreatePayload {
-  productId: number
-  size: string
-  color: string
-  sku?: string
-  stockQuantity: number
-}
+// ================== INVENTORY (sửa nhanh tồn kho 1 biến thể) ==================
+// Không còn màn "Kho tồn hàng" riêng (đã gộp vào trang Sản phẩm) -- API này giờ chỉ dùng nội bộ cho
+// nút +/- điều chỉnh nhanh tồn kho ngay trong bảng sản phẩm, không cần mở form sửa cả sản phẩm.
 
 export interface AdminInventoryUpdatePayload {
   size: string
@@ -95,25 +75,8 @@ export interface AdminInventoryUpdatePayload {
   stockQuantity: number
 }
 
-export async function getAdminInventoryApi(keyword: string, lowStockOnly: boolean, page = 0, size = 20) {
-  const { data } = await apiClient.get<PageResponse<AdminInventoryItemDto>>('/admin/inventory', {
-    params: { keyword: keyword || undefined, lowStockOnly, page, size },
-  })
-  return data
-}
-
-export async function createAdminInventoryItemApi(payload: AdminInventoryCreatePayload) {
-  const { data } = await apiClient.post<AdminInventoryItemDto>('/admin/inventory', payload)
-  return data
-}
-
 export async function updateAdminInventoryItemApi(variantId: number, payload: AdminInventoryUpdatePayload) {
-  const { data } = await apiClient.put<AdminInventoryItemDto>(`/admin/inventory/${variantId}`, payload)
-  return data
-}
-
-export async function deleteAdminInventoryItemApi(variantId: number) {
-  await apiClient.delete(`/admin/inventory/${variantId}`)
+  await apiClient.put(`/admin/inventory/${variantId}`, payload)
 }
 
 // ================== CATEGORIES ==================

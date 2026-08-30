@@ -15,6 +15,8 @@ public class OrderItemResponse {
     // "Đánh giá"/"Mua lại".
     private Long productId;
     private String productName;
+    // Ảnh đầu tiên của sản phẩm -- null nếu sản phẩm không có ảnh hoặc đã bị xoá.
+    private String imageUrl;
     private String size;
     private String color;
     private BigDecimal unitPrice;
