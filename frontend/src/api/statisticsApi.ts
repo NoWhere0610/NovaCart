@@ -2,6 +2,8 @@ import { apiClient } from './apiClient'
 
 export interface StatisticsSummary {
   totalRevenue: number
+  completedRevenue: number
+  returnedRevenue: number
   totalOrders: number
   averageOrderValue: number
   onlineOrders: number
@@ -12,9 +14,15 @@ export interface StatisticsSummary {
   returnedOrders: number
 }
 
+export interface PeriodComparison {
+  revenueChangePercent: number | null
+  orderCountChangePercent: number | null
+}
+
 export interface RevenuePoint {
   date: string
   revenue: number
+  returnedRevenue: number
   orderCount: number
 }
 
@@ -45,6 +53,7 @@ export interface LowStockItem {
 
 export interface StatisticsResponse {
   summary: StatisticsSummary
+  periodComparison: PeriodComparison
   revenueByDay: RevenuePoint[]
   topProducts: TopProduct[]
   revenueByCategory: CategoryRevenue[]

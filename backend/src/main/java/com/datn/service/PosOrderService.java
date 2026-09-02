@@ -8,8 +8,10 @@ import com.datn.entity.OrderItem;
 import com.datn.entity.ProductVariant;
 import com.datn.entity.User;
 import com.datn.exception.ApiException;
+import com.datn.entity.ProductImage;
 import com.datn.repository.OrderItemRepository;
 import com.datn.repository.OrderRepository;
+import com.datn.repository.ProductImageRepository;
 import com.datn.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -19,7 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Bán hàng tại quầy (POS). Khác đơn ONLINE (trừ kho lúc admin xác nhận),
@@ -35,6 +39,7 @@ public class PosOrderService {
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final ProductVariantRepository variantRepository;
+    private final ProductImageRepository productImageRepository;
     private final VoucherService voucherService;
 
     @Transactional
@@ -321,12 +326,26 @@ public class PosOrderService {
     }
 
     private PosDto.InvoiceResponse toResponse(Order order) {
+        // Batch 1 query lấy ảnh cho tất cả sản phẩm trong hoá đơn, tránh N+1 -- giống CartService.toResponse.
+        List<Long> productIds = order.getItems().stream()
+                .map(i -> i.getVariant() != null && i.getVariant().getProduct() != null
+                        ? i.getVariant().getProduct().getProductId() : null)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, String> firstImageUrlByProductId = new HashMap<>();
+        for (ProductImage img : productImageRepository.findByProduct_ProductIdInOrderByDisplayOrderAsc(productIds)) {
+            firstImageUrlByProductId.putIfAbsent(img.getProduct().getProductId(), img.getImageUrl());
+        }
+
         List<OrderItemResponse> items = order.getItems().stream().map(i -> OrderItemResponse.builder()
                 .orderItemId(i.getOrderItemId())
                 .variantId(i.getVariant() != null ? i.getVariant().getVariantId() : null)
                 .productId(i.getVariant() != null && i.getVariant().getProduct() != null
                         ? i.getVariant().getProduct().getProductId() : null)
                 .productName(i.getProductName())
+                .imageUrl(i.getVariant() != null && i.getVariant().getProduct() != null
+                        ? firstImageUrlByProductId.get(i.getVariant().getProduct().getProductId()) : null)
                 .size(i.getSize())
                 .color(i.getColor())
                 .unitPrice(i.getUnitPrice())

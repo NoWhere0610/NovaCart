@@ -7,6 +7,8 @@ export interface SearchableOption {
   // gộp thêm ngữ cảnh (vd "Phường X, Tỉnh Y") trong khi chỉ nên so khớp đúng phần tên chính (X), tránh
   // khớp nhầm qua tên tỉnh (vd gõ "tu" ra lộn xộn các phường ở "Tuyên Quang" dù tên phường không liên quan).
   searchText?: string
+  // Option còn hiện trong list nhưng không cho chọn (vd size hết hàng) -- mờ đi, click không có tác dụng.
+  disabled?: boolean
 }
 
 interface Props {
@@ -95,12 +97,16 @@ export default function SearchableSelect({
               <li key={o.value}>
                 <button
                   type="button"
+                  disabled={o.disabled}
                   onClick={() => {
+                    if (o.disabled) return
                     onChange(o.value, o)
                     setOpen(false)
                     setQuery('')
                   }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-stone-50 border-b border-stone-100 last:border-b-0"
+                  className={`w-full text-left px-3 py-2 text-sm border-b border-stone-100 last:border-b-0 ${
+                    o.disabled ? 'text-stone-300 cursor-not-allowed' : 'hover:bg-stone-50'
+                  }`}
                 >
                   {o.label}
                 </button>

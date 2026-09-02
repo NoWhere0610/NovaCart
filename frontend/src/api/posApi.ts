@@ -5,6 +5,7 @@ export interface PosOrderItemDto {
   orderItemId: number
   variantId: number | null
   productName: string
+  imageUrl: string | null
   size: string
   color: string
   unitPrice: number

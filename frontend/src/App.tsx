@@ -13,7 +13,6 @@ import OrdersPage from "./pages/OrdersPage";
 import OrderDetailPage from "./pages/OrderDetailPage";
 import AdminLayout from "./pages/AdminLayout";
 import AdminProductsPage from "./pages/AdminProductsPage";
-import AdminInventoryPage from "./pages/AdminInventoryPage";
 import AdminCategoriesPage from "./pages/AdminCategoriesPage";
 import AdminVouchersPage from "./pages/AdminVouchersPage";
 import AdminOrdersPage from "./pages/AdminOrdersPage";
@@ -99,11 +98,10 @@ function App() {
                 <Route path="vouchers" element={<AdminVouchersPage />} />
                 <Route path="orders" element={<AdminOrdersPage />} />
 
-                {/* Kho tồn hàng + Người dùng: chặn kép bằng RequireAdminRoute lần 2 (mặc định CHỈ
-                    ADMIN, không allowStaff) — khớp đúng SecurityConfig backend, 2 khu vực này luôn
-                    khoá cứng ADMIN, không qua ma trận STAFF. */}
+                {/* Người dùng: chặn kép bằng RequireAdminRoute lần 2 (mặc định CHỈ ADMIN, không
+                    allowStaff) — khớp đúng SecurityConfig backend, khu vực này luôn khoá cứng ADMIN,
+                    không qua ma trận STAFF. */}
                 <Route element={<RequireAdminRoute />}>
-                  <Route path="inventory" element={<AdminInventoryPage />} />
                   <Route path="users" element={<AdminUsersPage />} />
                 </Route>
               </Route>

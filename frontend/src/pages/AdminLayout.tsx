@@ -13,15 +13,6 @@ function IconBox() {
   )
 }
 
-function IconWarehouse() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <path d="M3 9.5 12 4l9 5.5V20a1 1 0 0 1-1 1h-4v-6H8v6H4a1 1 0 0 1-1-1V9.5Z" />
-      <path d="M9 21v-4h6v4" />
-    </svg>
-  )
-}
-
 function IconTag() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -84,7 +75,6 @@ const NAV_ITEMS = [
   { to: '/admin/statistics', label: 'Thống kê', icon: IconChart },
   { to: '/admin/pos', label: 'Bán tại quầy (POS)', icon: IconPos },
   { to: '/admin/products', label: 'Sản phẩm', icon: IconBox },
-  { to: '/admin/inventory', label: 'Kho tồn hàng', icon: IconWarehouse, adminOnly: true },
   { to: '/admin/categories', label: 'Danh mục & Thương hiệu', icon: IconTag },
   { to: '/admin/vouchers', label: 'Mã giảm giá', icon: IconTicket },
   { to: '/admin/orders', label: 'Đơn hàng', icon: IconOrders },
@@ -95,7 +85,7 @@ export default function AdminLayout() {
   const { user } = useAuth()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
 
-  // "Kho tồn hàng"/"Người dùng" chỉ hiện với ADMIN -- ẩn UI chỉ là lớp UX phụ, chặn thật sự ở route guard + backend.
+  // "Người dùng" chỉ hiện với ADMIN -- ẩn UI chỉ là lớp UX phụ, chặn thật sự ở route guard + backend.
   const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
 
   return (

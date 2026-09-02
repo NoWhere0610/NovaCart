@@ -10,15 +10,21 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * Thống kê doanh thu/đơn hàng/sản phẩm bán chạy, gộp cả ONLINE và POS (cùng bảng orders).
- * Doanh thu chỉ tính đơn COMPLETED; RETURNED bị trừ lại; các trạng thái khác không tính.
+ * Doanh thu GỘP = đơn COMPLETED + đơn RETURNED (đơn RETURNED vẫn từng là 1 giao dịch bán thật);
+ * Doanh thu THUẦN = Gộp - Hoàn trả = đúng bằng tổng các đơn hiện đang COMPLETED (luôn >= 0) --
+ * KHÔNG tính "gộp trừ hoàn trả" theo cách chỉ lấy đơn COMPLETED hiện tại rồi trừ thêm 1 lần nữa,
+ * vì như vậy 1 đơn mua-rồi-hoàn sẽ bị trừ khống (không có ở đâu để trừ ra) khiến doanh thu thuần
+ * có thể âm dù về bản chất phải triệt tiêu về đúng 0.
  */
 @Service
 @RequiredArgsConstructor
@@ -56,19 +62,32 @@ public class AdminStatisticsService {
         long cancelledCount = orders.stream().filter(o -> o.getStatus() == Order.Status.CANCELLED).count();
         long returnRequestedCount = orders.stream().filter(o -> o.getStatus() == Order.Status.RETURN_REQUESTED).count();
 
-        BigDecimal completedRevenue = sumTotal(completed);
+        // completedOnlyRevenue: tổng các đơn ĐANG (hiện tại) ở trạng thái COMPLETED -- đây mới là doanh
+        // thu THỰC SỰ còn giữ được.
+        // grossRevenue (Doanh thu gộp): completedOnlyRevenue CỘNG THÊM cả đơn đã RETURNED -- vì đơn đó
+        // lúc bán vẫn là 1 giao dịch thật, chỉ là sau đó có 1 giao dịch hoàn tiền riêng. Nếu không cộng lại
+        // phần này, đơn RETURNED sẽ chỉ còn xuất hiện ở returnedRevenue (bị trừ) mà KHÔNG hề có ở đâu để trừ
+        // NÓ RA -- tức bị trừ "khống" 1 lần, khiến netRevenue có thể âm dù về bản chất 1 đơn mua-rồi-hoàn
+        // phải triệt tiêu về đúng 0, không phải về số âm.
+        BigDecimal completedOnlyRevenue = sumTotal(completed);
         BigDecimal returnedRevenue = sumTotal(returned);
-        BigDecimal netRevenue = completedRevenue.subtract(returnedRevenue);
+        BigDecimal grossRevenue = completedOnlyRevenue.add(returnedRevenue);
+        // netRevenue = grossRevenue - returnedRevenue = completedOnlyRevenue -- luôn >= 0 vì là tổng các
+        // đơn COMPLETED (totalAmount không bao giờ âm), không còn kiểu "hoàn 1 đơn kéo cả kỳ xuống âm" nữa.
+        BigDecimal netRevenue = completedOnlyRevenue;
 
         List<Order> onlineCompleted = completed.stream().filter(o -> o.getOrderType() == Order.OrderType.ONLINE).toList();
         List<Order> posCompleted = completed.stream().filter(o -> o.getOrderType() == Order.OrderType.POS).toList();
 
+        // Giá trị đơn TB = doanh thu của các đơn COMPLETED / số đơn COMPLETED -- không liên quan hoàn trả.
         BigDecimal avgOrderValue = completed.isEmpty()
                 ? BigDecimal.ZERO
-                : netRevenue.divide(BigDecimal.valueOf(completed.size()), 0, java.math.RoundingMode.HALF_UP);
+                : completedOnlyRevenue.divide(BigDecimal.valueOf(completed.size()), 0, RoundingMode.HALF_UP);
 
         StatisticsDto.Summary summary = StatisticsDto.Summary.builder()
                 .totalRevenue(netRevenue)
+                .completedRevenue(grossRevenue)
+                .returnedRevenue(returnedRevenue)
                 .totalOrders(completed.size())
                 .averageOrderValue(avgOrderValue)
                 .onlineOrders(onlineCompleted.size())
@@ -79,7 +98,14 @@ public class AdminStatisticsService {
                 .returnedOrders(returned.size() + returnRequestedCount)
                 .build();
 
+        StatisticsDto.PeriodComparison periodComparison =
+                computePeriodComparison(from, to, categoryId, orderType, grossRevenue, completed.size());
+
+        // Tách riêng doanh thu GỘP (completed + returned, khớp đúng ý nghĩa grossRevenue ở trên) và
+        // HOÀN TRẢ theo ngày -- để biểu đồ vẽ 2 cột riêng biệt (xanh = doanh thu gộp, đỏ = hoàn trả)
+        // thay vì 1 con số âm gây hiểu lầm là "lỗi".
         Map<LocalDate, BigDecimal> revenueByDate = new TreeMap<>();
+        Map<LocalDate, BigDecimal> returnedByDate = new TreeMap<>();
         Map<LocalDate, Long> countByDate = new TreeMap<>();
         for (Order o : completed) {
             LocalDate d = o.getCreatedAt().toLocalDate();
@@ -88,7 +114,10 @@ public class AdminStatisticsService {
         }
         for (Order o : returned) {
             LocalDate d = o.getCreatedAt().toLocalDate();
-            revenueByDate.merge(d, o.getTotalAmount().negate(), BigDecimal::add);
+            // Cộng vào revenueByDate (không chỉ returnedByDate) -- đơn này vẫn từng là 1 giao dịch đã bán
+            // vào đúng ngày đó, khớp đúng định nghĩa "gộp" ở grossRevenue phía trên.
+            revenueByDate.merge(d, o.getTotalAmount(), BigDecimal::add);
+            returnedByDate.merge(d, o.getTotalAmount(), BigDecimal::add);
         }
 
         List<StatisticsDto.RevenuePoint> revenueByDay = new ArrayList<>();
@@ -96,6 +125,7 @@ public class AdminStatisticsService {
             revenueByDay.add(StatisticsDto.RevenuePoint.builder()
                     .date(d)
                     .revenue(revenueByDate.getOrDefault(d, BigDecimal.ZERO))
+                    .returnedRevenue(returnedByDate.getOrDefault(d, BigDecimal.ZERO))
                     .orderCount(countByDate.getOrDefault(d, 0L))
                     .build());
         }
@@ -125,12 +155,49 @@ public class AdminStatisticsService {
 
         return StatisticsDto.StatisticsResponse.builder()
                 .summary(summary)
+                .periodComparison(periodComparison)
                 .revenueByDay(revenueByDay)
                 .topProducts(topProducts)
                 .revenueByCategory(revenueByCategory)
                 .paymentMethodBreakdown(paymentMethodBreakdown)
                 .lowStockVariants(lowStockVariants)
                 .build();
+    }
+
+    /** So sánh doanh thu GỘP (completed + returned, khớp đúng grossRevenue) / số đơn COMPLETED với kỳ
+     * liền trước có CÙNG độ dài, cùng bộ lọc danh mục/kênh bán, để %Δ phản ánh đúng xu hướng bán hàng
+     * thay vì so lệch kỳ dài/ngắn khác nhau hoặc bị hoàn trả làm méo số liệu. */
+    private StatisticsDto.PeriodComparison computePeriodComparison(
+            LocalDate from, LocalDate to, Integer categoryId, Order.OrderType orderType,
+            BigDecimal currentGrossRevenue, long currentOrderCount) {
+        long days = ChronoUnit.DAYS.between(from, to) + 1;
+        LocalDate prevTo = from.minusDays(1);
+        LocalDate prevFrom = prevTo.minusDays(days - 1);
+
+        List<Order> prevOrders = orderRepository.findByStatusInAndCreatedAtBetween(
+                List.of(Order.Status.COMPLETED, Order.Status.RETURNED),
+                prevFrom.atStartOfDay(), prevTo.atTime(LocalTime.MAX));
+        if (orderType != null) {
+            prevOrders = prevOrders.stream().filter(o -> o.getOrderType() == orderType).toList();
+        }
+        if (categoryId != null) {
+            prevOrders = prevOrders.stream().filter(o -> orderHasCategory(o, categoryId)).toList();
+        }
+        BigDecimal prevGrossRevenue = sumTotal(prevOrders);
+        long prevOrderCount = prevOrders.stream().filter(o -> o.getStatus() == Order.Status.COMPLETED).count();
+
+        return StatisticsDto.PeriodComparison.builder()
+                .revenueChangePercent(percentChange(prevGrossRevenue, currentGrossRevenue))
+                .orderCountChangePercent(percentChange(BigDecimal.valueOf(prevOrderCount), BigDecimal.valueOf(currentOrderCount)))
+                .build();
+    }
+
+    /** Null nếu kỳ trước = 0 -- không có mẫu số để tính %, tránh chia cho 0 hoặc hiện +∞% vô nghĩa. */
+    private BigDecimal percentChange(BigDecimal previous, BigDecimal current) {
+        if (previous.compareTo(BigDecimal.ZERO) == 0) return null;
+        return current.subtract(previous)
+                .divide(previous, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100));
     }
 
     /** Gộp doanh thu theo danh mục (Áo/Quần/...) -- item không còn variant (hiếm, xem OrderItem.variant)

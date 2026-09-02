@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import {
   createAdminProductApi,
   deleteAdminProductApi,
   getAdminBrandsApi,
   getAdminCategoriesApi,
   getAdminProductsApi,
+  updateAdminInventoryItemApi,
   updateAdminProductApi,
   type AdminBrandDto,
   type AdminCategoryDto,
@@ -21,6 +22,9 @@ const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 // không gõ tay để tránh lệch chính tả (vd "XL " thừa dấu cách sẽ không khớp filter bên Shop).
 const FULL_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL']
 
+// Khớp đúng AdminInventoryService.LOW_STOCK_THRESHOLD bên backend -- cùng 1 định nghĩa "sắp hết hàng".
+const LOW_STOCK_THRESHOLD = 5
+
 const EMPTY_FORM: AdminProductPayload = {
   productName: '',
   description: '',
@@ -31,7 +35,7 @@ const EMPTY_FORM: AdminProductPayload = {
   material: '',
   status: 'ACTIVE',
   imageUrls: [''],
-  variants: [{ variantId: null, size: '', color: '', stockQuantity: 0 }],
+  variants: [{ variantId: null, size: '', color: '', sku: '', stockQuantity: 0 }],
 }
 
 export default function AdminProductsPage() {
@@ -39,7 +43,9 @@ export default function AdminProductsPage() {
   const [categories, setCategories] = useState<AdminCategoryDto[]>([])
   const [brands, setBrands] = useState<AdminBrandDto[]>([])
   const [keyword, setKeyword] = useState('')
+  const [lowStockOnly, setLowStockOnly] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [expandedProductId, setExpandedProductId] = useState<number | null>(null)
 
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<AdminProductPayload>(EMPTY_FORM)
@@ -90,11 +96,41 @@ export default function AdminProductsPage() {
       imageUrls: p.imageUrls.length > 0 ? p.imageUrls : [''],
       variants:
         p.variants.length > 0
-          ? p.variants.map((v) => ({ variantId: v.variantId, size: v.size, color: v.color, stockQuantity: v.stockQuantity }))
-          : [{ variantId: null, size: '', color: '', stockQuantity: 0 }],
+          ? p.variants.map((v) => ({
+              variantId: v.variantId,
+              size: v.size,
+              color: v.color,
+              sku: v.sku ?? '',
+              stockQuantity: v.stockQuantity,
+            }))
+          : [{ variantId: null, size: '', color: '', sku: '', stockQuantity: 0 }],
     })
     setError(null)
     setShowForm(true)
+  }
+
+  async function quickAdjustStock(productId: number, variantId: number, delta: number) {
+    const product = products.find((p) => p.productId === productId)
+    const variant = product?.variants.find((v) => v.variantId === variantId)
+    if (!product || !variant) return
+    const newStock = Math.max(0, variant.stockQuantity + delta)
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.productId !== productId
+          ? p
+          : { ...p, variants: p.variants.map((v) => (v.variantId === variantId ? { ...v, stockQuantity: newStock } : v)) },
+      ),
+    )
+    try {
+      await updateAdminInventoryItemApi(variantId, {
+        size: variant.size,
+        color: variant.color,
+        sku: variant.sku ?? '',
+        stockQuantity: newStock,
+      })
+    } catch {
+      await loadProducts()
+    }
   }
 
   async function handleSubmit() {
@@ -138,7 +174,7 @@ export default function AdminProductsPage() {
     }))
   }
   function addVariantRow() {
-    setForm((f) => ({ ...f, variants: [...f.variants, { variantId: null, size: '', color: '', stockQuantity: 0 }] }))
+    setForm((f) => ({ ...f, variants: [...f.variants, { variantId: null, size: '', color: '', sku: '', stockQuantity: 0 }] }))
   }
   function removeVariantRow(index: number) {
     setForm((f) => ({ ...f, variants: f.variants.filter((_, i) => i !== index) }))
@@ -163,12 +199,18 @@ export default function AdminProductsPage() {
         </button>
       </div>
 
-      <input
-        placeholder="Tìm theo tên sản phẩm..."
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
-        className="w-72 border border-stone-300 px-3 py-2 text-sm mb-4"
-      />
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          placeholder="Tìm theo tên sản phẩm..."
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          className="w-72 border border-stone-300 px-3 py-2 text-sm"
+        />
+        <label className="flex items-center gap-2 text-sm text-stone-600">
+          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
+          Chỉ hiện sắp hết hàng
+        </label>
+      </div>
 
       {loading ? (
         <p className="text-stone-500">Đang tải...</p>
@@ -177,6 +219,7 @@ export default function AdminProductsPage() {
           <table className="w-full text-sm">
             <thead className="bg-stone-50 border-b border-stone-200 text-left text-stone-500">
               <tr>
+                <th className="px-4 py-3 w-8"></th>
                 <th className="px-4 py-3">Tên sản phẩm</th>
                 <th className="px-4 py-3">Danh mục</th>
                 <th className="px-4 py-3">Giá</th>
@@ -186,37 +229,105 @@ export default function AdminProductsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {products.map((p) => (
-                <tr key={p.productId}>
-                  <td className="px-4 py-3 font-medium">{p.productName}</td>
-                  <td className="px-4 py-3">{p.categoryName}</td>
-                  <td className="px-4 py-3">
-                    {p.salePrice ? (
-                      <>
-                        <span className="text-orange-700">{formatVnd(p.salePrice)}</span>{' '}
-                        <span className="text-stone-400 line-through text-xs">{formatVnd(p.price)}</span>
-                      </>
-                    ) : (
-                      formatVnd(p.price)
-                    )}
-                  </td>
-                  <td className="px-4 py-3">{p.status}</td>
-                  <td className="px-4 py-3">{p.variants.reduce((s, v) => s + v.stockQuantity, 0)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => openEditForm(p)} className="text-xs border border-stone-300 px-2 py-1 hover:border-stone-900">
-                        Sửa
-                      </button>
-                      <button onClick={() => handleDelete(p.productId)} className="text-xs border border-red-300 text-red-600 px-2 py-1 hover:bg-red-50">
-                        Ẩn
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {products
+                .filter((p) => !lowStockOnly || p.variants.some((v) => v.stockQuantity <= LOW_STOCK_THRESHOLD))
+                .map((p) => {
+                  const totalStock = p.variants.reduce((s, v) => s + v.stockQuantity, 0)
+                  const hasLowStock = p.variants.some((v) => v.stockQuantity <= LOW_STOCK_THRESHOLD)
+                  const expanded = expandedProductId === p.productId
+                  return (
+                    <Fragment key={p.productId}>
+                      <tr>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => setExpandedProductId(expanded ? null : p.productId)}
+                            className="w-5 h-5 text-stone-500 hover:text-stone-900"
+                            title="Xem biến thể / tồn kho"
+                          >
+                            {expanded ? '▾' : '▸'}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{p.productName}</td>
+                        <td className="px-4 py-3">{p.categoryName}</td>
+                        <td className="px-4 py-3">
+                          {p.salePrice ? (
+                            <>
+                              <span className="text-orange-700">{formatVnd(p.salePrice)}</span>{' '}
+                              <span className="text-stone-400 line-through text-xs">{formatVnd(p.price)}</span>
+                            </>
+                          ) : (
+                            formatVnd(p.price)
+                          )}
+                        </td>
+                        <td className="px-4 py-3">{p.status}</td>
+                        <td className={`px-4 py-3 ${hasLowStock ? 'text-red-600 font-semibold' : ''}`}>
+                          {totalStock}
+                          {hasLowStock && <span className="ml-1 text-xs font-normal">(sắp hết)</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-2">
+                            <button onClick={() => openEditForm(p)} className="text-xs border border-stone-300 px-2 py-1 hover:border-stone-900">
+                              Sửa
+                            </button>
+                            <button onClick={() => handleDelete(p.productId)} className="text-xs border border-red-300 text-red-600 px-2 py-1 hover:bg-red-50">
+                              Ẩn
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-3 bg-stone-50">
+                            <table className="w-full text-xs">
+                              <thead className="text-stone-500">
+                                <tr>
+                                  <th className="text-left font-normal py-1">Size</th>
+                                  <th className="text-left font-normal py-1">Màu</th>
+                                  <th className="text-left font-normal py-1">SKU</th>
+                                  <th className="text-left font-normal py-1">Tồn kho</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {p.variants.map((v) => {
+                                  const low = v.stockQuantity <= LOW_STOCK_THRESHOLD
+                                  return (
+                                    <tr key={v.variantId} className={low ? 'bg-red-50' : ''}>
+                                      <td className="py-1.5">{v.size}</td>
+                                      <td className="py-1.5">{v.color}</td>
+                                      <td className="py-1.5 text-stone-500">{v.sku || '—'}</td>
+                                      <td className="py-1.5">
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => quickAdjustStock(p.productId, v.variantId, -1)}
+                                            className="w-6 h-6 border border-stone-300 text-stone-600 hover:border-stone-900"
+                                          >
+                                            −
+                                          </button>
+                                          <span className={`w-8 text-center font-semibold ${low ? 'text-red-600' : ''}`}>
+                                            {v.stockQuantity}
+                                          </span>
+                                          <button
+                                            onClick={() => quickAdjustStock(p.productId, v.variantId, 1)}
+                                            className="w-6 h-6 border border-stone-300 text-stone-600 hover:border-stone-900"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               {products.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
                     Không có sản phẩm nào
                   </td>
                 </tr>
@@ -323,7 +434,7 @@ export default function AdminProductsPage() {
               + Thêm ảnh
             </button>
 
-            <p className="text-xs font-medium text-stone-600 mb-2">Phân loại (size/màu/tồn kho)</p>
+            <p className="text-xs font-medium text-stone-600 mb-2">Phân loại (size/màu/SKU/tồn kho)</p>
             {form.variants.map((v, i) => (
               <div key={i} className="flex gap-2 mb-2">
                 <select
@@ -356,6 +467,12 @@ export default function AdminProductsPage() {
                     ))}
                   </select>
                 </div>
+                <input
+                  placeholder="SKU (tuỳ chọn)"
+                  value={v.sku ?? ''}
+                  onChange={(e) => updateVariant(i, { sku: e.target.value })}
+                  className="w-28 border border-stone-300 px-2 py-2 text-sm"
+                />
                 <input
                   type="number"
                   placeholder="Tồn kho"

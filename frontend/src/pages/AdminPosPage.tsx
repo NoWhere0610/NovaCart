@@ -235,9 +235,16 @@ export default function AdminPosPage() {
         <div className="space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
           {products.map((p) => (
             <div key={p.productId} className="border border-stone-200 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-medium text-stone-900 text-sm">{p.productName}</p>
-                <p className="text-sm text-orange-700 font-semibold">{formatVnd(effectivePrice(p))}</p>
+              <div className="flex items-center gap-3 mb-2">
+                {p.imageUrls[0] ? (
+                  <img src={p.imageUrls[0]} alt={p.productName} className="w-10 h-10 object-cover bg-stone-100 shrink-0" />
+                ) : (
+                  <div className="w-10 h-10 bg-stone-100 shrink-0" />
+                )}
+                <div className="flex-1 flex items-center justify-between min-w-0">
+                  <p className="font-medium text-stone-900 text-sm truncate">{p.productName}</p>
+                  <p className="text-sm text-orange-700 font-semibold shrink-0 ml-2">{formatVnd(effectivePrice(p))}</p>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {p.variants.map((v) => (
@@ -294,7 +301,12 @@ export default function AdminPosPage() {
             <div className="divide-y divide-stone-100 border-t border-b border-stone-100 mb-3 max-h-64 overflow-y-auto">
               {invoice.items.map((item) => (
                 <div key={item.orderItemId} className="py-2 flex items-center justify-between text-sm">
-                  <div className="flex-1 min-w-0">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.productName} className="w-10 h-10 object-cover bg-stone-100 shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 bg-stone-100 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0 ml-2">
                     <p className="font-medium text-stone-900 truncate">{item.productName}</p>
                     <p className="text-stone-500 text-xs">
                       {item.size} / {item.color} · {formatVnd(item.unitPrice)}
