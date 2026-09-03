@@ -66,7 +66,11 @@ public class AdminInventoryService {
 
     @Transactional
     public AdminInventoryItemResponse update(Long variantId, AdminInventoryUpdateRequest request) {
-        ProductVariant variant = getVariantOrThrow(variantId);
+        // findByIdForUpdate -- khoá row tới hết transaction. Không có khoá này, admin mở form sửa trong
+        // lúc POS/checkout đang trừ kho biến thể đó rồi lưu đè lại số tồn CŨ đã đọc từ trước, làm mất
+        // đúng giao dịch bán vừa xảy ra ("last writer wins" quay số tồn về sai).
+        ProductVariant variant = variantRepository.findByIdForUpdate(variantId)
+                .orElseThrow(() -> ApiException.notFound("Mặt hàng tồn kho không tồn tại"));
         variant.setSize(request.getSize());
         variant.setColor(request.getColor());
         variant.setSku(request.getSku());

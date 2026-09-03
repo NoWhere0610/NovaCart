@@ -113,8 +113,11 @@ public class AdminOrderService {
                 || newStatus == Order.Status.RETURNED;
         if (shouldRestoreStock) {
             for (OrderItem item : order.getItems()) {
-                ProductVariant variant = item.getVariant();
-                if (variant != null) {
+                if (item.getVariant() != null) {
+                    // findByIdForUpdate -- khoá row, tránh mất cập nhật tồn kho nếu đúng lúc này biến thể
+                    // đang được bán ở nơi khác (PosOrderService/OrderService).
+                    ProductVariant variant = variantRepository.findByIdForUpdate(item.getVariant().getVariantId())
+                            .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
                     int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
                     variant.setStockQuantity(stock + item.getQuantity());
                     variantRepository.save(variant);
@@ -135,6 +138,9 @@ public class AdminOrderService {
             order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
         }
 
+        if (newStatus == Order.Status.RETURNED) {
+            order.setReturnedAt(java.time.LocalDateTime.now());
+        }
         order.setStatus(newStatus);
         return toResponse(orderRepository.save(order), true);
     }

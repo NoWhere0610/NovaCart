@@ -109,14 +109,29 @@ public class VoucherService {
      */
     @Transactional(readOnly = true)
     public BigDecimal previewDiscount(String code, BigDecimal subtotal) {
-        Voucher voucher = validateVoucher(code, subtotal);
+        Voucher voucher = validateVoucher(code, subtotal, true);
         return computeDiscount(voucher, subtotal);
     }
 
-    private Voucher validateVoucher(String code, BigDecimal subtotal) {
+    /**
+     * Tính lại số tiền giảm cho 1 mã ĐÃ áp dụng thành công vào hoá đơn (usedCount đã cộng cho chính hoá
+     * đơn này rồi) -- dùng khi POS sửa số lượng/thêm-bớt sản phẩm sau khi áp mã (PosOrderService.
+     * recalculateTotals). KHÔNG kiểm tra lại usageLimit: nếu vẫn kiểm tra như previewDiscount() thông
+     * thường, voucher usageLimit=1 vừa áp (usedCount=1) sẽ tự thấy usedCount>=limit ngay lần sửa hoá đơn
+     * TIẾP THEO (vì hoá đơn đang giữ đúng lượt đó) và bị coi là "hết lượt" -- tự xoá mã khỏi hoá đơn của
+     * chính nó dù vẫn còn hợp lệ. Vẫn kiểm tra active/ngày/min order để mã hết hạn hoặc đơn tụt dưới
+     * min_order_value (do bớt hàng) vẫn bị gỡ đúng như cũ.
+     */
+    @Transactional(readOnly = true)
+    public BigDecimal previewDiscountForAppliedVoucher(String code, BigDecimal subtotal) {
+        Voucher voucher = validateVoucher(code, subtotal, false);
+        return computeDiscount(voucher, subtotal);
+    }
+
+    private Voucher validateVoucher(String code, BigDecimal subtotal, boolean checkUsageLimit) {
         Voucher voucher = voucherRepository.findByCodeIgnoreCase(code)
                 .orElseThrow(() -> ApiException.badRequest("Mã giảm giá không tồn tại"));
-        return validateFetchedVoucher(voucher, subtotal);
+        return validateFetchedVoucher(voucher, subtotal, checkUsageLimit);
     }
 
     /** Giống validateVoucher() nhưng khoá row voucher tới hết transaction -- dùng đúng lúc THỰC SỰ áp
@@ -124,10 +139,10 @@ public class VoucherService {
     private Voucher validateVoucherForUpdate(String code, BigDecimal subtotal) {
         Voucher voucher = voucherRepository.findByCodeIgnoreCaseForUpdate(code)
                 .orElseThrow(() -> ApiException.badRequest("Mã giảm giá không tồn tại"));
-        return validateFetchedVoucher(voucher, subtotal);
+        return validateFetchedVoucher(voucher, subtotal, true);
     }
 
-    private Voucher validateFetchedVoucher(Voucher voucher, BigDecimal subtotal) {
+    private Voucher validateFetchedVoucher(Voucher voucher, BigDecimal subtotal, boolean checkUsageLimit) {
         if (!Boolean.TRUE.equals(voucher.getIsActive())) {
             throw ApiException.badRequest("Mã giảm giá đã ngừng hoạt động");
         }
@@ -141,10 +156,12 @@ public class VoucherService {
         if (voucher.getEndDate() != null && today.isAfter(voucher.getEndDate())) {
             throw ApiException.badRequest("Mã giảm giá đã hết hạn");
         }
-        // usedCount có thể NULL nếu DB chưa chạy migration bổ sung cột này -> coi như 0
-        int currentUsedCount = voucher.getUsedCount() != null ? voucher.getUsedCount() : 0;
-        if (voucher.getUsageLimit() != null && currentUsedCount >= voucher.getUsageLimit()) {
-            throw ApiException.badRequest("Mã giảm giá đã hết lượt sử dụng");
+        if (checkUsageLimit) {
+            // usedCount có thể NULL nếu DB chưa chạy migration bổ sung cột này -> coi như 0
+            int currentUsedCount = voucher.getUsedCount() != null ? voucher.getUsedCount() : 0;
+            if (voucher.getUsageLimit() != null && currentUsedCount >= voucher.getUsageLimit()) {
+                throw ApiException.badRequest("Mã giảm giá đã hết lượt sử dụng");
+            }
         }
         if (voucher.getMinOrderValue() != null && subtotal.compareTo(voucher.getMinOrderValue()) < 0) {
             throw ApiException.badRequest(
@@ -180,7 +197,10 @@ public class VoucherService {
     @Transactional
     public void revertVoucherUsage(String code) {
         if (code == null || code.isBlank()) return;
-        voucherRepository.findByCodeIgnoreCase(code).ifPresent(v -> {
+        // findByCodeIgnoreCaseForUpdate -- khoá row (giống applyVoucher()). 2 đơn dùng cùng voucher bị
+        // huỷ/trả hàng gần như đồng thời mà đọc thường sẽ cùng đọc trùng usedCount rồi cùng ghi giảm 1,
+        // làm mất 1 lượt hoàn (usedCount đáng lẽ về 0 thì lại dừng ở 1).
+        voucherRepository.findByCodeIgnoreCaseForUpdate(code).ifPresent(v -> {
             int current = v.getUsedCount() != null ? v.getUsedCount() : 0;
             v.setUsedCount(Math.max(0, current - 1));
             voucherRepository.save(v);

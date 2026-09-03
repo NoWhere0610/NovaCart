@@ -43,10 +43,18 @@ public class CartService {
 
     @Transactional
     public CartResponse addItem(Long userId, AddToCartRequest request) {
-        Cart cart = getOrCreateCart(userId);
+        // Đảm bảo Cart đã tồn tại (tạo mới nếu đây là lần đầu), rồi khoá lại row đó tới hết transaction --
+        // 2 request "Thêm vào giỏ" cùng 1 sản phẩm gần như đồng thời (double-click, 2 tab) nếu không khoá
+        // có thể cùng đọc trùng quantity cũ trước khi ghi, làm mất 1 lần cộng dồn (giỏ đang có 1, cả hai
+        // cùng +1 nhưng kết quả cuối chỉ là 2 thay vì 3).
+        getOrCreateCart(userId);
+        Cart cart = cartRepository.findByUser_UserIdForUpdate(userId).orElseThrow();
 
         ProductVariant variant = variantRepository.findById(request.getVariantId())
                 .orElseThrow(() -> ApiException.notFound("Sản phẩm không tồn tại"));
+        if (variant.getProduct().getStatus() != Product.Status.ACTIVE) {
+            throw ApiException.badRequest("Sản phẩm này hiện không còn kinh doanh");
+        }
 
         // Nếu variant này đã có sẵn trong giỏ -> CỘNG DỒN số lượng thay vì tạo dòng mới
         CartItem item = cartItemRepository
@@ -73,6 +81,9 @@ public class CartService {
     @Transactional
     public CartResponse updateItemQuantity(Long userId, Long cartItemId, int quantity) {
         CartItem item = getOwnedCartItemOrThrow(userId, cartItemId);
+        if (item.getVariant().getProduct().getStatus() != Product.Status.ACTIVE) {
+            throw ApiException.badRequest("Sản phẩm này hiện không còn kinh doanh, vui lòng xoá khỏi giỏ hàng");
+        }
         validateStock(item.getVariant(), quantity);
         item.setQuantity(quantity);
         cartItemRepository.save(item);
