@@ -13,7 +13,7 @@ import {
   YAxis,
 } from 'recharts'
 import { getStatisticsApi, type StatisticsResponse } from '../api/statisticsApi'
-import { getAdminCategoriesApi, type AdminCategoryDto } from '../api/adminApi'
+import { getAdminBrandsApi, getAdminCategoriesApi, type AdminBrandDto, type AdminCategoryDto } from '../api/adminApi'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -40,6 +40,78 @@ const FALLBACK_COLOR = '#a8a29e'
 function toIsoDate(d: Date) {
   return d.toISOString().slice(0, 10)
 }
+
+// Nút chọn nhanh khoảng ngày -- các trang quản trị bán hàng lớn (Shopee Seller Center, Sapo,
+// Haravan...) đều có sẵn để khỏi phải tự gõ ngày mỗi lần xem báo cáo.
+type QuickRangeKey =
+  | 'today'
+  | '7d'
+  | '30d'
+  | 'thisMonth'
+  | 'lastMonth'
+  | 'thisQuarter'
+  | 'lastQuarter'
+  | 'thisYear'
+  | 'lastYear'
+
+function computeQuickRange(key: QuickRangeKey): { from: string; to: string } {
+  const today = new Date()
+  const quarterOf = (m: number) => Math.floor(m / 3)
+  switch (key) {
+    case 'today':
+      return { from: toIsoDate(today), to: toIsoDate(today) }
+    case '7d': {
+      const start = new Date(today)
+      start.setDate(today.getDate() - 6)
+      return { from: toIsoDate(start), to: toIsoDate(today) }
+    }
+    case '30d': {
+      const start = new Date(today)
+      start.setDate(today.getDate() - 29)
+      return { from: toIsoDate(start), to: toIsoDate(today) }
+    }
+    case 'thisMonth': {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      return { from: toIsoDate(start), to: toIsoDate(today) }
+    }
+    case 'lastMonth': {
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const end = new Date(today.getFullYear(), today.getMonth(), 0)
+      return { from: toIsoDate(start), to: toIsoDate(end) }
+    }
+    case 'thisQuarter': {
+      const start = new Date(today.getFullYear(), quarterOf(today.getMonth()) * 3, 1)
+      return { from: toIsoDate(start), to: toIsoDate(today) }
+    }
+    case 'lastQuarter': {
+      const currentQuarterStartMonth = quarterOf(today.getMonth()) * 3
+      const start = new Date(today.getFullYear(), currentQuarterStartMonth - 3, 1)
+      const end = new Date(today.getFullYear(), currentQuarterStartMonth, 0)
+      return { from: toIsoDate(start), to: toIsoDate(end) }
+    }
+    case 'thisYear': {
+      const start = new Date(today.getFullYear(), 0, 1)
+      return { from: toIsoDate(start), to: toIsoDate(today) }
+    }
+    case 'lastYear': {
+      const start = new Date(today.getFullYear() - 1, 0, 1)
+      const end = new Date(today.getFullYear() - 1, 11, 31)
+      return { from: toIsoDate(start), to: toIsoDate(end) }
+    }
+  }
+}
+
+const QUICK_RANGES: { key: QuickRangeKey; label: string }[] = [
+  { key: 'today', label: 'Hôm nay' },
+  { key: '7d', label: '7 ngày' },
+  { key: '30d', label: '30 ngày' },
+  { key: 'thisMonth', label: 'Tháng này' },
+  { key: 'lastMonth', label: 'Tháng trước' },
+  { key: 'thisQuarter', label: 'Quý này' },
+  { key: 'lastQuarter', label: 'Quý trước' },
+  { key: 'thisYear', label: 'Năm nay' },
+  { key: 'lastYear', label: 'Năm trước' },
+]
 
 function formatPercent(p: number | null) {
   if (p == null) return null
@@ -115,9 +187,13 @@ export default function AdminStatisticsPage() {
 
   const [from, setFrom] = useState(toIsoDate(monthAgo))
   const [to, setTo] = useState(toIsoDate(today))
+  const [activeQuickRange, setActiveQuickRange] = useState<QuickRangeKey | null>('30d')
   const [categoryId, setCategoryId] = useState('')
+  const [brandId, setBrandId] = useState('')
   const [orderType, setOrderType] = useState<'' | 'ONLINE' | 'POS'>('')
+  const [paymentMethod, setPaymentMethod] = useState<'' | 'COD' | 'VNPAY' | 'BANK_TRANSFER' | 'MOMO'>('')
   const [categories, setCategories] = useState<AdminCategoryDto[]>([])
+  const [brands, setBrands] = useState<AdminBrandDto[]>([])
   const [data, setData] = useState<StatisticsResponse | null>(null)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null)
@@ -129,17 +205,22 @@ export default function AdminStatisticsPage() {
     getAdminCategoriesApi()
       .then((cats) => setCategories(cats.filter((c) => c.parentId !== null)))
       .catch(() => {})
+    getAdminBrandsApi()
+      .then(setBrands)
+      .catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function load() {
+  async function load(fromOverride?: string, toOverride?: string) {
     setLoading(true)
     setError(null)
     try {
       setData(
-        await getStatisticsApi(from, to, 5, {
+        await getStatisticsApi(fromOverride ?? from, toOverride ?? to, 5, {
           categoryId: categoryId ? Number(categoryId) : undefined,
+          brandId: brandId ? Number(brandId) : undefined,
           orderType: orderType || undefined,
+          paymentMethod: paymentMethod || undefined,
         }),
       )
     } catch (err: any) {
@@ -149,15 +230,41 @@ export default function AdminStatisticsPage() {
     }
   }
 
+  function applyQuickRange(key: QuickRangeKey) {
+    const range = computeQuickRange(key)
+    setActiveQuickRange(key)
+    setFrom(range.from)
+    setTo(range.to)
+    load(range.from, range.to)
+  }
+
   return (
     <div>
-      <div className="flex items-end gap-3 mb-6">
+      <div className="flex flex-wrap gap-2 mb-3">
+        {QUICK_RANGES.map((r) => (
+          <button
+            key={r.key}
+            onClick={() => applyQuickRange(r.key)}
+            className={`text-xs px-3 py-1.5 border ${
+              activeQuickRange === r.key
+                ? 'bg-stone-900 border-stone-900 text-white'
+                : 'border-stone-300 text-stone-600 hover:border-stone-900'
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-end gap-3 mb-6">
         <div>
           <label className="block text-xs text-stone-500 mb-1">Từ ngày</label>
           <input
             type="date"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={(e) => {
+              setFrom(e.target.value)
+              setActiveQuickRange(null)
+            }}
             className="border border-stone-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -166,7 +273,10 @@ export default function AdminStatisticsPage() {
           <input
             type="date"
             value={to}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={(e) => {
+              setTo(e.target.value)
+              setActiveQuickRange(null)
+            }}
             className="border border-stone-300 px-2 py-1.5 text-sm"
           />
         </div>
@@ -186,6 +296,21 @@ export default function AdminStatisticsPage() {
           </select>
         </div>
         <div>
+          <label className="block text-xs text-stone-500 mb-1">Thương hiệu</label>
+          <select
+            value={brandId}
+            onChange={(e) => setBrandId(e.target.value)}
+            className="border border-stone-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">Tất cả thương hiệu</option>
+            {brands.map((b) => (
+              <option key={b.brandId} value={b.brandId}>
+                {b.brandName}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label className="block text-xs text-stone-500 mb-1">Kênh bán</label>
           <select
             value={orderType}
@@ -197,8 +322,22 @@ export default function AdminStatisticsPage() {
             <option value="POS">Tại quầy (POS)</option>
           </select>
         </div>
+        <div>
+          <label className="block text-xs text-stone-500 mb-1">Thanh toán</label>
+          <select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
+            className="border border-stone-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">Tất cả phương thức</option>
+            <option value="COD">Tiền mặt / COD</option>
+            <option value="VNPAY">VNPay</option>
+            <option value="BANK_TRANSFER">Chuyển khoản</option>
+            <option value="MOMO">Momo</option>
+          </select>
+        </div>
         <button
-          onClick={load}
+          onClick={() => load()}
           className="bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold px-4 py-2"
         >
           Xem thống kê
@@ -270,7 +409,7 @@ export default function AdminStatisticsPage() {
             </div>
           </div>
 
-          {/* Doanh thu theo ngày -- 2 cột riêng biệt: xanh = doanh thu (COMPLETED), đỏ = hoàn trả (vẽ
+          {/* Doanh thu theo ngày -- 2 cột riêng biệt: cam = doanh thu (COMPLETED), đỏ = hoàn trả (vẽ
               ÂM để tụt xuống dưới trục 0). Tách riêng để hoàn trả hiện rõ là "Hoàn trả" có chủ đích,
               không phải 1 con số âm trông giống lỗi. */}
           <div className="border border-stone-200 p-4 mb-8">
