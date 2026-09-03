@@ -31,6 +31,7 @@ public class VoucherService {
         if (voucherRepository.findByCodeIgnoreCase(request.getCode()).isPresent()) {
             throw ApiException.badRequest("Mã giảm giá đã tồn tại");
         }
+        validateFields(request);
         Voucher voucher = new Voucher();
         applyFields(voucher, request);
         voucher.setUsedCount(0);
@@ -41,8 +42,31 @@ public class VoucherService {
     public AdminVoucherDto.Response update(Integer voucherId, AdminVoucherDto.Request request) {
         Voucher voucher = voucherRepository.findById(voucherId)
                 .orElseThrow(() -> ApiException.notFound("Mã giảm giá không tồn tại"));
+        validateFields(request);
         applyFields(voucher, request);
         return toResponse(voucherRepository.save(voucher));
+    }
+
+    /** Chặn dữ liệu voucher vô lý -- vd trần giảm giá ÂM sẽ khiến computeDiscount() trả về số ÂM, làm
+     * checkout CỘNG THÊM tiền vào đơn thay vì giảm (total.subtract(discount) với discount âm). */
+    private void validateFields(AdminVoucherDto.Request request) {
+        if (request.getMinOrderValue() != null && request.getMinOrderValue().signum() < 0) {
+            throw ApiException.badRequest("Giá trị đơn tối thiểu không được âm");
+        }
+        if (request.getMaxDiscountAmount() != null && request.getMaxDiscountAmount().signum() < 0) {
+            throw ApiException.badRequest("Mức giảm tối đa không được âm");
+        }
+        if (request.getUsageLimit() != null && request.getUsageLimit() < 0) {
+            throw ApiException.badRequest("Giới hạn lượt dùng không được âm");
+        }
+        if (request.getDiscountType() == Voucher.DiscountType.PERCENT
+                && request.getDiscountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw ApiException.badRequest("Giảm theo % không được vượt quá 100%");
+        }
+        if (request.getStartDate() != null && request.getEndDate() != null
+                && request.getStartDate().isAfter(request.getEndDate())) {
+            throw ApiException.badRequest("Ngày bắt đầu phải trước ngày kết thúc");
+        }
     }
 
     @Transactional
@@ -66,7 +90,9 @@ public class VoucherService {
      */
     @Transactional
     public BigDecimal applyVoucher(String code, BigDecimal subtotal) {
-        Voucher voucher = validateVoucher(code, subtotal);
+        // findByCodeIgnoreCaseForUpdate -- khoá row tới hết transaction, tránh 2 đơn cùng lúc đọc trùng
+        // usedCount rồi cùng qua được kiểm tra usageLimit (đẩy usedCount vượt giới hạn đã đặt).
+        Voucher voucher = validateVoucherForUpdate(code, subtotal);
         BigDecimal discount = computeDiscount(voucher, subtotal);
 
         int currentUsedCount = voucher.getUsedCount() != null ? voucher.getUsedCount() : 0;
@@ -90,7 +116,18 @@ public class VoucherService {
     private Voucher validateVoucher(String code, BigDecimal subtotal) {
         Voucher voucher = voucherRepository.findByCodeIgnoreCase(code)
                 .orElseThrow(() -> ApiException.badRequest("Mã giảm giá không tồn tại"));
+        return validateFetchedVoucher(voucher, subtotal);
+    }
 
+    /** Giống validateVoucher() nhưng khoá row voucher tới hết transaction -- dùng đúng lúc THỰC SỰ áp
+     * mã (tăng usedCount ngay sau đó), tránh race giữa kiểm tra usageLimit và ghi usedCount mới. */
+    private Voucher validateVoucherForUpdate(String code, BigDecimal subtotal) {
+        Voucher voucher = voucherRepository.findByCodeIgnoreCaseForUpdate(code)
+                .orElseThrow(() -> ApiException.badRequest("Mã giảm giá không tồn tại"));
+        return validateFetchedVoucher(voucher, subtotal);
+    }
+
+    private Voucher validateFetchedVoucher(Voucher voucher, BigDecimal subtotal) {
         if (!Boolean.TRUE.equals(voucher.getIsActive())) {
             throw ApiException.badRequest("Mã giảm giá đã ngừng hoạt động");
         }
