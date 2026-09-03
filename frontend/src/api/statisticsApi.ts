@@ -65,7 +65,7 @@ export interface StatisticsFilters {
   categoryId?: number
   brandId?: number
   orderType?: 'ONLINE' | 'POS'
-  paymentMethod?: 'COD' | 'VNPAY' | 'BANK_TRANSFER' | 'MOMO'
+  paymentMethod?: 'COD' | 'VNPAY' | 'BANK_TRANSFER'
 }
 
 export async function getStatisticsApi(
