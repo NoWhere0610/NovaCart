@@ -4,11 +4,15 @@ import com.datn.dto.PageResponse;
 import com.datn.dto.admin.AdminProductRequest;
 import com.datn.dto.admin.AdminProductResponse;
 import com.datn.service.AdminProductService;
+import com.datn.service.FileStorageService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 
 /**
  * Toàn bộ endpoint dưới /api/admin/** đã bị chặn ở SecurityConfig (ADMIN hoặc STAFF mới qua được tầng
@@ -21,6 +25,14 @@ import org.springframework.web.bind.annotation.*;
 public class AdminProductController {
 
     private final AdminProductService adminProductService;
+    private final FileStorageService fileStorageService;
+
+    @PostMapping("/upload-image")
+    @PreAuthorize("@perm.has('PRODUCT_WRITE')")
+    public ResponseEntity<Map<String, String>> uploadImage(@RequestParam("file") MultipartFile file) {
+        String url = fileStorageService.storeProductImage(file);
+        return ResponseEntity.ok(Map.of("url", url));
+    }
 
     @GetMapping
     @PreAuthorize("@perm.has('PRODUCT_VIEW')")

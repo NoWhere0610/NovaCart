@@ -35,3 +35,6 @@ build/
 ### File thừa ###
 cd
 npm
+
+### Ảnh admin upload (xem FileStorageService) ###
+/uploads/
