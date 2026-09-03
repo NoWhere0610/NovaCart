@@ -116,8 +116,12 @@ public class HomeService {
 
     /** Trang chi tiết sản phẩm — trả đầy đủ ảnh + danh sách variant (size/màu/tồn kho) để user chọn trước khi thêm giỏ. */
     public ProductDetailResponse getProductDetail(Long productId) {
+        // Lọc status như mọi truy vấn danh sách phía khách hàng: sản phẩm đã ẩn/ngừng bán vẫn mở được qua
+        // link cũ (đã lưu, hoặc từ kết quả tìm kiếm ngoài) và hiện y như đang bán -- khách chọn size, bấm
+        // "Thêm vào giỏ" tới tận bước cuối mới bị CartService chặn.
         Product p = productRepository.findById(productId)
-                .orElseThrow(() -> ApiException.notFound("Sản phẩm không tồn tại"));
+                .filter(prod -> prod.getStatus() == Product.Status.ACTIVE)
+                .orElseThrow(() -> ApiException.notFound("Sản phẩm không tồn tại hoặc đã ngừng kinh doanh"));
 
         List<String> imageUrls = p.getImages() == null ? List.of() : p.getImages().stream()
                 .sorted(Comparator.comparing(ProductImage::getDisplayOrder,

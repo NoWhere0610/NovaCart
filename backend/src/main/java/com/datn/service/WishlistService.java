@@ -31,7 +31,8 @@ public class WishlistService {
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> list(Long userId, Pageable pageable) {
-        Page<Wishlist> page = wishlistRepository.findByUser_UserIdOrderByCreatedAtDesc(userId, pageable);
+        Page<Wishlist> page = wishlistRepository.findByUser_UserIdAndProduct_StatusOrderByCreatedAtDesc(
+                userId, Product.Status.ACTIVE, pageable);
         return PageResponse.from(page.map(w -> toProductResponse(w.getProduct())));
     }
 

@@ -5,7 +5,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -53,10 +52,18 @@ public class FileStorageService {
             Path targetFile = targetDir.resolve(filename);
             Files.copy(file.getInputStream(), targetFile);
 
-            return ServletUriComponentsBuilder.fromCurrentContextPath()
-                    .path("/uploads/products/")
-                    .path(filename)
-                    .toUriString();
+            // Trả về đường dẫn TƯƠNG ĐỐI, không phải URL tuyệt đối.
+            //
+            // Bản cũ dùng ServletUriComponentsBuilder.fromCurrentContextPath() -> URL sinh ra theo header
+            // Host của chính request upload và được LƯU THẲNG vào product_images.image_url. Ảnh admin
+            // upload trên máy dev sẽ đóng băng thành "http://localhost:8080/..." -- máy khác mở app qua IP
+            // LAN sẽ tự giải localhost thành chính nó và toàn bộ ảnh vỡ, dù file vẫn nằm nguyên trên server.
+            // Đổi host/cổng/bật HTTPS cũng hỏng y hệt, và nếu admin lúc vào bằng localhost lúc bằng IP thì
+            // DB chứa lẫn lộn 2 kiểu URL.
+            //
+            // Đường dẫn tương đối luôn được giải theo chính origin mà trình duyệt đang mở
+            // (dev: Vite proxy /uploads -> backend, xem vite.config.ts).
+            return "/uploads/products/" + filename;
         } catch (IOException e) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Không thể lưu ảnh");
         }

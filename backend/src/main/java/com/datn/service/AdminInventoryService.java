@@ -83,6 +83,26 @@ public class AdminInventoryService {
         }
     }
 
+    /**
+     * Điều chỉnh tồn kho theo mức thay đổi (nút +/- ở trang Sản phẩm). Phép cộng chạy TRONG transaction
+     * đã khoá row, nên nhiều lần bấm liên tiếp / 2 admin cùng thao tác / POS bán xen vào giữa đều cộng
+     * dồn đúng -- xem chú thích ở AdminInventoryAdjustRequest.
+     */
+    @Transactional
+    public AdminInventoryItemResponse adjustStock(Long variantId, int delta) {
+        ProductVariant variant = variantRepository.findByIdForUpdate(variantId)
+                .orElseThrow(() -> ApiException.notFound("Mặt hàng tồn kho không tồn tại"));
+        int current = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
+        int next = current + delta;
+        if (next < 0) {
+            // Không tự kẹp về 0: kho chỉ còn 2 mà bấm giảm 5 là thao tác sai, phải báo chứ không âm thầm
+            // chỉnh thành 0 (số trên màn hình lúc đó đã cũ).
+            throw ApiException.badRequest("Tồn kho hiện chỉ còn " + current + ", không giảm thêm được");
+        }
+        variant.setStockQuantity(next);
+        return toResponse(variantRepository.save(variant));
+    }
+
     @Transactional
     public void delete(Long variantId) {
         ProductVariant variant = getVariantOrThrow(variantId);

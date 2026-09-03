@@ -82,6 +82,15 @@ public class PosOrderService {
         ProductVariant variant = variantRepository.findByIdForUpdate(request.getVariantId())
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
 
+        // Cùng quy tắc với giỏ hàng/checkout online: sản phẩm đã ẩn/ngừng bán thì không bán ra được. Ô tìm
+        // sản phẩm ở POS dùng chung API admin (cố ý không lọc status để admin thấy cả hàng ẩn) nên hàng đã
+        // ẩn vẫn hiện ở quầy -- không chặn ở đây thì cùng 1 sản phẩm: khách online bị từ chối, khách tại
+        // quầy vẫn mua được.
+        if (variant.getProduct().getStatus() != com.datn.entity.Product.Status.ACTIVE) {
+            throw ApiException.badRequest(
+                    "Sản phẩm \"" + variant.getProduct().getProductName() + "\" đã ngừng kinh doanh, không thể bán");
+        }
+
         int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
         if (request.getQuantity() > stock) {
             throw ApiException.badRequest(

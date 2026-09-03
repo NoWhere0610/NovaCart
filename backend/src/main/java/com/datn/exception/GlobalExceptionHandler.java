@@ -12,6 +12,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -77,6 +78,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(buildError(HttpStatus.FORBIDDEN, "Bạn không có quyền thực hiện thao tác này", null));
+    }
+
+    // File tĩnh không tồn tại (vd ảnh sản phẩm dưới /uploads/** đã bị xoá khỏi đĩa). Không chặn ở đây thì
+    // rơi xuống handler Exception.class bên dưới -> trả 500 "lỗi hệ thống" và ghi log ERROR cho mỗi ảnh
+    // hỏng, làm log nhiễu và khiến trình duyệt hiểu nhầm là server đang lỗi.
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleNoResourceFound(NoResourceFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(buildError(HttpStatus.NOT_FOUND, "Không tìm thấy tài nguyên", null));
     }
 
     // Lưới an toàn cuối cùng: bắt mọi lỗi không lường trước, tránh lộ stack trace ra client

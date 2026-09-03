@@ -51,6 +51,10 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
 
     boolean existsByProduct_ProductIdAndSizeAndColor(Long productId, String size, String color);
 
+    // sku có UNIQUE trên toàn bảng -- dùng khi tự sinh SKU cho phân loại admin bỏ trống ô này
+    // (xem AdminProductService.normalizeSku).
+    boolean existsBySku(String sku);
+
     // Cảnh báo tồn kho thấp cho trang Thống kê -- top 10 biến thể ít hàng nhất, kèm sẵn Product để lấy tên.
     // Lọc theo product.status: sản phẩm đã ẩn/ngừng bán tồn kho gần 0 sẽ chiếm chỗ mãi trong top 10 và đẩy
     // mẫu đang bán thật sự sắp hết hàng ra ngoài -- cảnh báo mất tác dụng.

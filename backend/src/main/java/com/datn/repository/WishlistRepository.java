@@ -23,6 +23,10 @@ public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
     List<Long> findProductIdsByUser_UserId(@Param("userId") Long userId);
 
     // Trang "Sản phẩm yêu thích": cần đủ thông tin Product để hiển thị dạng lưới.
+    // Lọc theo status như mọi truy vấn phía khách hàng -- sản phẩm đã ẩn/ngừng bán không được hiện lẫn
+    // vào danh sách yêu thích như hàng đang bán. Lọc trong query (không lọc sau khi map) để Page trả đúng
+    // tổng số bản ghi, phân trang không bị hụt.
     @EntityGraph(attributePaths = { "product", "product.images", "product.category", "product.brand" })
-    Page<Wishlist> findByUser_UserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
+    Page<Wishlist> findByUser_UserIdAndProduct_StatusOrderByCreatedAtDesc(
+            Long userId, com.datn.entity.Product.Status status, Pageable pageable);
 }
