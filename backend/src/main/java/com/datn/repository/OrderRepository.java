@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,7 +33,22 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByOrderIdAndOrderType(Long orderId, Order.OrderType orderType);
 
     // ----- Thống kê -----
+    /**
+     * Giống findByStatusInAndCreatedAtBetween() cho các trạng thái "tĩnh" (COMPLETED/CANCELLED/
+     * RETURN_REQUESTED -- lọc theo createdAt như cũ), NHƯNG đơn RETURNED được lọc theo returnedAt (thời
+     * điểm THỰC SỰ hoàn trả) thay vì createdAt -- 1 đơn tạo tháng 7, trả hàng tháng 9 phải xuất hiện ở
+     * báo cáo tháng 9, không phải tháng 7. Đơn RETURNED cũ chưa có returnedAt (tạo trước khi thêm cột
+     * này) fallback về createdAt để không biến mất khỏi mọi báo cáo.
+     */
     @EntityGraph(attributePaths = { "items" })
-    List<Order> findByStatusInAndCreatedAtBetween(
-            List<Order.Status> statuses, LocalDateTime from, LocalDateTime to);
+    @Query("SELECT o FROM Order o WHERE " +
+            "(o.status IN :otherStatuses AND o.createdAt BETWEEN :from AND :to) " +
+            "OR (o.status = :returnedStatus AND (" +
+            "    (o.returnedAt IS NOT NULL AND o.returnedAt BETWEEN :from AND :to) " +
+            "    OR (o.returnedAt IS NULL AND o.createdAt BETWEEN :from AND :to)))")
+    List<Order> findForStatistics(
+            @Param("otherStatuses") List<Order.Status> otherStatuses,
+            @Param("returnedStatus") Order.Status returnedStatus,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 }

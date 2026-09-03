@@ -124,6 +124,12 @@ public class Order {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    // Thời điểm CHUYỂN sang RETURNED (khác createdAt -- 1 đơn có thể tạo tháng 7 nhưng trả hàng tháng 9).
+    // Thống kê hoàn trả phải nhóm theo cột này, không phải createdAt, không thì báo cáo tháng tạo đơn bị
+    // "sửa ngược" thành có khoản hoàn trong khi tháng thực sự phát sinh hoàn lại không thấy gì.
+    @Column(name = "returned_at")
+    private LocalDateTime returnedAt;
+
     // Optimistic lock -- 2 request cùng load rồi cùng sửa 1 đơn (vd double-click checkout, admin xác
     // nhận trùng lúc khách huỷ, POS checkout/huỷ cùng lúc) thì request save() SAU sẽ bị JPA ném
     // ObjectOptimisticLockingFailureException thay vì âm thầm ghi đè -- xem GlobalExceptionHandler.
