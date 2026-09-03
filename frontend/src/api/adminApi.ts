@@ -64,6 +64,15 @@ export async function deleteAdminProductApi(productId: number) {
   await apiClient.delete(`/admin/products/${productId}`)
 }
 
+export async function uploadAdminProductImageApi(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await apiClient.post<{ url: string }>('/admin/products/upload-image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data.url
+}
+
 // ================== INVENTORY (sửa nhanh tồn kho 1 biến thể) ==================
 // Không còn màn "Kho tồn hàng" riêng (đã gộp vào trang Sản phẩm) -- API này giờ chỉ dùng nội bộ cho
 // nút +/- điều chỉnh nhanh tồn kho ngay trong bảng sản phẩm, không cần mở form sửa cả sản phẩm.
