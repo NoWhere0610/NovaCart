@@ -40,7 +40,13 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
      * báo cáo tháng 9, không phải tháng 7. Đơn RETURNED cũ chưa có returnedAt (tạo trước khi thêm cột
      * này) fallback về createdAt để không biến mất khỏi mọi báo cáo.
      */
-    @EntityGraph(attributePaths = { "items" })
+    // Nạp sẵn cả product/category/brand của từng dòng hàng -- thống kê luôn phải duyệt tới category/brand
+    // (gộp doanh thu theo danh mục, lọc theo thương hiệu). Để LAZY thì mỗi dòng hàng sinh thêm 2-3 query
+    // lẻ: 1 kỳ 5.000 đơn có thể thành hơn 20.000 query cho 1 lần bấm nút, và còn chạy lại lần nữa cho kỳ
+    // so sánh. Chỉ 1 collection (items) được fetch nên không dính lỗi MultipleBagFetchException.
+    @EntityGraph(attributePaths = {
+            "items", "items.variant", "items.variant.product",
+            "items.variant.product.category", "items.variant.product.brand" })
     @Query("SELECT o FROM Order o WHERE " +
             "(o.status IN :otherStatuses AND o.createdAt BETWEEN :from AND :to) " +
             "OR (o.status = :returnedStatus AND (" +

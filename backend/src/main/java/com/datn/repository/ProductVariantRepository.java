@@ -1,5 +1,6 @@
 package com.datn.repository;
 
+import com.datn.entity.Product;
 import com.datn.entity.ProductVariant;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -51,6 +52,9 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     boolean existsByProduct_ProductIdAndSizeAndColor(Long productId, String size, String color);
 
     // Cảnh báo tồn kho thấp cho trang Thống kê -- top 10 biến thể ít hàng nhất, kèm sẵn Product để lấy tên.
+    // Lọc theo product.status: sản phẩm đã ẩn/ngừng bán tồn kho gần 0 sẽ chiếm chỗ mãi trong top 10 và đẩy
+    // mẫu đang bán thật sự sắp hết hàng ra ngoài -- cảnh báo mất tác dụng.
     @EntityGraph(attributePaths = {"product"})
-    List<ProductVariant> findTop10ByStockQuantityLessThanEqualOrderByStockQuantityAsc(int threshold);
+    List<ProductVariant> findTop10ByProduct_StatusAndStockQuantityLessThanEqualOrderByStockQuantityAsc(
+            Product.Status status, int threshold);
 }
