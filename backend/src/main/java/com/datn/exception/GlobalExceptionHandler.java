@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -55,6 +56,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(buildError(HttpStatus.CONFLICT,
                 "Dữ liệu vừa được thao tác bởi người khác, vui lòng tải lại trang và thử lại", null));
+    }
+
+    // Vi phạm ràng buộc UNIQUE ở DB (username/email trùng, review/wishlist trùng...) mà code không tự bắt
+    // riêng -- xảy ra khi 2 request cùng vượt qua bước kiểm tra "exists?" ở tầng service TRƯỚC KHI 1 trong
+    // 2 kịp insert (race điều kiện đăng ký trùng username, double-click thêm review/wishlist...). DB đã
+    // chặn đúng bản chất (không có 2 dòng trùng nào được tạo), nhưng KHÔNG được rơi xuống handler
+    // Exception.class chung bên dưới (trả nhầm 500 "lỗi hệ thống" khiến client hiểu lầm là lỗi tạm thời
+    // rồi tự động thử lại, thay vì hiểu đúng là yêu cầu không hợp lệ).
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(buildError(HttpStatus.CONFLICT,
+                "Dữ liệu bị trùng do có yêu cầu khác vừa xử lý cùng lúc, vui lòng tải lại và thử lại", null));
     }
 
     // @PreAuthorize("@perm.has(...)") từ chối (đã đăng nhập nhưng không đủ quyền theo ma trận STAFF) --
