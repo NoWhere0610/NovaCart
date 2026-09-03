@@ -26,7 +26,6 @@ const PAYMENT_LABEL: Record<string, string> = {
   COD: 'Tiền mặt / COD',
   VNPAY: 'VNPay',
   BANK_TRANSFER: 'Chuyển khoản',
-  MOMO: 'Momo',
 }
 
 // Gắn CỐ ĐỊNH theo từng phương thức (không cycle theo thứ tự mảng) -- đã chạy qua validator (chroma,
@@ -35,7 +34,6 @@ const PAYMENT_COLOR: Record<string, string> = {
   COD: '#c2410c',
   VNPAY: '#2563eb',
   BANK_TRANSFER: '#059669',
-  MOMO: '#7c3aed',
 }
 const FALLBACK_COLOR = '#a8a29e'
 

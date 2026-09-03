@@ -197,7 +197,7 @@ public class PosOrderService {
             throw ApiException.badRequest("Hoá đơn chưa có sản phẩm nào, không thể thanh toán");
         }
         // POS chỉ hỗ trợ 2 phương thức tại quầy (khớp PosDto.CheckoutRequest) -- chặn ở service phòng
-        // trường hợp có client khác gọi thẳng API với VNPAY/MOMO, tự set PAID mà không hề qua cổng nào.
+        // trường hợp có client khác gọi thẳng API với VNPAY, tự set PAID mà không hề qua cổng nào.
         if (request.getPaymentMethod() != Order.PaymentMethod.COD
                 && request.getPaymentMethod() != Order.PaymentMethod.BANK_TRANSFER) {
             throw ApiException.badRequest("Thanh toán tại quầy chỉ hỗ trợ Tiền mặt hoặc Chuyển khoản");

@@ -34,11 +34,12 @@ public class Order {
         RETURNED           // admin đã duyệt trả hàng/hoàn tiền
     }
 
+    /** Chỉ 3 phương thức thực sự có luồng xử lý. Cố tình KHÔNG khai báo sẵn phương thức chưa tích hợp
+     *  (trước đây có MOMO) -- enum có giá trị mà không cổng nào xử lý chỉ tạo ra đường đi lỗi. */
     public enum PaymentMethod {
         COD,
         BANK_TRANSFER,
-        VNPAY,
-        MOMO
+        VNPAY
     }
 
     public enum PaymentStatus {

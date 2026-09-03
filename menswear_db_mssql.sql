@@ -3803,7 +3803,7 @@ REFERENCES [dbo].[users] ([user_id])
 GO
 ALTER TABLE [dbo].[wishlist] CHECK CONSTRAINT [FKtrd6335blsefl2gxpb8lr0gr7]
 GO
-ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_method]='VNPAY' OR [payment_method]='MOMO' OR [payment_method]='BANK_TRANSFER' OR [payment_method]='COD'))
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_method]='VNPAY' OR [payment_method]='BANK_TRANSFER' OR [payment_method]='COD'))
 GO
 ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_status]='REFUNDED' OR [payment_status]='PAID' OR [payment_status]='UNPAID'))
 GO
