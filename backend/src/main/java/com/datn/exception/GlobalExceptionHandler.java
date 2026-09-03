@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -45,6 +46,15 @@ public class GlobalExceptionHandler {
                 .forEach(err -> fieldErrors.put(err.getField(), err.getDefaultMessage()));
         return ResponseEntity.badRequest()
                 .body(buildError(HttpStatus.BAD_REQUEST, "Dữ liệu không hợp lệ", fieldErrors));
+    }
+
+    // Optimistic lock (Order.version) va chạm -- 2 request cùng sửa 1 bản ghi (double-click checkout,
+    // 2 admin cùng xác nhận 1 đơn, POS checkout/huỷ trùng lúc...). Request save() sau thua, phải báo
+    // rõ để client tải lại dữ liệu mới nhất rồi thử lại, KHÔNG phải lỗi hệ thống chung chung.
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(buildError(HttpStatus.CONFLICT,
+                "Dữ liệu vừa được thao tác bởi người khác, vui lòng tải lại trang và thử lại", null));
     }
 
     // @PreAuthorize("@perm.has(...)") từ chối (đã đăng nhập nhưng không đủ quyền theo ma trận STAFF) --
