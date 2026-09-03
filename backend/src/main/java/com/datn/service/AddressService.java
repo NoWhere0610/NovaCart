@@ -56,7 +56,17 @@ public class AddressService {
     @Transactional
     public void delete(Long userId, Long addressId) {
         Address address = getOwnedAddressOrThrow(userId, addressId);
+        boolean wasDefault = Boolean.TRUE.equals(address.getIsDefault());
         addressRepository.delete(address);
+
+        // Xoá đúng địa chỉ đang là mặc định -- tự đôn 1 địa chỉ còn lại lên làm mặc định, không thì
+        // tài khoản không còn địa chỉ mặc định nào (checkout sẽ không tự chọn sẵn được địa chỉ nào).
+        if (wasDefault) {
+            addressRepository.findByUser_UserId(userId).stream().findFirst().ifPresent(next -> {
+                next.setIsDefault(true);
+                addressRepository.save(next);
+            });
+        }
     }
 
     // ----- helper nội bộ -----
