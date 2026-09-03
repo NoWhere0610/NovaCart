@@ -301,3 +301,22 @@ export async function unlockAdminUserApi(userId: number) {
   const { data } = await apiClient.put<AdminUserDto>(`/admin/users/${userId}/unlock`)
   return data
 }
+
+// ================== PERMISSIONS (phân quyền nhân viên) ==================
+
+export interface AdminPermissionItemDto {
+  code: string
+  group: string
+  label: string
+  granted: boolean
+}
+
+export async function getStaffPermissionsApi() {
+  const { data } = await apiClient.get<AdminPermissionItemDto[]>('/admin/permissions/staff')
+  return data
+}
+
+export async function updateStaffPermissionsApi(permissions: Record<string, boolean>) {
+  const { data } = await apiClient.put<AdminPermissionItemDto[]>('/admin/permissions/staff', { permissions })
+  return data
+}

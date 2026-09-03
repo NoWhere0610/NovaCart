@@ -70,6 +70,15 @@ function IconChart() {
   )
 }
 
+function IconShield() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M12 3 4 6v6c0 4.6 3.2 8.4 8 9 4.8-.6 8-4.4 8-9V6l-8-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  )
+}
+
 function IconPos() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -89,6 +98,7 @@ const NAV_ITEMS = [
   { to: '/admin/vouchers', label: 'Mã giảm giá', icon: IconTicket },
   { to: '/admin/orders', label: 'Đơn hàng', icon: IconOrders },
   { to: '/admin/users', label: 'Người dùng', icon: IconUsers, adminOnly: true },
+  { to: '/admin/permissions', label: 'Phân quyền nhân viên', icon: IconShield, adminOnly: true },
 ]
 
 export default function AdminLayout() {

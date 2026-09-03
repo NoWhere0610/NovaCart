@@ -45,14 +45,24 @@ public class PermissionService {
 
     /** Admin luôn true (không qua bảng); Staff theo đúng ma trận đang bật; vai trò khác/chưa đăng nhập -> false. */
     public boolean has(String permissionCode) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null) return false;
-        Set<String> authorities = auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toSet());
+        Set<String> authorities = currentAuthorities();
         if (authorities.contains("ROLE_ADMIN")) return true;
         if (authorities.contains("ROLE_STAFF")) return staffGranted.contains(permissionCode);
         return false;
+    }
+
+    /** Người đang gọi request có phải ADMIN thật hay không -- dùng cho các trường DỮ LIỆU chỉ ADMIN được
+     *  sửa nhưng lại nằm chung trong 1 API mà STAFF vẫn cần dùng (vd tồn kho trong form sản phẩm). */
+    public boolean isCurrentUserAdmin() {
+        return currentAuthorities().contains("ROLE_ADMIN");
+    }
+
+    private Set<String> currentAuthorities() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return Set.of();
+        return auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .collect(Collectors.toSet());
     }
 
     /** Chạy 1 lần duy nhất (bảng rỗng, lần đầu deploy) -- điền sẵn đề xuất mặc định: Nhân viên được xem +

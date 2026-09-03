@@ -11,6 +11,7 @@ import com.datn.repository.BrandRepository;
 import com.datn.repository.CategoryRepository;
 import com.datn.repository.ProductRepository;
 import com.datn.repository.ProductVariantRepository;
+import com.datn.security.PermissionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +33,7 @@ public class AdminProductService {
     private final CategoryRepository categoryRepository;
     private final BrandRepository brandRepository;
     private final ProductVariantRepository variantRepository;
+    private final PermissionService permissionService;
 
     /** Danh sách sản phẩm cho bảng quản trị — KHÔNG lọc theo status (admin phải thấy cả sản phẩm ẩn/hết hàng). */
     @Transactional(readOnly = true)
@@ -153,6 +155,13 @@ public class AdminProductService {
             variantRequests = List.of();
         }
 
+        // Tồn kho là dữ liệu CHỈ ADMIN được sửa (module "Kho tồn hàng" khoá cứng ADMIN ở SecurityConfig,
+        // không nằm trong ma trận STAFF). Nhưng form Sản phẩm cũng gửi stockQuantity kèm theo variant, nên
+        // Nhân viên có PRODUCT_WRITE sẽ sửa được tồn kho qua đường này -> lách đúng quy tắc trên. Chặn tại
+        // đây: request của Nhân viên KHÔNG được đụng vào tồn kho -- variant cũ giữ nguyên số đang có,
+        // variant mới bắt đầu từ 0 rồi Admin nhập kho ở trang "Kho tồn hàng".
+        boolean canEditStock = permissionService.isCurrentUserAdmin();
+
         Map<Long, ProductVariant> existingById = new HashMap<>();
         for (ProductVariant v : product.getVariants()) {
             existingById.put(v.getVariantId(), v);
@@ -161,14 +170,19 @@ public class AdminProductService {
         List<ProductVariant> result = new ArrayList<>();
         for (AdminVariantRequest req : variantRequests) {
             ProductVariant variant = req.getVariantId() != null ? existingById.get(req.getVariantId()) : null;
-            if (variant == null) {
+            boolean isNewVariant = variant == null;
+            if (isNewVariant) {
                 variant = new ProductVariant();
                 variant.setProduct(product);
             }
             variant.setSize(req.getSize());
             variant.setColor(req.getColor());
             variant.setSku(req.getSku());
-            variant.setStockQuantity(req.getStockQuantity());
+            if (canEditStock) {
+                variant.setStockQuantity(req.getStockQuantity());
+            } else if (isNewVariant) {
+                variant.setStockQuantity(0);
+            }
             result.add(variant);
         }
 
