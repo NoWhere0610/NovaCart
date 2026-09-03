@@ -35,7 +35,9 @@ public class VNPayService {
     @Value("${vnpay.pay-url}")
     private String payUrl;
 
-    @Value("${vnpay.return-url}")
+    // Endpoint BACKEND (VNPayReturnController) -- KHÔNG phải trang FE. Xem chú thích trong
+    // application.properties: trỏ nhầm sang FE khiến bước verify chữ ký/set PAID không bao giờ chạy.
+    @Value("${vnpay.callback-url}")
     private String returnUrl;
 
     public String buildPaymentUrl(Order order, HttpServletRequest request) {
