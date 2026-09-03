@@ -1,11 +1,13 @@
 package com.datn.service;
 
 import com.datn.dto.statistics.StatisticsDto;
+import com.datn.entity.Category;
 import com.datn.entity.Order;
 import com.datn.entity.OrderItem;
 import com.datn.entity.Product;
 import com.datn.entity.ProductVariant;
 import com.datn.exception.ApiException;
+import com.datn.repository.CategoryRepository;
 import com.datn.repository.OrderRepository;
 import com.datn.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,33 @@ public class AdminStatisticsService {
 
     private final OrderRepository orderRepository;
     private final ProductVariantRepository productVariantRepository;
+    private final CategoryRepository categoryRepository;
+
+    /**
+     * Danh mục được chọn CỘNG toàn bộ danh mục con-cháu của nó -- chọn "Áo" (danh mục cha, không sản phẩm
+     * nào gắn trực tiếp) phải ra tổng của Áo thun + Áo sơ mi + Áo khoác..., không phải 0₫. Duyệt theo tầng
+     * nên cây sâu bao nhiêu cấp cũng đúng; null = không lọc danh mục.
+     */
+    private Set<Integer> resolveCategoryIds(Integer categoryId) {
+        if (categoryId == null) return null;
+        Map<Integer, List<Integer>> childrenByParent = new HashMap<>();
+        for (Category c : categoryRepository.findAll()) {
+            Integer parentId = c.getParent() != null ? c.getParent().getCategoryId() : null;
+            if (parentId != null) {
+                childrenByParent.computeIfAbsent(parentId, k -> new ArrayList<>()).add(c.getCategoryId());
+            }
+        }
+        Set<Integer> result = new HashSet<>();
+        Deque<Integer> stack = new ArrayDeque<>();
+        stack.push(categoryId);
+        while (!stack.isEmpty()) {
+            Integer current = stack.pop();
+            // add() trả false nếu đã thăm -- chặn luôn trường hợp dữ liệu lỗi tạo vòng lặp cha-con.
+            if (!result.add(current)) continue;
+            childrenByParent.getOrDefault(current, List.of()).forEach(stack::push);
+        }
+        return result;
+    }
 
     public StatisticsDto.StatisticsResponse getStatistics(
             LocalDate from, LocalDate to, int topProductLimit, Integer categoryId, Integer brandId,
@@ -52,6 +81,8 @@ public class AdminStatisticsService {
         }
         LocalDateTime fromDateTime = from.atStartOfDay();
         LocalDateTime toDateTime = to.atTime(LocalTime.MAX);
+        // Chọn 1 danh mục CHA thì gộp luôn mọi danh mục con của nó (xem resolveCategoryIds).
+        Set<Integer> categoryIds = resolveCategoryIds(categoryId);
 
         // findForStatistics -- đơn RETURNED được lọc theo returnedAt (ngày hoàn thật), không phải createdAt
         // như 3 trạng thái còn lại (xem chú thích ở OrderRepository).
@@ -70,11 +101,9 @@ public class AdminStatisticsService {
         // tập dòng mà orderRevenue() dùng để tính tiền. KHÔNG kiểm tra 2 điều kiện độc lập nhau: 1 đơn có
         // áo (đúng danh mục, khác thương hiệu) + quần (đúng thương hiệu, khác danh mục) sẽ qua được cả 2
         // phép kiểm riêng lẻ nhưng không có dòng nào khớp cả hai -> bị đếm là 1 đơn mà doanh thu bằng 0.
-        if (categoryId != null || brandId != null) {
-            final Integer catId = categoryId;
-            final Integer brId = brandId;
+        if (categoryIds != null || brandId != null) {
             orders = orders.stream()
-                    .filter(o -> o.getItems().stream().anyMatch(i -> itemMatchesFilters(i, catId, brId)))
+                    .filter(o -> o.getItems().stream().anyMatch(i -> itemMatchesFilters(i, categoryIds, brandId)))
                     .toList();
         }
 
@@ -112,8 +141,8 @@ public class AdminStatisticsService {
         // 1 giao dịch thật, chỉ là sau đó có 1 giao dịch hoàn tiền riêng. Nếu không cộng lại phần này, đơn
         // RETURNED sẽ chỉ còn xuất hiện ở returnedRevenue (bị trừ) mà KHÔNG hề có ở đâu để trừ NÓ RA -- tức
         // bị trừ "khống" 1 lần, khiến netRevenue có thể âm dù 1 đơn mua-rồi-hoàn phải triệt tiêu về đúng 0.
-        BigDecimal heldRevenue = sumTotal(soldOrders, categoryId, brandId);
-        BigDecimal returnedRevenue = sumTotal(returned, categoryId, brandId);
+        BigDecimal heldRevenue = sumTotal(soldOrders, categoryIds, brandId);
+        BigDecimal returnedRevenue = sumTotal(returned, categoryIds, brandId);
         BigDecimal grossRevenue = heldRevenue.add(returnedRevenue);
         BigDecimal netRevenue = heldRevenue;
 
@@ -133,14 +162,14 @@ public class AdminStatisticsService {
                 .averageOrderValue(avgOrderValue)
                 .onlineOrders(onlineSold.size())
                 .posOrders(posSold.size())
-                .onlineRevenue(sumTotal(onlineSold, categoryId, brandId))
-                .posRevenue(sumTotal(posSold, categoryId, brandId))
+                .onlineRevenue(sumTotal(onlineSold, categoryIds, brandId))
+                .posRevenue(sumTotal(posSold, categoryIds, brandId))
                 .cancelledOrders(cancelledCount)
                 .returnedOrders(returnedCount + returnRequestedCount)
                 .build();
 
         StatisticsDto.PeriodComparison periodComparison = computePeriodComparison(
-                from, to, categoryId, brandId, orderType, paymentMethod, grossRevenue, soldOrders.size());
+                from, to, categoryIds, brandId, orderType, paymentMethod, grossRevenue, soldOrders.size());
 
         // Tách riêng doanh thu GỘP (completed + returned, khớp đúng ý nghĩa grossRevenue ở trên) và
         // HOÀN TRẢ theo ngày -- để biểu đồ vẽ 2 cột riêng biệt (xanh = doanh thu gộp, đỏ = hoàn trả)
@@ -150,11 +179,11 @@ public class AdminStatisticsService {
         Map<LocalDate, Long> countByDate = new TreeMap<>();
         for (Order o : soldOrders) {
             LocalDate d = o.getCreatedAt().toLocalDate();
-            revenueByDate.merge(d, orderRevenue(o, categoryId, brandId), BigDecimal::add);
+            revenueByDate.merge(d, orderRevenue(o, categoryIds, brandId), BigDecimal::add);
             countByDate.merge(d, 1L, Long::sum);
         }
         for (Order o : returned) {
-            BigDecimal amount = orderRevenue(o, categoryId, brandId);
+            BigDecimal amount = orderRevenue(o, categoryIds, brandId);
             // Doanh thu vào NGÀY BÁN (createdAt) còn khoản hoàn vào NGÀY HOÀN (returnedAt) -- 2 sự kiện
             // khác nhau, xảy ra ở 2 thời điểm khác nhau. Nếu cộng cả doanh thu vào ngày hoàn thì biểu đồ
             // hiện "bán được 500k" đúng vào hôm shop không bán gì mà còn phải trả tiền lại cho khách.
@@ -185,7 +214,7 @@ public class AdminStatisticsService {
             for (OrderItem item : o.getItems()) {
                 // Chỉ tính các dòng khớp bộ lọc danh mục/thương hiệu đang chọn -- không lọc thì bảng "bán
                 // chạy" liệt kê cả sản phẩm thuộc danh mục khác nằm chung đơn, mâu thuẫn với ô doanh thu.
-                if (!itemMatchesFilters(item, categoryId, brandId)) continue;
+                if (!itemMatchesFilters(item, categoryIds, brandId)) continue;
                 String key = productKey(item);
                 qtyByProduct.merge(key, (long) item.getQuantity(), Long::sum);
                 revenueByProduct.merge(key, item.getSubtotal(), BigDecimal::add);
@@ -207,9 +236,9 @@ public class AdminStatisticsService {
                 .collect(Collectors.toList());
 
         List<StatisticsDto.CategoryRevenue> revenueByCategory =
-                computeRevenueByCategory(soldOrders, categoryId, brandId);
+                computeRevenueByCategory(soldOrders, categoryIds, brandId);
         List<StatisticsDto.PaymentMethodStat> paymentMethodBreakdown =
-                computePaymentMethodBreakdown(soldOrders, categoryId, brandId);
+                computePaymentMethodBreakdown(soldOrders, categoryIds, brandId);
         List<StatisticsDto.LowStockItem> lowStockVariants = computeLowStockVariants();
 
         return StatisticsDto.StatisticsResponse.builder()
@@ -227,7 +256,7 @@ public class AdminStatisticsService {
      * liền trước có CÙNG độ dài, cùng bộ lọc danh mục/kênh bán, để %Δ phản ánh đúng xu hướng bán hàng
      * thay vì so lệch kỳ dài/ngắn khác nhau hoặc bị hoàn trả làm méo số liệu. */
     private StatisticsDto.PeriodComparison computePeriodComparison(
-            LocalDate from, LocalDate to, Integer categoryId, Integer brandId, Order.OrderType orderType,
+            LocalDate from, LocalDate to, Set<Integer> categoryIds, Integer brandId, Order.OrderType orderType,
             Order.PaymentMethod paymentMethod, BigDecimal currentGrossRevenue, long currentOrderCount) {
         long days = ChronoUnit.DAYS.between(from, to) + 1;
         LocalDate prevTo = from.minusDays(1);
@@ -243,13 +272,13 @@ public class AdminStatisticsService {
         if (paymentMethod != null) {
             prevOrders = prevOrders.stream().filter(o -> o.getPaymentMethod() == paymentMethod).toList();
         }
-        if (categoryId != null || brandId != null) {
+        if (categoryIds != null || brandId != null) {
             prevOrders = prevOrders.stream()
-                    .filter(o -> o.getItems().stream().anyMatch(i -> itemMatchesFilters(i, categoryId, brandId)))
+                    .filter(o -> o.getItems().stream().anyMatch(i -> itemMatchesFilters(i, categoryIds, brandId)))
                     .toList();
         }
         prevOrders = prevOrders.stream().filter(this::isRealizedRevenue).toList();
-        BigDecimal prevGrossRevenue = sumTotal(prevOrders, categoryId, brandId);
+        BigDecimal prevGrossRevenue = sumTotal(prevOrders, categoryIds, brandId);
         long prevOrderCount = prevOrders.stream()
                 .filter(o -> o.getStatus() == Order.Status.COMPLETED || o.getStatus() == Order.Status.RETURN_REQUESTED)
                 .count();
@@ -273,14 +302,14 @@ public class AdminStatisticsService {
      * không thì biểu đồ này hiện cả danh mục khác nằm chung đơn và tổng các cột sẽ LỚN HƠN ô "Doanh thu
      * gộp" ngay phía trên -- 2 con số mâu thuẫn nhau trên cùng 1 màn hình. */
     private List<StatisticsDto.CategoryRevenue> computeRevenueByCategory(
-            List<Order> soldOrders, Integer categoryId, Integer brandId) {
+            List<Order> soldOrders, Set<Integer> categoryIds, Integer brandId) {
         Map<String, Long> qtyByCategory = new HashMap<>();
         Map<String, BigDecimal> revenueByCategory = new HashMap<>();
         for (Order o : soldOrders) {
             for (OrderItem item : o.getItems()) {
                 if (item.getVariant() == null || item.getVariant().getProduct() == null
                         || item.getVariant().getProduct().getCategory() == null) continue;
-                if (!itemMatchesFilters(item, categoryId, brandId)) continue;
+                if (!itemMatchesFilters(item, categoryIds, brandId)) continue;
                 String key = item.getVariant().getProduct().getCategory().getCategoryName();
                 qtyByCategory.merge(key, (long) item.getQuantity(), Long::sum);
                 revenueByCategory.merge(key, item.getSubtotal(), BigDecimal::add);
@@ -297,13 +326,13 @@ public class AdminStatisticsService {
     }
 
     private List<StatisticsDto.PaymentMethodStat> computePaymentMethodBreakdown(
-            List<Order> completed, Integer categoryId, Integer brandId) {
+            List<Order> completed, Set<Integer> categoryIds, Integer brandId) {
         Map<Order.PaymentMethod, Long> countByMethod = new EnumMap<>(Order.PaymentMethod.class);
         Map<Order.PaymentMethod, BigDecimal> revenueByMethod = new EnumMap<>(Order.PaymentMethod.class);
         for (Order o : completed) {
             if (o.getPaymentMethod() == null) continue;
             countByMethod.merge(o.getPaymentMethod(), 1L, Long::sum);
-            revenueByMethod.merge(o.getPaymentMethod(), orderRevenue(o, categoryId, brandId), BigDecimal::add);
+            revenueByMethod.merge(o.getPaymentMethod(), orderRevenue(o, categoryIds, brandId), BigDecimal::add);
         }
         return countByMethod.entrySet().stream()
                 .sorted((a, b) -> revenueByMethod.get(b.getKey()).compareTo(revenueByMethod.get(a.getKey())))
@@ -351,11 +380,11 @@ public class AdminStatisticsService {
      * việc lọc đơn, tính doanh thu, gộp theo danh mục lẫn bảng bán chạy, để 4 chỗ này không bao giờ hiểu
      * "khớp bộ lọc" theo 2 nghĩa khác nhau. Bộ lọc để trống = không ràng buộc chiều đó.
      */
-    private boolean itemMatchesFilters(OrderItem item, Integer categoryId, Integer brandId) {
+    private boolean itemMatchesFilters(OrderItem item, Set<Integer> categoryIds, Integer brandId) {
         if (item.getVariant() == null || item.getVariant().getProduct() == null) return false;
         var product = item.getVariant().getProduct();
-        if (categoryId != null && (product.getCategory() == null
-                || !categoryId.equals(product.getCategory().getCategoryId()))) {
+        if (categoryIds != null && (product.getCategory() == null
+                || !categoryIds.contains(product.getCategory().getCategoryId()))) {
             return false;
         }
         return brandId == null || (product.getBrand() != null
@@ -378,17 +407,17 @@ public class AdminStatisticsService {
      * thổi phồng doanh thu bị lọc lên gấp nhiều lần giá trị thật, và shipping fee/giảm giá cấp đơn cũng bị
      * tính lẫn vào doanh thu 1 danh mục/thương hiệu cụ thể một cách vô lý.
      */
-    private BigDecimal orderRevenue(Order order, Integer categoryId, Integer brandId) {
-        if (categoryId == null && brandId == null) {
+    private BigDecimal orderRevenue(Order order, Set<Integer> categoryIds, Integer brandId) {
+        if (categoryIds == null && brandId == null) {
             return order.getTotalAmount() != null ? order.getTotalAmount() : BigDecimal.ZERO;
         }
         return order.getItems().stream()
-                .filter(i -> itemMatchesFilters(i, categoryId, brandId))
+                .filter(i -> itemMatchesFilters(i, categoryIds, brandId))
                 .map(OrderItem::getSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal sumTotal(List<Order> orders, Integer categoryId, Integer brandId) {
-        return orders.stream().map(o -> orderRevenue(o, categoryId, brandId)).reduce(BigDecimal.ZERO, BigDecimal::add);
+    private BigDecimal sumTotal(List<Order> orders, Set<Integer> categoryIds, Integer brandId) {
+        return orders.stream().map(o -> orderRevenue(o, categoryIds, brandId)).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

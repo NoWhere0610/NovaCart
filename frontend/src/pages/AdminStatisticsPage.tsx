@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Bar,
   BarChart,
@@ -299,21 +300,40 @@ type Filters = {
   paymentMethod: '' | 'COD' | 'VNPAY' | 'BANK_TRANSFER'
 }
 
-export default function AdminStatisticsPage() {
-  const initialRange = computeQuickRange('30d')
+/** Đọc bộ lọc từ query string -- mở lại link/F5 phải ra đúng báo cáo cũ, không nhảy về mặc định. */
+function filtersFromUrl(params: URLSearchParams): Filters {
+  const fallback = computeQuickRange('30d')
+  const orderType = params.get('orderType')
+  const paymentMethod = params.get('paymentMethod')
+  return {
+    from: params.get('from') || fallback.from,
+    to: params.get('to') || fallback.to,
+    categoryId: params.get('categoryId') || '',
+    brandId: params.get('brandId') || '',
+    orderType: orderType === 'ONLINE' || orderType === 'POS' ? orderType : '',
+    paymentMethod:
+      paymentMethod === 'COD' || paymentMethod === 'VNPAY' || paymentMethod === 'BANK_TRANSFER'
+        ? paymentMethod
+        : '',
+  }
+}
 
-  const [form, setForm] = useState<Filters>({
-    from: initialRange.from,
-    to: initialRange.to,
-    categoryId: '',
-    brandId: '',
-    orderType: '',
-    paymentMethod: '',
-  })
+export default function AdminStatisticsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Chỉ đọc URL cho lần render đầu -- các lần sau URL do chính trang này ghi ra, đọc lại sẽ thành vòng lặp.
+  const [form, setForm] = useState<Filters>(() => filtersFromUrl(searchParams))
   // Bộ lọc THỰC SỰ đang được phản ánh bởi dữ liệu đang hiển thị -- để biết form có bị sửa mà chưa bấm
   // "Xem thống kê" hay không (nếu không có cái này, người xem dễ đọc số của bộ lọc cũ mà tưởng là số mới).
   const [applied, setApplied] = useState<Filters>(form)
-  const [activeQuickRange, setActiveQuickRange] = useState<QuickRangeKey | null>('30d')
+  // Mở bằng link có sẵn khoảng ngày -> tô sáng đúng nút chọn nhanh tương ứng (nếu khớp), không mặc định
+  // sáng "30 ngày" trong khi đang xem khoảng khác.
+  const [activeQuickRange, setActiveQuickRange] = useState<QuickRangeKey | null>(() => {
+    const match = QUICK_RANGES.find((r) => {
+      const range = computeQuickRange(r.key)
+      return range.from === form.from && range.to === form.to
+    })
+    return match?.key ?? null
+  })
   const [categories, setCategories] = useState<AdminCategoryDto[]>([])
   const [brands, setBrands] = useState<AdminBrandDto[]>([])
   const [data, setData] = useState<StatisticsResponse | null>(null)
@@ -327,12 +347,21 @@ export default function AdminStatisticsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Chỉ danh mục LÁ và đang bật: danh mục cha chỉ là nhóm tiêu đề, không gắn trực tiếp sản phẩm nào nên
-  // lọc theo nó luôn ra 0₫. Xác định lá bằng "không có danh mục nào nhận mình làm cha" -- dùng
-  // parentId !== null như trước sẽ lọt danh mục cấp giữa nếu sau này cây sâu hơn 2 cấp.
+  // Cho chọn CẢ danh mục cha lẫn con: backend gộp luôn toàn bộ danh mục con khi chọn cha, nên "Áo" giờ ra
+  // tổng của Áo thun + Áo sơ mi + Áo khoác... thay vì 0₫ như trước (khi đó chỉ chọn được danh mục lá và
+  // muốn xem cả nhóm thì phải chọn từng lá rồi cộng tay). Xếp cha trước, con thụt lề ngay dưới cha.
   const selectableCategories = useMemo(() => {
-    const parentIds = new Set(categories.map((c) => c.parentId).filter((id): id is number => id != null))
-    return categories.filter((c) => !parentIds.has(c.categoryId) && c.isActive)
+    const active = categories.filter((c) => c.isActive)
+    const childrenOf = (parentId: number | null) => active.filter((c) => (c.parentId ?? null) === parentId)
+    const result: { id: number; label: string; depth: number }[] = []
+    const walk = (parentId: number | null, depth: number) => {
+      for (const c of childrenOf(parentId)) {
+        result.push({ id: c.categoryId, label: c.categoryName, depth })
+        walk(c.categoryId, depth + 1)
+      }
+    }
+    walk(null, 0)
+    return result
   }, [categories])
 
   const isDirty = useMemo(
@@ -343,7 +372,10 @@ export default function AdminStatisticsPage() {
   const appliedFilterLabels = useMemo(() => {
     const labels: string[] = []
     if (applied.categoryId) {
-      labels.push(`Danh mục: ${categories.find((c) => String(c.categoryId) === applied.categoryId)?.categoryName ?? applied.categoryId}`)
+      const cat = categories.find((c) => String(c.categoryId) === applied.categoryId)
+      const hasChildren = categories.some((c) => String(c.parentId) === applied.categoryId)
+      // Nói rõ đang xem cả nhánh con, không thì người xem tưởng chỉ có sản phẩm gắn trực tiếp vào cha.
+      labels.push(`Danh mục: ${cat?.categoryName ?? applied.categoryId}${hasChildren ? ' (gồm danh mục con)' : ''}`)
     }
     if (applied.brandId) {
       labels.push(`Thương hiệu: ${brands.find((b) => String(b.brandId) === applied.brandId)?.brandName ?? applied.brandId}`)
@@ -365,6 +397,14 @@ export default function AdminStatisticsPage() {
       })
       setData(res)
       setApplied(next)
+      // Ghi bộ lọc vào URL sau khi tải thành công -- bookmark/gửi link cho người khác vẫn ra đúng báo cáo
+      // này, F5 không mất bộ lọc. replace: true để không nhồi 1 mục lịch sử mỗi lần bấm "Xem thống kê".
+      const params: Record<string, string> = { from: next.from, to: next.to }
+      if (next.categoryId) params.categoryId = next.categoryId
+      if (next.brandId) params.brandId = next.brandId
+      if (next.orderType) params.orderType = next.orderType
+      if (next.paymentMethod) params.paymentMethod = next.paymentMethod
+      setSearchParams(params, { replace: true })
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Không thể tải dữ liệu thống kê. Vui lòng thử lại.')
     } finally {
@@ -467,8 +507,8 @@ export default function AdminStatisticsPage() {
             >
               <option value="">Tất cả danh mục</option>
               {selectableCategories.map((c) => (
-                <option key={c.categoryId} value={c.categoryId}>
-                  {c.categoryName}
+                <option key={c.id} value={c.id}>
+                  {'  '.repeat(c.depth) + (c.depth > 0 ? '└ ' : '') + c.label}
                 </option>
               ))}
             </select>
