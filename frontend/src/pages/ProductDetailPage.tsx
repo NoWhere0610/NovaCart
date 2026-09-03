@@ -15,6 +15,7 @@ import { colorToHex } from "../utils/colorSwatches";
 import ProductReviews from "../components/ProductReviews";
 import BackButton from "../components/BackButton";
 import Breadcrumb from "../components/Breadcrumb";
+import SearchableSelect from "../components/SearchableSelect";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
@@ -242,36 +243,22 @@ export default function ProductDetailPage() {
           </div>
 
           {uniqueSizes.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-4 max-w-xs">
               <p className="text-xs font-medium text-stone-600 mb-2">
                 Kích thước
               </p>
-              <div className="flex gap-2 flex-wrap">
-                {uniqueSizes.map((size) => {
-                  const available = isSizeAvailable(size);
-                  return (
-                    <button
-                      key={size}
-                      disabled={!available}
-                      onClick={() =>
-                        pickVariant(
-                          size,
-                          selectedVariant?.color ?? uniqueColors[0],
-                        )
-                      }
-                      className={`px-3 py-1.5 text-sm border relative ${
-                        !available
-                          ? "border-stone-200 text-stone-300 cursor-not-allowed line-through"
-                          : selectedVariant?.size === size
-                            ? "border-stone-900 bg-stone-900 text-white"
-                            : "border-stone-300 hover:border-stone-500"
-                      }`}
-                    >
-                      {size}
-                    </button>
-                  );
-                })}
-              </div>
+              <SearchableSelect
+                placeholder="Chọn kích thước..."
+                value={selectedVariant?.size ?? ""}
+                options={uniqueSizes.map((size) => ({
+                  value: size,
+                  label: isSizeAvailable(size) ? size : `${size} (Hết hàng)`,
+                  disabled: !isSizeAvailable(size),
+                }))}
+                onChange={(size) =>
+                  pickVariant(size, selectedVariant?.color ?? uniqueColors[0])
+                }
+              />
             </div>
           )}
 
@@ -281,33 +268,39 @@ export default function ProductDetailPage() {
                 Màu sắc{selectedVariant?.color ? `: ${selectedVariant.color}` : ""}
               </p>
               {/* Vẫn giữ tên màu ở nhãn phía trên, không chỉ dựa vào swatch (hỗ trợ người khó phân biệt màu). */}
-              <div className="flex gap-2.5 flex-wrap">
+              <div className="flex gap-2.5 flex-wrap" role="radiogroup" aria-label="Màu sắc">
                 {uniqueColors.map((color) => {
                   const available = isColorAvailable(color);
                   const selected = selectedVariant?.color === color;
                   return (
-                    <button
+                    <label
                       key={color}
-                      disabled={!available}
-                      onClick={() =>
-                        pickVariant(
-                          selectedVariant?.size ?? uniqueSizes[0],
-                          color,
-                        )
-                      }
                       title={color}
-                      aria-label={color}
-                      className={`relative w-8 h-8 rounded-full border border-stone-300 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-dark ${
+                      className={`relative w-8 h-8 rounded-full border border-stone-300 transition-all has-focus-visible:outline-2 has-focus-visible:outline-gold-dark ${
                         selected ? "ring-2 ring-offset-2 ring-stone-900" : ""
-                      } ${!available ? "cursor-not-allowed opacity-40" : "hover:scale-110"}`}
+                      } ${!available ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:scale-110"}`}
                       style={{ backgroundColor: colorToHex(color) }}
                     >
+                      <input
+                        type="radio"
+                        name="product-color"
+                        className="sr-only"
+                        aria-label={color}
+                        checked={selected}
+                        disabled={!available}
+                        onChange={() =>
+                          pickVariant(
+                            selectedVariant?.size ?? uniqueSizes[0],
+                            color,
+                          )
+                        }
+                      />
                       {!available && (
                         <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <span className="w-full h-px bg-stone-500 rotate-45" />
                         </span>
                       )}
-                    </button>
+                    </label>
                   );
                 })}
               </div>

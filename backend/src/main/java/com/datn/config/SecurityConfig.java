@@ -47,7 +47,10 @@ public class SecurityConfig {
             "/api/vnpay/**",
             // Gọi server-to-server từ chatbot kit, không có JWT khách hàng; an toàn nhờ
             // InternalKbController tự verify header "X-Internal-Secret" trước khi trả dữ liệu.
-            "/internal/**"
+            "/internal/**",
+            // Ảnh sản phẩm admin upload (xem WebMvcConfig) -- chỉ đọc file tĩnh, khách chưa đăng nhập
+            // vẫn phải xem được ảnh sản phẩm trên trang shop.
+            "/uploads/**"
     };
 
     @Bean
