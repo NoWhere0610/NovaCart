@@ -159,6 +159,17 @@ public class OrderService {
             }
         }
 
+        // Mã giảm giá đã bị tính dùng ngay lúc checkout (VoucherService.applyVoucher) -- huỷ đơn thì
+        // phải trả lại lượt, không thì khách mất 1 lượt dùng cho đơn không hề mua được gì.
+        if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
+            voucherService.revertVoucherUsage(order.getVoucherCode());
+        }
+        // Đơn đã trả tiền thật (chuyển khoản/VNPay) rồi mới huỷ -- đánh dấu REFUNDED để không lẫn với
+        // đơn thật sự chưa ai trả tiền (UNPAID); COD ở PENDING/CONFIRMED luôn đang UNPAID nên vô hại.
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
+        }
+
         order.setStatus(Order.Status.CANCELLED);
         return toResponse(orderRepository.save(order), true);
     }
@@ -277,7 +288,11 @@ public class OrderService {
         return vnPayService.buildPaymentUrl(order, request);
     }
 
-    /** Xử lý VNPay redirect sau thanh toán -- chỉ cập nhật paymentStatus khi chữ ký hợp lệ và mã trả về là "00". */
+    /**
+     * Xử lý VNPay redirect sau thanh toán -- chỉ cập nhật paymentStatus khi chữ ký hợp lệ, mã trả về là
+     * "00", SỐ TIỀN khớp đúng đơn hàng, và đơn đang ở trạng thái còn hợp lệ để nhận thanh toán. Idempotent:
+     * gọi lại nhiều lần (VNPay có thể gửi trùng) không xử lý lại/không lỗi nếu đơn đã PAID rồi.
+     */
     @Transactional
     public boolean handleVnpayReturn(java.util.Map<String, String> params) {
         if (!vnPayService.verifyReturn(params)) {
@@ -298,11 +313,28 @@ public class OrderService {
         Order order = orderRepository.findById(orderId).orElse(null);
         if (order == null || order.getPaymentMethod() != Order.PaymentMethod.VNPAY) return false;
 
-        if ("00".equals(responseCode)) {
-            order.setPaymentStatus(Order.PaymentStatus.PAID);
-            orderRepository.save(order);
-            return true;
+        // Đã xử lý PAID trước đó rồi -- coi là thành công, không xử lý lại (VNPay có thể gửi callback trùng).
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) return true;
+        // Đơn đã bị huỷ/trả hàng (vd khách huỷ trong lúc đang thanh toán) -- KHÔNG được set PAID đè lên,
+        // tiền thật đã về tài khoản shop nhưng cần admin xử lý hoàn tiền thủ công, không tự động coi là ổn.
+        if (order.getStatus() == Order.Status.CANCELLED || order.getStatus() == Order.Status.RETURNED) return false;
+
+        if (!"00".equals(responseCode)) return false;
+
+        // Đối chiếu đúng số tiền VNPay báo về khớp với số tiền đơn hàng thật -- không chỉ tin response
+        // code, tránh callback với vnp_Amount sai/cũ (dù chữ ký hợp lệ) vẫn bị tin và set PAID.
+        String amountParam = params.get("vnp_Amount");
+        BigDecimal expectedAmount = order.getTotalAmount().multiply(BigDecimal.valueOf(100));
+        try {
+            if (amountParam == null || new BigDecimal(amountParam).compareTo(expectedAmount) != 0) {
+                return false;
+            }
+        } catch (NumberFormatException e) {
+            return false;
         }
-        return false;
+
+        order.setPaymentStatus(Order.PaymentStatus.PAID);
+        orderRepository.save(order);
+        return true;
     }
 }

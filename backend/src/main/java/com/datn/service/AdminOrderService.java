@@ -28,6 +28,7 @@ public class AdminOrderService {
 
     private final OrderRepository orderRepository;
     private final ProductVariantRepository variantRepository;
+    private final VoucherService voucherService;
 
     /** Sơ đồ trạng thái hợp lệ -- admin chỉ được chuyển đơn theo đúng các mũi tên này, không nhảy cóc hay đi ngược. */
     private static final Map<Order.Status, Set<Order.Status>> ALLOWED_TRANSITIONS = new EnumMap<>(Order.Status.class);
@@ -61,6 +62,7 @@ public class AdminOrderService {
     public AdminOrderResponse getDetail(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
+        requireOnlineOrder(order);
         return toResponse(order, true);
     }
 
@@ -80,6 +82,14 @@ public class AdminOrderService {
         // PENDING -> CONFIRMED là lúc thực sự trừ kho cho đơn online -- kiểm tra lại tồn kho vì
         // có thể đã bị đơn khác bán mất từ lúc đặt tới lúc xác nhận.
         if (oldStatus == Order.Status.PENDING && newStatus == Order.Status.CONFIRMED) {
+            // Đơn chuyển khoản/VNPay CHƯA thanh toán mà xác nhận nhầm -> trừ kho, giao hàng cho đơn
+            // chưa hề nhận được tiền. COD thì luôn UNPAID ở bước này là bình thường (trả khi nhận hàng).
+            boolean requiresPaymentFirst = order.getPaymentMethod() == Order.PaymentMethod.BANK_TRANSFER
+                    || order.getPaymentMethod() == Order.PaymentMethod.VNPAY;
+            if (requiresPaymentFirst && order.getPaymentStatus() != Order.PaymentStatus.PAID) {
+                throw ApiException.badRequest(
+                        "Đơn hàng chưa được xác nhận thanh toán, không thể xác nhận đơn (xem nút \"Xác nhận đã nhận CK\")");
+            }
             for (OrderItem item : order.getItems()) {
                 if (item.getVariant() == null) continue;
                 // findByIdForUpdate -- khoá row tới hết transaction, tránh 2 đơn cùng được xác nhận
@@ -112,6 +122,19 @@ public class AdminOrderService {
             }
         }
 
+        // Đơn bị huỷ/trả hàng thì mã giảm giá (nếu có) phải trả lại lượt dùng -- không thì khách bị mất
+        // vĩnh viễn 1 lượt cho đơn admin tự huỷ (khác lỗi khách hàng tự huỷ, đã sửa ở OrderService).
+        if ((newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED)
+                && order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
+            voucherService.revertVoucherUsage(order.getVoucherCode());
+        }
+        // Đơn đã trả tiền thật rồi mới bị huỷ/duyệt trả hàng -- đánh dấu REFUNDED, không để lẫn với
+        // UNPAID (chưa ai trả tiền).
+        if ((newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED)
+                && order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
+        }
+
         order.setStatus(newStatus);
         return toResponse(orderRepository.save(order), true);
     }
@@ -129,6 +152,11 @@ public class AdminOrderService {
         }
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             throw ApiException.badRequest("Đơn hàng đã được xác nhận thanh toán trước đó");
+        }
+        // Đơn đã huỷ/trả hàng thì không còn ý nghĩa gì để xác nhận thanh toán nữa (khách không nhận
+        // hàng), tránh admin bấm nhầm biến đơn đã chết thành "đã thanh toán".
+        if (order.getStatus() == Order.Status.CANCELLED || order.getStatus() == Order.Status.RETURNED) {
+            throw ApiException.badRequest("Đơn hàng đã huỷ/trả hàng, không thể xác nhận thanh toán");
         }
 
         order.setPaymentStatus(Order.PaymentStatus.PAID);

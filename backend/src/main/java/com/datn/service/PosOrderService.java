@@ -196,6 +196,12 @@ public class PosOrderService {
         if (order.getItems().isEmpty()) {
             throw ApiException.badRequest("Hoá đơn chưa có sản phẩm nào, không thể thanh toán");
         }
+        // POS chỉ hỗ trợ 2 phương thức tại quầy (khớp PosDto.CheckoutRequest) -- chặn ở service phòng
+        // trường hợp có client khác gọi thẳng API với VNPAY/MOMO, tự set PAID mà không hề qua cổng nào.
+        if (request.getPaymentMethod() != Order.PaymentMethod.COD
+                && request.getPaymentMethod() != Order.PaymentMethod.BANK_TRANSFER) {
+            throw ApiException.badRequest("Thanh toán tại quầy chỉ hỗ trợ Tiền mặt hoặc Chuyển khoản");
+        }
 
         order.setPaymentMethod(request.getPaymentMethod());
         // Tiền mặt -- thu ngân cầm tiền trực tiếp nên coi như đã thanh toán ngay. Chuyển khoản thì
@@ -245,6 +251,10 @@ public class PosOrderService {
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             throw ApiException.badRequest("Hoá đơn đã được xác nhận thanh toán trước đó");
         }
+        // Hoá đơn đã bị huỷ/hoàn thì không còn ý nghĩa gì để xác nhận thanh toán nữa.
+        if (order.getStatus() != Order.Status.COMPLETED) {
+            throw ApiException.badRequest("Hoá đơn không ở trạng thái hợp lệ để xác nhận thanh toán");
+        }
         order.setPaymentStatus(Order.PaymentStatus.PAID);
         return toResponse(orderRepository.save(order));
     }
@@ -273,6 +283,11 @@ public class PosOrderService {
         }
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
             voucherService.revertVoucherUsage(order.getVoucherCode());
+        }
+        // Chỉ đánh dấu REFUNDED nếu hoá đơn thật sự đã PAID (BANK_TRANSFER chưa được thu ngân xác nhận
+        // thì vẫn đang UNPAID, không có gì để "hoàn" cả).
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
         }
 
         order.setStatus(Order.Status.RETURNED);
