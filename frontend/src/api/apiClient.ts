@@ -6,6 +6,10 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api
 export const apiClient = axios.create({
   baseURL: BASE_URL,
   headers: { 'Content-Type': 'application/json' },
+  // axios KHÔNG có timeout mặc định -> request treo là treo vô hạn, người dùng chỉ thấy trạng thái
+  // "đang tải" mãi mãi mà không có lỗi nào để hiển thị. Đặt rộng tay vì lượt hỏi chatbot có thể mất vài
+  // chục giây (backend gọi kit -> kit gọi Gemini 3 lượt nối tiếp, có thử lại khi bị giới hạn tần suất).
+  timeout: 70000,
 })
 
 // Tự động gắn "Authorization: Bearer <token>" vào mọi request nếu đã đăng nhập.

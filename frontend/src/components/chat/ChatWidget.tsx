@@ -20,19 +20,63 @@ const WELCOME_MESSAGE: ChatMessage = {
  * Chỉ hiện khi đã đăng nhập vì backend yêu cầu JWT (chatbot tư vấn không phục vụ khách vãng lai).
  * KHÔNG gọi Gemini/kit trực tiếp — luôn qua askChatbot() -> Java ChatController.
  */
+// Giữ đoạn chat qua F5. Backend đã lưu đủ trong chat_session/chat_message, nhưng không có API nào lấy
+// lại được (Java chỉ mở POST /chat/ask) -- không lưu ở đây thì mỗi lần tải lại trang là phiên cũ thành
+// mồ côi và bot "quên" sạch những gì khách vừa nói. sessionStorage (không phải localStorage) để đóng tab
+// là kết thúc cuộc trò chuyện, đúng với vòng đời một phiên tư vấn.
+const STORAGE_KEY = 'novacart.chat'
+
+type StoredChat = { userId: number | null; sessionId: string | null; messages: ChatMessage[] }
+
+function loadStored(userId: number | null): StoredChat | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StoredChat
+    // Khác người dùng thì bỏ qua -- xem chú thích ở useEffect reset bên dưới.
+    if (parsed.userId !== userId) return null
+    return parsed
+  } catch {
+    return null // sessionStorage bị chặn hoặc dữ liệu hỏng -- bắt đầu lại từ đầu, không làm vỡ widget
+  }
+}
+
 export default function ChatWidget() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
+  const userId = user?.userId ?? null
   const [isOpen, setIsOpen] = useState(false)
   const [inputText, setInputText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE])
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadStored(userId)?.messages ?? [WELCOME_MESSAGE])
   // Ref (không phải state) vì chỉ cần lưu để gửi kèm lượt hỏi sau, không cần re-render khi đổi.
-  const sessionIdRef = useRef<string | null>(null)
+  const sessionIdRef = useRef<string | null>(loadStored(userId)?.sessionId ?? null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
+
+  // Đổi người dùng trên CÙNG 1 tab thì phải xoá sạch đoạn chat cũ. logout() chỉ setUser(null) chứ không
+  // tải lại trang, còn widget nằm ngoài <Routes> nên không bao giờ unmount -- không reset ở đây thì
+  // người đăng nhập sau mở widget lên là đọc được nguyên đoạn chat của người trước, và câu hỏi mới còn
+  // gửi kèm sessionId của người đó (server từ chối đúng, nhưng bot đột nhiên "quên" nội dung đang hiện
+  // trên màn hình).
+  useEffect(() => {
+    const stored = loadStored(userId)
+    setMessages(stored?.messages ?? [WELCOME_MESSAGE])
+    sessionIdRef.current = stored?.sessionId ?? null
+  }, [userId])
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ userId, sessionId: sessionIdRef.current, messages } satisfies StoredChat),
+      )
+    } catch {
+      // Hết dung lượng / chế độ riêng tư chặn ghi -- đoạn chat vẫn dùng bình thường trong phiên hiện tại.
+    }
+  }, [messages, userId])
 
   // Backend yêu cầu JWT -- ẩn luôn thay vì hiện ra rồi báo lỗi 401.
   if (!isAuthenticated) return null

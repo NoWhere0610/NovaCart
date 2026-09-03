@@ -9,6 +9,8 @@ const express = require('express');
 const { requireApiKey } = require('./middleware/apiKeyAuth');
 const scheduler = require('./lib/scheduler');
 
+const vectorStore = require('./lib/vectorStore');
+
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
@@ -30,6 +32,10 @@ app.use((err, _req, res, _next) => {
 
 const PORT = Number(process.env.PORT) || 3200;
 app.listen(PORT, () => {
+  const namespace = process.env.CHATBOT_NAMESPACE || 'novacart';
   console.log(`  [server] RAG Chatbot Kit đang chạy tại http://127.0.0.1:${PORT} (demo: /demo.html)`);
-  scheduler.start();
+  console.log(`  [server] namespace: "${namespace}" -- phải KHỚP novacart.chatbot.namespace bên backend Java.`);
+  // In tình trạng kho tri thức ngay lúc khởi động: sai namespace / chưa sync / kho rỗng đều cho ra cùng
+  // 1 câu trả lời lịch sự "chưa có sản phẩm phù hợp", nhìn từ khung chat không phân biệt được.
+  vectorStore.logKnowledgeBaseStatus(namespace).finally(() => scheduler.start());
 });

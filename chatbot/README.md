@@ -49,6 +49,15 @@ Mỗi dữ liệu/tài liệu/phiên chat thuộc 1 `namespace` (chuỗi tự do
 
 Nếu ngoài tài liệu tải tay, bạn còn muốn RAG trả lời được cả dữ liệu luôn thay đổi trong chính hệ thống của mình (vd danh sách sản phẩm) — xem `examples/internal-sync.example.js`: copy ra, điền 2 chỗ `TODO`, tự chạy định kỳ (cron/node-cron tuỳ ý). Đây KHÔNG phải hệ connector đa xác thực như CoreX gốc — chỉ là 1 script gọi thẳng nguồn nội bộ CỦA BẠN, hard-code, không cần giao diện cấu hình.
 
+### Bản triển khai cho NovaCart
+
+| Lệnh | Nạp gì | Ghi chú |
+| --- | --- | --- |
+| `node lib/productSync.js` | Danh mục sản phẩm đang bán, lấy từ `GET /internal/kb/products` của backend Java | So checksum từng sản phẩm — lần chạy không có gì đổi tốn 0 lượt gọi Gemini |
+| `node lib/policySync.js` | Tài liệu trong `kb-files/seed/*.md` (chính sách vận chuyển/đổi trả/bảo mật, hướng dẫn mua hàng) | Nội dung lấy đúng từ các trang chính sách của website — sửa trên web thì sửa file rồi chạy lại |
+
+`server.js` tự chạy cả hai lần đầu nếu kho tri thức còn rỗng, và đăng ký lịch đồng bộ sản phẩm mỗi giờ (`PRODUCT_SYNC_CRON`, mặc định `0 * * * *`). Lúc khởi động, console in ra namespace đang dùng và số đoạn tri thức của từng nhóm — nếu thấy cảnh báo kho rỗng thì kiểm tra `CHATBOT_NAMESPACE` có khớp `novacart.chatbot.namespace` bên Java không.
+
 ## Giới hạn đã lược bớt so với bản gốc CoreX (cân nhắc tự bổ sung nếu dự án cần)
 
 - **Không phân quyền theo người dùng** khi truy hồi RAG — mọi tài liệu trong 1 `namespace` đều được tìm khi hỏi. Cần lọc theo người dùng (vd chỉ thấy tài liệu phòng ban mình) → tự viết logic quyết định `allowedFolders` (mảng id folder) rồi truyền vào `POST /ask`, xem chú thích trong `lib/ragQuery.js`.

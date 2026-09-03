@@ -48,6 +48,13 @@ public class InternalKbService {
                 .chatLieu(p.getMaterial())
                 .sizes(distinctSorted(inStock, ProductVariant::getSize))
                 .colors(distinctSorted(inStock, ProductVariant::getColor))
+                // Danh sách CẶP size/màu -- xem chú thích ở InternalProductDto.bienThe. Không có nó thì
+                // kho tri thức mất quan hệ cặp và bot tư vấn ra phân loại không tồn tại.
+                .bienThe(inStock.stream()
+                        .filter(v -> v.getSize() != null && v.getColor() != null)
+                        .map(v -> InternalProductDto.SizeColor.builder()
+                                .size(v.getSize()).color(v.getColor()).build())
+                        .toList())
                 .build();
     }
 

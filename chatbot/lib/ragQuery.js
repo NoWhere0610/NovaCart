@@ -27,7 +27,10 @@ const embeddings = require('./embeddings');
 
 const TOP_K = Number(process.env.RAG_TOP_K ?? 8);
 const MAX_DISTANCE = Number(process.env.RAG_MAX_DISTANCE ?? 0.35); // cosine distance <=> 0.35 ~ similarity >= 0.65, cần tinh chỉnh theo thực tế
-const MEMORY_TURNS = 8; // N tin nhắn gần nhất đưa vào ngữ cảnh
+// 8 LƯỢT hỏi-đáp = 16 dòng tin nhắn (mỗi lượt gồm 1 tin của khách + 1 tin của bot). Bản trước lấy LIMIT
+// 8 dòng nhưng tài liệu/comment lại ghi "nhớ 8 lượt" -- thực tế chỉ nhớ được 4 lượt, sai gấp đôi.
+const MEMORY_TURNS = Number(process.env.RAG_MEMORY_TURNS ?? 8);
+const MEMORY_MESSAGE_LIMIT = MEMORY_TURNS * 2;
 const CALL_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS ?? 30000); // fetch() không có timeout mặc định — 1 lượt treo sẽ khiến người dùng chờ vô thời hạn không có lỗi hiển thị
 
 // Folder cố định chứa dữ liệu SẢN PHẨM đồng bộ tự động mỗi ngày từ NovaCart (xem
@@ -110,22 +113,54 @@ TIN NHẮN CỦA KHÁCH: ${searchText}`;
 /** Lọc cứng theo giá/size/màu/danh mục (SQL) trong đúng PRODUCT_FOLDER_ID, rồi rerank bằng vector
  * trong đúng tập đã lọc — chính xác hơn semantic-thuần khi khách nêu rõ điều kiện. */
 async function retrieveFilteredProducts({ namespace, qVec, filters }) {
+  // Khách nêu CẢ size lẫn màu -> phải khớp đúng CẶP đó còn hàng, không phải "có size này" VÀ (độc lập)
+  // "có màu này". Sản phẩm còn M/Đen và L/Trắng mà kiểm 2 điều kiện rời nhau sẽ khớp cả "M màu Trắng" --
+  // một tổ hợp không tồn tại, và bot sẽ khẳng định với khách là còn hàng. Xem chú thích ở
+  // productSync.js#productToText và cột kb_chunk.size_colors.
+  const pairKey = filters.size && filters.color
+    ? `${String(filters.size).toLowerCase()}|${String(filters.color).toLowerCase()}`
+    : null;
+
   const r = await vectorStore.query(
     `SELECT kc.noi_dung, kf.ten AS folder_ten, (kc.embedding <=> $1::vector) AS distance
      FROM kb_chunk kc JOIN kb_folder kf ON kf.id = kc.folder_id
      WHERE kc.namespace = $2 AND kc.folder_id = $3
        AND ($4::numeric IS NULL OR kc.gia >= $4)
        AND ($5::numeric IS NULL OR kc.gia <= $5)
+       -- Có cả size lẫn màu: khớp theo cặp. Chỉ có 1 trong 2: khớp lẻ như cũ.
+       AND ($9::text IS NULL OR $9 = ANY(kc.size_colors))
        -- so khớp size/màu KHÔNG phân biệt hoa/thường -- Gemini có thể trích ra chữ thường ("trắng")
        -- trong khi dữ liệu đồng bộ lưu hoa đầu ("Trắng"), = ANY() thường (case-sensitive) sẽ trượt.
-       AND ($6::text IS NULL OR EXISTS (SELECT 1 FROM unnest(kc.sizes) s WHERE LOWER(s) = LOWER($6)))
-       AND ($7::text IS NULL OR EXISTS (SELECT 1 FROM unnest(kc.colors) c WHERE LOWER(c) = LOWER($7)))
+       AND ($9::text IS NOT NULL OR $6::text IS NULL
+            OR EXISTS (SELECT 1 FROM unnest(kc.sizes) s WHERE LOWER(s) = LOWER($6)))
+       AND ($9::text IS NOT NULL OR $7::text IS NULL
+            OR EXISTS (SELECT 1 FROM unnest(kc.colors) c WHERE LOWER(c) = LOWER($7)))
        -- so khớp danh mục 2 CHIỀU -- Gemini có thể trích cụm dài hơn giá trị lưu (vd "áo sơ mi trắng đi
        -- làm" trong khi danh_muc chỉ lưu "Áo sơ mi") hoặc ngược lại.
        AND ($8::text IS NULL OR kc.danh_muc ILIKE '%' || $8 || '%' OR $8 ILIKE '%' || kc.danh_muc || '%')
+       -- Ngưỡng liên quan ngữ nghĩa, GIỐNG nhánh semantic. Thiếu nó thì khi Gemini trích thiếu điều kiện
+       -- (vd "quần jean dưới 300k" mà bỏ trống category), WHERE rút gọn còn mỗi "giá <= 300k" và câu
+       -- truy vấn trả về 8 sản phẩm rẻ nhất bất kể loại gì -- bot gợi ý áo thun, thắt lưng cho người
+       -- đang hỏi quần jean.
+       AND (kc.embedding <=> $1::vector) <= $10
      ORDER BY kc.embedding <=> $1::vector
-     LIMIT $9`,
-    [qVec, namespace, PRODUCT_FOLDER_ID, filters.minPrice, filters.maxPrice, filters.size, filters.color, filters.category, TOP_K],
+     LIMIT $11`,
+    [qVec, namespace, PRODUCT_FOLDER_ID, filters.minPrice, filters.maxPrice, filters.size, filters.color,
+     filters.category, pairKey, MAX_DISTANCE, TOP_K],
+  );
+  return r.rows;
+}
+
+/** Đoạn tri thức NGOÀI folder sản phẩm (FAQ/chính sách) liên quan tới câu hỏi — nhánh lọc cứng khoá cứng
+ * trong folder sản phẩm nên nếu không gộp thêm ở đây, câu hỏi lai kiểu "áo sơ mi này đổi trả mấy ngày?"
+ * (Gemini rất dễ trích category="áo sơ mi" -> hasFilter=true) sẽ không bao giờ nhìn thấy tài liệu chính sách. */
+async function retrieveNonProductChunks({ namespace, qVec, limit }) {
+  const r = await vectorStore.query(
+    `SELECT kc.noi_dung, kf.ten AS folder_ten, (kc.embedding <=> $1::vector) AS distance
+     FROM kb_chunk kc JOIN kb_folder kf ON kf.id = kc.folder_id
+     WHERE kc.namespace = $2 AND kc.folder_id <> $3 AND (kc.embedding <=> $1::vector) <= $4
+     ORDER BY kc.embedding <=> $1::vector LIMIT $5`,
+    [qVec, namespace, PRODUCT_FOLDER_ID, MAX_DISTANCE, limit],
   );
   return r.rows;
 }
@@ -147,11 +182,17 @@ async function retrieveChunks({ namespace, question, history = [], allowedFolder
   if (!allowedFolders || allowedFolders.includes(PRODUCT_FOLDER_ID)) {
     const filters = await extractProductFilters(searchText);
     if (filters.hasFilter) {
+      // Phần SẢN PHẨM vẫn lọc cứng và KHÔNG rơi về semantic-thuần khi rỗng (trả sản phẩm không đúng
+      // điều kiện khách nêu còn gây hiểu lầm hơn là nói "chưa có phù hợp").
       const filtered = await retrieveFilteredProducts({ namespace, qVec, filters });
-      if (filtered.length) return { chunks: filtered, nearestFolder: null };
-      // Có điều kiện lọc nhưng không sản phẩm nào khớp -> KHÔNG rơi về semantic-thuần (sẽ trả sản phẩm
-      // không đúng điều kiện khách nêu, gây hiểu lầm) — trả rỗng thẳng, để LLM báo "chưa có phù hợp".
-      return { chunks: [], nearestFolder: null };
+      // Nhưng vẫn phải gộp thêm FAQ/chính sách: câu hỏi lai "áo sơ mi này đổi trả mấy ngày?" cũng cho
+      // hasFilter=true, mà tài liệu chính sách lại nằm ngoài folder sản phẩm.
+      // (Bỏ qua khi nơi gọi đã giới hạn allowedFolders -- tôn trọng phạm vi họ chỉ định.)
+      const faq = allowedFolders ? [] : await retrieveNonProductChunks({ namespace, qVec, limit: TOP_K });
+      const merged = [...filtered, ...faq]
+        .sort((a, b) => Number(a.distance) - Number(b.distance))
+        .slice(0, TOP_K);
+      return { chunks: merged, nearestFolder: null };
     }
   }
 
@@ -192,8 +233,8 @@ async function retrieveChunks({ namespace, question, history = [], allowedFolder
 async function recentMessages(sessionId) {
   if (!sessionId) return [];
   const r = await vectorStore.query(
-    `SELECT vai_tro, noi_dung FROM chat_message WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2`,
-    [sessionId, MEMORY_TURNS],
+    `SELECT vai_tro, noi_dung FROM chat_message WHERE session_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+    [sessionId, MEMORY_MESSAGE_LIMIT],
   );
   return r.rows.reverse();
 }
@@ -210,6 +251,9 @@ QUY TẮC TUYỆT ĐỐI VỀ ĐƠN HÀNG (vi phạm = LỪA khách hàng thật
 QUY TẮC VỀ CAM KẾT CỤ THỂ (giao hàng/khuyến mãi/tồn kho) — cùng mức độ nghiêm trọng như quy tắc đơn hàng ở trên, vì đây cũng là dạng "hứa hẹn cụ thể với 1 khách hàng thật" chứ không phải tư vấn chung chung:
 - KHÔNG bao giờ tự đưa ra 1 mốc thời gian giao hàng CỤ THỂ cho đơn của khách (vd "2 ngày nữa sẽ tới", "giao trong sáng mai") trừ khi con số đó xuất hiện ĐÚNG NGUYÊN trong đoạn tri thức được cung cấp (vd chính sách vận chuyển thật). Nếu khách hỏi "bao giờ nhận được hàng" mà không có thông tin này trong đoạn tri thức, trả lời rằng thời gian giao hàng cụ thể phụ thuộc đơn vị vận chuyển và hướng khách xem trang chi tiết đơn hàng/chính sách vận chuyển trên web, KHÔNG tự đoán số ngày.
 - KHÔNG tự bịa ra mã giảm giá/% khuyến mãi không có trong đoạn tri thức. Chỉ nhắc mã/mức giảm nếu nó xuất hiện đúng trong dữ liệu được cung cấp.
+- GIÁ trong đoạn tri thức là GIÁ THAM KHẢO tại thời điểm đồng bộ, KHÔNG phải giá đảm bảo. Được phép nói giá để khách hình dung tầm tiền, nhưng phải nói theo kiểu tham khảo ("khoảng 350.000đ") và nhắc khách xem giá chính xác ở trang sản phẩm. TUYỆT ĐỐI không cam kết kiểu "giá đúng 350.000đ", "em đảm bảo giá này".
+- Đoạn tri thức sản phẩm liệt kê "Các phân loại còn hàng (size/màu)" theo từng CẶP. CHỈ những cặp được liệt kê mới có thật. TUYỆT ĐỐI không ghép size của cặp này với màu của cặp khác rồi nói là còn hàng — vd chỉ có "M/Đen, L/Trắng" thì KHÔNG được nói còn "M màu Trắng".
+- Khi giới thiệu 1 sản phẩm, nhắc kèm đường dẫn của nó (có trong đoạn tri thức, dạng /products/<mã>) để khách bấm vào xem giá và tồn kho thực tế.
 - KHÔNG khẳng định chắc chắn 1 sản phẩm/size/màu CÒN HÀNG hay HẾT HÀNG nếu thông tin tồn kho không có trong đoạn tri thức — nói rằng tồn kho có thể thay đổi theo thời gian thực và hướng khách xem trực tiếp ở trang sản phẩm.
 
 Ngoài quy tắc trên, nhiệm vụ tư vấn của bạn:
@@ -264,14 +308,20 @@ async function callGemini(systemPrompt, contextText, history, question) {
 // hội thoại THẬT tái hiện được lỗi (giống cách bug số điện thoại được phát hiện) mới thiết kế đúng được
 // pattern mà không chặn nhầm câu trả lời chính sách hợp lệ. Nếu gặp trường hợp bot tự bịa ngày giao/mã
 // giảm giá/tồn kho, LƯU LẠI ĐÚNG đoạn hội thoại rồi quay lại thêm guard cứng tương tự bên dưới.
-const VN_PHONE_PATTERN = /(?:\+84|0)(?:3|5|7|8|9)\d{8}\b/;
+// So khớp SAU KHI đã xoá dấu cách/chấm/gạch/ngoặc — người Việt viết số điện thoại là "0912 345 678"
+// hoặc "0912.345.678" nhiều hơn hẳn viết liền 10 số. Bản trước chỉ khớp chuỗi liền nên đúng cái bug nó
+// sinh ra để chặn ("tên + SĐT + địa chỉ" khiến bot giả vờ chốt đơn) vẫn tái hiện được dễ dàng.
+const VN_PHONE_PATTERN = /(?:\+84|0)(?:3|5|7|8|9)\d{8}/;
+function containsVnPhone(text) {
+  return VN_PHONE_PATTERN.test(String(text).replace(/[\s.\-()]/g, ''));
+}
 const ORDER_REDIRECT_MESSAGE =
   'Dạ em chỉ hỗ trợ tư vấn chọn sản phẩm thôi ạ, chưa nhận/xử lý đơn hàng qua khung chat được. Để đặt hàng, anh/chị vào đúng trang sản phẩm, chọn size/màu phù hợp rồi bấm "Thêm vào giỏ hàng" và tiến hành thanh toán trên website giúp em nhé!';
 
 /** Điểm vào chính — dùng cho routes/chatSession.js. `userId` chỉ dùng để ghi log câu hỏi chưa trả lời
  * được (thống kê), không dùng để lọc quyền xem (kit này không có khái niệm phân quyền theo người dùng). */
 async function askQuestion({ namespace, userId, question, sessionId, allowedFolders = null }) {
-  if (VN_PHONE_PATTERN.test(question)) {
+  if (containsVnPhone(question)) {
     return { ok: true, answer: ORDER_REDIRECT_MESSAGE, sources: [], answered: true };
   }
 

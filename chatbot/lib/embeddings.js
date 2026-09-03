@@ -13,6 +13,8 @@ const OUTPUT_DIM = 768;
 // giãn cách) — không cần sửa code.
 const MIN_INTERVAL_MS = Number(process.env.GEMINI_EMBED_MIN_INTERVAL_MS ?? 4000);
 const MAX_RETRY_429 = 3;
+// Thời gian chờ tối đa cho MỘT lượt gọi embedding (dùng chung biến với lượt gọi chat để chỉnh 1 chỗ).
+const CALL_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS ?? 30000);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,7 +52,24 @@ async function callGeminiEmbed(prefixed) {
     output_dimensionality: OUTPUT_DIM,
   };
   for (let attempt = 0; ; attempt++) {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    // fetch() KHÔNG có timeout mặc định -- 1 lượt treo sẽ giữ người dùng chờ tới giới hạn ngầm của
+    // undici (~5 phút), nhân thêm số lần retry, và KHÔNG tầng nào phía trên cắt được. Cắt tại đây.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CALL_TIMEOUT_MS);
+    let r;
+    try {
+      r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('Dịch vụ AI phản hồi quá lâu. Vui lòng thử lại.');
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
     if (r.status === 429 && attempt < MAX_RETRY_429) {
       // Vẫn hết hạn mức dù đã giãn cách (vd hạn mức thật khắt khe hơn mặc định) — đợi thêm rồi thử lại,
       // đợi tăng dần theo số lần thử thay vì báo lỗi ngay.
