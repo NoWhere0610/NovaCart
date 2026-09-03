@@ -38,7 +38,8 @@ public class AdminStatisticsService {
     private final ProductVariantRepository productVariantRepository;
 
     public StatisticsDto.StatisticsResponse getStatistics(
-            LocalDate from, LocalDate to, int topProductLimit, Integer categoryId, Order.OrderType orderType) {
+            LocalDate from, LocalDate to, int topProductLimit, Integer categoryId, Integer brandId,
+            Order.OrderType orderType, Order.PaymentMethod paymentMethod) {
         LocalDateTime fromDateTime = from.atStartOfDay();
         LocalDateTime toDateTime = to.atTime(LocalTime.MAX);
 
@@ -47,14 +48,20 @@ public class AdminStatisticsService {
                         Order.Status.RETURN_REQUESTED),
                 fromDateTime, toDateTime);
 
-        // 2 chiều lọc tuỳ chọn -- áp dụng ở CẤP ĐƠN HÀNG (đơn có >=1 sản phẩm thuộc đúng danh mục thì
-        // tính cả đơn, không tách riêng doanh thu từng dòng trong 1 đơn mua nhiều danh mục khác nhau --
-        // đơn giản hơn và đúng với cách chủ shop thường hình dung "đơn có bán món này").
+        // 4 chiều lọc tuỳ chọn -- áp dụng ở CẤP ĐƠN HÀNG (đơn có >=1 sản phẩm khớp điều kiện thì tính cả
+        // đơn, không tách riêng doanh thu từng dòng trong 1 đơn mua nhiều danh mục/thương hiệu khác nhau
+        // -- đơn giản hơn và đúng với cách chủ shop thường hình dung "đơn có bán món này").
         if (orderType != null) {
             orders = orders.stream().filter(o -> o.getOrderType() == orderType).toList();
         }
+        if (paymentMethod != null) {
+            orders = orders.stream().filter(o -> o.getPaymentMethod() == paymentMethod).toList();
+        }
         if (categoryId != null) {
             orders = orders.stream().filter(o -> orderHasCategory(o, categoryId)).toList();
+        }
+        if (brandId != null) {
+            orders = orders.stream().filter(o -> orderHasBrand(o, brandId)).toList();
         }
 
         List<Order> completed = orders.stream().filter(o -> o.getStatus() == Order.Status.COMPLETED).toList();
@@ -98,8 +105,8 @@ public class AdminStatisticsService {
                 .returnedOrders(returned.size() + returnRequestedCount)
                 .build();
 
-        StatisticsDto.PeriodComparison periodComparison =
-                computePeriodComparison(from, to, categoryId, orderType, grossRevenue, completed.size());
+        StatisticsDto.PeriodComparison periodComparison = computePeriodComparison(
+                from, to, categoryId, brandId, orderType, paymentMethod, grossRevenue, completed.size());
 
         // Tách riêng doanh thu GỘP (completed + returned, khớp đúng ý nghĩa grossRevenue ở trên) và
         // HOÀN TRẢ theo ngày -- để biểu đồ vẽ 2 cột riêng biệt (xanh = doanh thu gộp, đỏ = hoàn trả)
@@ -168,8 +175,8 @@ public class AdminStatisticsService {
      * liền trước có CÙNG độ dài, cùng bộ lọc danh mục/kênh bán, để %Δ phản ánh đúng xu hướng bán hàng
      * thay vì so lệch kỳ dài/ngắn khác nhau hoặc bị hoàn trả làm méo số liệu. */
     private StatisticsDto.PeriodComparison computePeriodComparison(
-            LocalDate from, LocalDate to, Integer categoryId, Order.OrderType orderType,
-            BigDecimal currentGrossRevenue, long currentOrderCount) {
+            LocalDate from, LocalDate to, Integer categoryId, Integer brandId, Order.OrderType orderType,
+            Order.PaymentMethod paymentMethod, BigDecimal currentGrossRevenue, long currentOrderCount) {
         long days = ChronoUnit.DAYS.between(from, to) + 1;
         LocalDate prevTo = from.minusDays(1);
         LocalDate prevFrom = prevTo.minusDays(days - 1);
@@ -180,8 +187,14 @@ public class AdminStatisticsService {
         if (orderType != null) {
             prevOrders = prevOrders.stream().filter(o -> o.getOrderType() == orderType).toList();
         }
+        if (paymentMethod != null) {
+            prevOrders = prevOrders.stream().filter(o -> o.getPaymentMethod() == paymentMethod).toList();
+        }
         if (categoryId != null) {
             prevOrders = prevOrders.stream().filter(o -> orderHasCategory(o, categoryId)).toList();
+        }
+        if (brandId != null) {
+            prevOrders = prevOrders.stream().filter(o -> orderHasBrand(o, brandId)).toList();
         }
         BigDecimal prevGrossRevenue = sumTotal(prevOrders);
         long prevOrderCount = prevOrders.stream().filter(o -> o.getStatus() == Order.Status.COMPLETED).count();
@@ -261,6 +274,13 @@ public class AdminStatisticsService {
                 i.getVariant() != null && i.getVariant().getProduct() != null
                         && i.getVariant().getProduct().getCategory() != null
                         && categoryId.equals(i.getVariant().getProduct().getCategory().getCategoryId()));
+    }
+
+    private boolean orderHasBrand(Order order, Integer brandId) {
+        return order.getItems().stream().anyMatch(i ->
+                i.getVariant() != null && i.getVariant().getProduct() != null
+                        && i.getVariant().getProduct().getBrand() != null
+                        && brandId.equals(i.getVariant().getProduct().getBrand().getBrandId()));
     }
 
     private BigDecimal sumTotal(List<Order> orders) {

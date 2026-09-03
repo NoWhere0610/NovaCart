@@ -28,11 +28,13 @@ public class AdminStatisticsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "5") int topProductLimit,
             @RequestParam(required = false) Integer categoryId,
-            @RequestParam(required = false) Order.OrderType orderType) {
+            @RequestParam(required = false) Integer brandId,
+            @RequestParam(required = false) Order.OrderType orderType,
+            @RequestParam(required = false) Order.PaymentMethod paymentMethod) {
         LocalDate effectiveTo = to != null ? to : LocalDate.now();
         // Mặc định: 30 ngày gần nhất nếu không truyền from
         LocalDate effectiveFrom = from != null ? from : effectiveTo.minusDays(29);
-        return ResponseEntity.ok(
-                statisticsService.getStatistics(effectiveFrom, effectiveTo, topProductLimit, categoryId, orderType));
+        return ResponseEntity.ok(statisticsService.getStatistics(
+                effectiveFrom, effectiveTo, topProductLimit, categoryId, brandId, orderType, paymentMethod));
     }
 }
