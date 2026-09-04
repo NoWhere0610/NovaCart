@@ -141,6 +141,12 @@ public class Order {
     @Column(name = "return_reason", length = 500)
     private String returnReason;
 
+    // GHI CHÚ CHO NGƯỜI ĐỌC LỊCH SỬ GIT: PR #32 từng thêm ở đây ba cột return_bank_name /
+    // return_account_number / return_account_holder làm cùng việc với nhóm cột refund_* bên dưới -- hai
+    // người làm trùng tính năng song song. Đã gỡ khi gộp nhánh, giữ nhóm refund_* vì nó theo dõi được
+    // cả TIẾN ĐỘ hoàn tiền (refundStatus + refundCompletedAt), tức là biết tiền đã thực sự chuyển đi
+    // hay chưa, còn nhóm return_* chỉ lưu thông tin tài khoản.
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
