@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
@@ -11,6 +11,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Bị đá về đây do một lời gọi API trả 401 (xem apiClient). Không giải thích thì người dùng đang thao
+  // tác dở tự nhiên thấy màn đăng nhập, không hiểu mình vừa làm sai gì.
+  const [searchParams] = useSearchParams()
+  const phienHetHan = searchParams.get('phien') === 'het-han'
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -34,6 +38,13 @@ export default function LoginPage() {
       <div className="w-full max-w-sm bg-white border border-stone-200 p-8">
         <h1 className="font-display text-2xl font-semibold text-stone-900 mb-1">Đăng nhập</h1>
         <p className="text-sm text-stone-500 mb-6">Chào mừng bạn quay lại NovaCart</p>
+
+        {/* Ẩn đi ngay khi có lỗi đăng nhập mới -- lúc đó lỗi mới mới là thứ đáng đọc. */}
+        {phienHetHan && !error && (
+          <div className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2">
+            Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2">

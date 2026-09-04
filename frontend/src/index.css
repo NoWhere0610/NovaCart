@@ -85,6 +85,21 @@ button:not(:disabled),
   }
 }
 
+/* Toast trượt xuống từ phía trên (ToastStack.tsx). Trượt XUỐNG chứ không lên, vì toast nằm ở giữa-trên
+   -- chuyển động phải đi cùng hướng với chỗ nó xuất hiện thì mắt mới bắt kịp. */
+@keyframes toast-vao {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.toast-vao {
+  animation: toast-vao 0.22s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-vao {
+    animation: none;
+  }
+}
+
 /* Hoạ tiết herringbone (public/pattern.svg), stroke màu gold, opacity 0.18. Tĩnh hoàn toàn, không
    animation. */
 .bg-herringbone {

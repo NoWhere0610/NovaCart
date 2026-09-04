@@ -33,7 +33,10 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('currentUser')
       // Chỉ redirect nếu KHÔNG đang ở sẵn trang login (tránh loop redirect)
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
+        // Lý do đi kèm URL chứ không phải toast: dòng dưới nạp LẠI CẢ TRANG, mọi state React (toast
+        // trong đó) bị xoá sạch trước khi người dùng kịp nhìn. Tham số này sống qua lần nạp lại và
+        // được LoginPage đọc để giải thích vì sao tự nhiên bị đá về đây.
+        window.location.href = '/login?phien=het-han'
       }
     }
     return Promise.reject(error)

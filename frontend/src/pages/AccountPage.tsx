@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { IconPackage, IconChevronRight } from '@tabler/icons-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import {
   createAddressApi,
   updateAddressApi,
@@ -37,6 +38,7 @@ const EMPTY_FORM = {
 
 export default function AccountPage() {
   const { user, logout } = useAuth()
+  const { hienToast } = useToast()
   const navigate = useNavigate()
 
   const [addresses, setAddresses] = useState<AddressDto[]>([])
@@ -227,6 +229,7 @@ export default function AccountPage() {
   function handleLogout() {
     logout()
     navigate('/', { replace: true })
+    hienToast('Bạn đã đăng xuất.', 'thanhCong')
   }
 
   return (

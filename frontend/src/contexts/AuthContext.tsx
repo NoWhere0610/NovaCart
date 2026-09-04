@@ -2,6 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { AuthUser, LoginPayload, RegisterPayload } from '../api/authApi'
 import { loginApi, registerApi } from '../api/authApi'
 import { getTokenExpiry, isTokenExpired } from '../utils/jwt'
+import { useToast } from './ToastContext'
+
+/** Câu báo khi phiên tự kết thúc. Để một chỗ vì cả đồng hồ hẹn giờ lẫn lúc khôi phục phiên đều dùng. */
+const BAO_HET_HAN = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -27,6 +31,7 @@ const STORAGE_TOKEN_KEY = 'accessToken'
 const STORAGE_USER_KEY = 'currentUser'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { hienToast } = useToast()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   // Hẹn giờ tự đăng xuất đúng lúc token hết hạn -- xem scheduleAutoLogout.
@@ -50,17 +55,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * đăng nhập) sẽ không thấy gì thay đổi: giao diện vẫn như đang đăng nhập, cho tới khi bấm vào một
    * chức năng cần đăng nhập mới bị đá ra. Hẹn giờ khiến phiên kết thúc đúng lúc nó thật sự kết thúc.
    */
+  /**
+   * Kết thúc phiên VÌ HẾT HẠN -- khác với người dùng chủ động bấm Đăng xuất.
+   *
+   * Phải tách riêng khỏi clearSession: cả hai đều dọn phiên, nhưng chỉ trường hợp này mới cần báo
+   * "hết hạn". Gộp làm một thì bấm Đăng xuất cũng bị mắng là phiên hết hạn.
+   */
+  const hetHanPhien = useCallback(() => {
+    clearSession()
+    hienToast(BAO_HET_HAN, 'thongTin')
+  }, [clearSession, hienToast])
+
   const scheduleAutoLogout = useCallback((token: string) => {
     if (autoLogoutTimer.current) clearTimeout(autoLogoutTimer.current)
     const expiry = getTokenExpiry(token)
     if (expiry == null) return
     const conLai = expiry - Date.now()
     if (conLai <= 0) {
+      // Nhánh phòng thân: mọi lối gọi vào đây đều đã lọc token hết hạn từ trước. Cố ý KHÔNG báo, để
+      // không có nguy cơ hiện hai lần cùng một thông báo với nhánh khôi phục phiên bên dưới.
       clearSession()
       return
     }
-    autoLogoutTimer.current = setTimeout(clearSession, conLai)
-  }, [clearSession])
+    autoLogoutTimer.current = setTimeout(hetHanPhien, conLai)
+  }, [clearSession, hetHanPhien])
 
   // Khôi phục phiên đăng nhập từ localStorage khi app khởi động.
   useEffect(() => {
@@ -77,10 +95,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearSession() // dữ liệu trong localStorage hỏng
       }
     } else if (savedUser || savedToken) {
+      // Có dấu vết phiên cũ nhưng không dùng được nữa. Chỉ báo khi ĐÚNG LÀ token hết hạn/hỏng --
+      // trường hợp chỉ sót một khoá lẻ (chưa từng đăng nhập trọn vẹn) mà cũng báo "hết hạn" thì
+      // người mới vào lần đầu sẽ hoang mang không hiểu phiên nào vừa hết.
+      const doHetHan = Boolean(savedToken) && isTokenExpired(savedToken)
       clearSession()
+      if (doHetHan) hienToast(BAO_HET_HAN, 'thongTin')
     }
     setIsLoading(false)
-  }, [clearSession, scheduleAutoLogout])
+  }, [clearSession, scheduleAutoLogout, hienToast])
 
   // Dọn hẹn giờ khi component bị gỡ, tránh gọi setState trên component đã unmount.
   useEffect(() => () => {

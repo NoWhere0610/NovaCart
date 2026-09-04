@@ -36,9 +36,13 @@ import TermsPage from "./pages/TermsPage.tsx";
 import { AuthProvider } from "./contexts/AuthContext";
 import { CartProvider } from "./contexts/CartContext";
 import { WishlistProvider } from "./contexts/WishlistContext";
+import { ToastProvider } from "./contexts/ToastContext";
 
 function App() {
   return (
+    // ToastProvider BỌC NGOÀI AuthProvider, không phải ngược lại: AuthContext cần gọi useToast() để
+    // báo khi phiên tự hết hạn. Đảo thứ tự là useToast() ném lỗi "phải gọi bên trong ToastProvider".
+    <ToastProvider>
     <AuthProvider>
       <CartProvider>
       <WishlistProvider>
@@ -122,6 +126,7 @@ function App() {
       </WishlistProvider>
       </CartProvider>
     </AuthProvider>
+    </ToastProvider>
   );
 }
 

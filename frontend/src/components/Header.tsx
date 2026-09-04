@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { IconShieldCog, IconPackage, IconUserCircle, IconShoppingBag, IconSearch, IconX, IconHeart, IconLogin, IconLogout, IconUserPlus } from '@tabler/icons-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../contexts/ToastContext'
 import { useCart } from '../contexts/CartContext'
 import { apiClient } from '../api/apiClient'
 import CategoryMegaMenu, { type MegaMenuCategory } from './CategoryMegaMenu'
@@ -19,6 +20,7 @@ const ICON_BUTTON_CLASS =
 export default function Header() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const { hienToast } = useToast()
   const { cartCount } = useCart()
   const isAdmin = user?.roles.includes('ADMIN') ?? false
   // Nút vào trang quản trị: cả ADMIN lẫn STAFF -- quyền THẬT theo từng trang/hành động cụ thể
@@ -182,6 +184,9 @@ export default function Header() {
                             // sẽ tự đá về /login, nhưng đứng ở trang công khai thì không có gì xảy ra --
                             // đưa về trang chủ để hành vi nhất quán ở mọi trang.
                             navigate('/')
+                            // Chuyển trang + menu đóng lại là hai thay đổi quá mờ để hiểu là "đã đăng
+                            // xuất xong"; ở trang chủ thì gần như không thấy gì khác. Nói thẳng ra.
+                            hienToast('Bạn đã đăng xuất.', 'thanhCong')
                           }}
                           className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
                         >
