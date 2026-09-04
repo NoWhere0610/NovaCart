@@ -233,34 +233,53 @@ export default function AdminPosPage() {
         </div>
 
         <div className="space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
-          {products.map((p) => (
-            <div key={p.productId} className="border border-stone-200 p-3">
-              <div className="flex items-center gap-3 mb-2">
-                {p.imageUrls[0] ? (
-                  <img src={p.imageUrls[0]} alt={p.productName} className="w-10 h-10 object-cover bg-stone-100 shrink-0" />
-                ) : (
-                  <div className="w-10 h-10 bg-stone-100 shrink-0" />
-                )}
-                <div className="flex-1 flex items-center justify-between min-w-0">
-                  <p className="font-medium text-stone-900 text-sm truncate">{p.productName}</p>
-                  <p className="text-sm text-orange-700 font-semibold shrink-0 ml-2">{formatVnd(effectivePrice(p))}</p>
+          {products.map((p) => {
+            // Ô tìm sản phẩm ở đây dùng chung API admin (cố ý KHÔNG lọc status để trang Sản phẩm thấy cả
+            // hàng đã ẩn), nên hàng ngừng kinh doanh vẫn lọt vào kết quả tra cứu ở quầy. Backend đã chặn
+            // thêm vào hoá đơn (PosOrderService.addItem) -- ở đây đánh dấu rõ để thu ngân không bấm nhầm.
+            const discontinued = p.status !== 'ACTIVE'
+            return (
+              <div key={p.productId} className={`border p-3 ${discontinued ? 'border-stone-200 bg-stone-50' : 'border-stone-200'}`}>
+                <div className="flex items-center gap-3 mb-2">
+                  {p.imageUrls[0] ? (
+                    <img src={p.imageUrls[0]} alt={p.productName} className="w-10 h-10 object-cover bg-stone-100 shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 bg-stone-100 shrink-0" />
+                  )}
+                  <div className="flex-1 flex items-center justify-between min-w-0">
+                    <p className={`font-medium text-sm truncate ${discontinued ? 'text-stone-400' : 'text-stone-900'}`}>
+                      {p.productName}
+                      {discontinued && (
+                        <span className="ml-2 text-[11px] font-normal border border-stone-300 text-stone-500 px-1.5 py-0.5">
+                          Ngừng kinh doanh
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-orange-700 font-semibold shrink-0 ml-2">{formatVnd(effectivePrice(p))}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {p.variants.map((v) => (
+                    <button
+                      key={v.variantId}
+                      disabled={!isDraft || discontinued || v.stockQuantity <= 0}
+                      onClick={() => handleAddVariant(v.variantId)}
+                      className="text-xs border border-stone-300 px-2 py-1.5 hover:border-orange-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={
+                        discontinued
+                          ? 'Sản phẩm đã ngừng kinh doanh'
+                          : v.stockQuantity <= 0
+                            ? 'Hết hàng'
+                            : `Còn ${v.stockQuantity}`
+                      }
+                    >
+                      {v.size} / {v.color} <span className="text-stone-400">({v.stockQuantity})</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {p.variants.map((v) => (
-                  <button
-                    key={v.variantId}
-                    disabled={!isDraft || v.stockQuantity <= 0}
-                    onClick={() => handleAddVariant(v.variantId)}
-                    className="text-xs border border-stone-300 px-2 py-1.5 hover:border-orange-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title={v.stockQuantity <= 0 ? 'Hết hàng' : `Còn ${v.stockQuantity}`}
-                  >
-                    {v.size} / {v.color} <span className="text-stone-400">({v.stockQuantity})</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+            )
+          })}
           {products.length === 0 && !searching && (
             <p className="text-sm text-stone-400">Nhập từ khoá rồi bấm "Tìm" để tra sản phẩm</p>
           )}

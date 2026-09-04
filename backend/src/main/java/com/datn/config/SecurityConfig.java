@@ -80,6 +80,9 @@ public class SecurityConfig {
                         // thể hơn phải đứng trước).
                         .requestMatchers("/api/admin/inventory/**").hasRole("ADMIN")
                         .requestMatchers("/api/admin/users/**").hasRole("ADMIN")
+                        // Phân quyền nhân viên: chỉ ADMIN được đổi ma trận -- STAFF không được tự cấp quyền
+                        // cho chính mình dù có bật gì trong ma trận đi nữa.
+                        .requestMatchers("/api/admin/permissions/**").hasRole("ADMIN")
                         // API admin còn lại: ADMIN hoặc STAFF đều qua được ở tầng route -- quyền THẬT theo
                         // từng hành động cụ thể do @PreAuthorize("@perm.has(...)") kiểm tra ở tầng method
                         // (xem PermissionService), dựa trên ma trận role_permission có thể chỉnh qua UI sau.

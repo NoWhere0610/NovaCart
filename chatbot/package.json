@@ -9,7 +9,10 @@
   },
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "test:rag": "node scripts/test-fix-cap-size-mau.js && node scripts/test-fix-so-dien-thoai.js && node scripts/test-fix-loc-cung-nguong.js && node scripts/test-fix-cau-hoi-lai.js && node scripts/test-liet-ke-thieu.js",
+    "do:loc": "node scripts/do-loc-san-pham.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

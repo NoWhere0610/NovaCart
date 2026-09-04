@@ -1,3 +1,8 @@
 node_modules/
+# File người dùng tải lên qua /api/kb/upload -- dữ liệu chạy thật, không đưa vào repo.
+kb-files/*
+# NGOẠI LỆ: kb-files/seed là tài liệu chính sách/hướng dẫn viết sẵn trong repo (lib/policySync.js nạp
+# vào kho tri thức). Đây là mã nguồn của dự án, không phải dữ liệu chạy -- thiếu nó thì máy khác clone
+# về chạy chatbot sẽ không trả lời được câu nào về chính sách.
+!kb-files/seed/
 .env
-kb-files/

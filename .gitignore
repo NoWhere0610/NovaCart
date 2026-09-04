@@ -1,1 +1,10 @@
-doc/
+# Thư mục doc/ CỐ Ý không nằm ở đây nữa (bỏ ngày 04/09/2026): kịch bản demo, bộ ca kiểm thử và các
+# tài liệu bàn giao là thứ cả nhóm cần dùng chung, để ngoài repo thì người khác clone về không có.
+
+# Cấu hình riêng của trình soạn thảo trên từng máy
+.vscode/
+.idea/
+
+# File hệ điều hành
+Thumbs.db
+.DS_Store

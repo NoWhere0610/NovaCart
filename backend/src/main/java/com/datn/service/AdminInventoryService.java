@@ -66,7 +66,11 @@ public class AdminInventoryService {
 
     @Transactional
     public AdminInventoryItemResponse update(Long variantId, AdminInventoryUpdateRequest request) {
-        ProductVariant variant = getVariantOrThrow(variantId);
+        // findByIdForUpdate -- khoá row tới hết transaction. Không có khoá này, admin mở form sửa trong
+        // lúc POS/checkout đang trừ kho biến thể đó rồi lưu đè lại số tồn CŨ đã đọc từ trước, làm mất
+        // đúng giao dịch bán vừa xảy ra ("last writer wins" quay số tồn về sai).
+        ProductVariant variant = variantRepository.findByIdForUpdate(variantId)
+                .orElseThrow(() -> ApiException.notFound("Mặt hàng tồn kho không tồn tại"));
         variant.setSize(request.getSize());
         variant.setColor(request.getColor());
         variant.setSku(request.getSku());
@@ -77,6 +81,26 @@ public class AdminInventoryService {
         } catch (DataIntegrityViolationException ex) {
             throw ApiException.badRequest("SKU đã tồn tại hoặc trùng size/màu với 1 phân loại khác của sản phẩm này");
         }
+    }
+
+    /**
+     * Điều chỉnh tồn kho theo mức thay đổi (nút +/- ở trang Sản phẩm). Phép cộng chạy TRONG transaction
+     * đã khoá row, nên nhiều lần bấm liên tiếp / 2 admin cùng thao tác / POS bán xen vào giữa đều cộng
+     * dồn đúng -- xem chú thích ở AdminInventoryAdjustRequest.
+     */
+    @Transactional
+    public AdminInventoryItemResponse adjustStock(Long variantId, int delta) {
+        ProductVariant variant = variantRepository.findByIdForUpdate(variantId)
+                .orElseThrow(() -> ApiException.notFound("Mặt hàng tồn kho không tồn tại"));
+        int current = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
+        int next = current + delta;
+        if (next < 0) {
+            // Không tự kẹp về 0: kho chỉ còn 2 mà bấm giảm 5 là thao tác sai, phải báo chứ không âm thầm
+            // chỉnh thành 0 (số trên màn hình lúc đó đã cũ).
+            throw ApiException.badRequest("Tồn kho hiện chỉ còn " + current + ", không giảm thêm được");
+        }
+        variant.setStockQuantity(next);
+        return toResponse(variantRepository.save(variant));
     }
 
     @Transactional

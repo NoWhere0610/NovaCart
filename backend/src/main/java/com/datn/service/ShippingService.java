@@ -37,6 +37,12 @@ public class ShippingService {
     private static final BigDecimal INNER_CITY_FEE = BigDecimal.valueOf(20_000);
     private static final BigDecimal OUTER_CITY_FEE = BigDecimal.valueOf(35_000);
 
+    // Trần khoảng cách tính phí -- toạ độ lỗi/cực xa (vd nhầm múi kinh độ, dữ liệu rác) không được đẩy phí
+    // ship lên mức phi thực tế; quá xa mức này coi như KHÔNG giao được bằng nội bộ, dùng luôn mức trần.
+    private static final BigDecimal MAX_BILLABLE_KM = BigDecimal.valueOf(100);
+    private static final BigDecimal MAX_FEE =
+            BASE_FEE.add(MAX_BILLABLE_KM.subtract(BASE_KM).multiply(PER_KM_FEE));
+
     public BigDecimal calculateFee(Address address, BigDecimal subtotal) {
         if (subtotal != null && subtotal.compareTo(FREE_SHIP_THRESHOLD) >= 0) {
             return BigDecimal.ZERO;
@@ -47,6 +53,9 @@ public class ShippingService {
                 BigDecimal km = vietMapService.distanceKm(address.getLatitude(), address.getLongitude());
                 if (km.compareTo(BASE_KM) <= 0) {
                     return BASE_FEE;
+                }
+                if (km.compareTo(MAX_BILLABLE_KM) >= 0) {
+                    return MAX_FEE;
                 }
                 BigDecimal extraKm = km.subtract(BASE_KM).setScale(0, RoundingMode.UP);
                 return BASE_FEE.add(extraKm.multiply(PER_KM_FEE));

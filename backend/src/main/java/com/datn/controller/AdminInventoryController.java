@@ -1,6 +1,7 @@
 package com.datn.controller;
 
 import com.datn.dto.PageResponse;
+import com.datn.dto.admin.AdminInventoryAdjustRequest;
 import com.datn.dto.admin.AdminInventoryCreateRequest;
 import com.datn.dto.admin.AdminInventoryItemResponse;
 import com.datn.dto.admin.AdminInventoryUpdateRequest;
@@ -46,6 +47,14 @@ public class AdminInventoryController {
     public ResponseEntity<AdminInventoryItemResponse> update(
             @PathVariable Long variantId, @Valid @RequestBody AdminInventoryUpdateRequest request) {
         return ResponseEntity.ok(adminInventoryService.update(variantId, request));
+    }
+
+    // Nút +/- điều chỉnh nhanh tồn kho trong bảng sản phẩm -- gửi MỨC THAY ĐỔI, không gửi số tuyệt đối.
+    @PreAuthorize("@perm.has('PRODUCT_WRITE')")
+    @PatchMapping("/{variantId}/stock")
+    public ResponseEntity<AdminInventoryItemResponse> adjustStock(
+            @PathVariable Long variantId, @Valid @RequestBody AdminInventoryAdjustRequest request) {
+        return ResponseEntity.ok(adminInventoryService.adjustStock(variantId, request.getDelta()));
     }
 
     @PreAuthorize("@perm.has('PRODUCT_DELETE')")

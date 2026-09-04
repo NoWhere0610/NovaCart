@@ -82,6 +82,15 @@ public class PosOrderService {
         ProductVariant variant = variantRepository.findByIdForUpdate(request.getVariantId())
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
 
+        // Cùng quy tắc với giỏ hàng/checkout online: sản phẩm đã ẩn/ngừng bán thì không bán ra được. Ô tìm
+        // sản phẩm ở POS dùng chung API admin (cố ý không lọc status để admin thấy cả hàng ẩn) nên hàng đã
+        // ẩn vẫn hiện ở quầy -- không chặn ở đây thì cùng 1 sản phẩm: khách online bị từ chối, khách tại
+        // quầy vẫn mua được.
+        if (variant.getProduct().getStatus() != com.datn.entity.Product.Status.ACTIVE) {
+            throw ApiException.badRequest(
+                    "Sản phẩm \"" + variant.getProduct().getProductName() + "\" đã ngừng kinh doanh, không thể bán");
+        }
+
         int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
         if (request.getQuantity() > stock) {
             throw ApiException.badRequest(
@@ -152,8 +161,11 @@ public class PosOrderService {
         OrderItem item = orderItemRepository.findByOrderItemIdAndOrder_OrderId(orderItemId, orderId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy dòng sản phẩm trong hoá đơn"));
 
-        ProductVariant variant = item.getVariant();
-        if (variant != null) {
+        if (item.getVariant() != null) {
+            // findByIdForUpdate -- khoá row (xem chú thích ở addItem()); quầy khác có thể đang bán/hoàn
+            // đúng biến thể này cùng lúc, đọc thường sẽ làm mất 1 trong 2 lần cập nhật tồn kho.
+            ProductVariant variant = variantRepository.findByIdForUpdate(item.getVariant().getVariantId())
+                    .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
             int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
             variant.setStockQuantity(stock + item.getQuantity());
             variantRepository.save(variant);
@@ -201,6 +213,12 @@ public class PosOrderService {
         if (order.getItems().isEmpty()) {
             throw ApiException.badRequest("Hoá đơn chưa có sản phẩm nào, không thể thanh toán");
         }
+        // POS chỉ hỗ trợ 2 phương thức tại quầy (khớp PosDto.CheckoutRequest) -- chặn ở service phòng
+        // trường hợp có client khác gọi thẳng API với VNPAY, tự set PAID mà không hề qua cổng nào.
+        if (request.getPaymentMethod() != Order.PaymentMethod.COD
+                && request.getPaymentMethod() != Order.PaymentMethod.BANK_TRANSFER) {
+            throw ApiException.badRequest("Thanh toán tại quầy chỉ hỗ trợ Tiền mặt hoặc Chuyển khoản");
+        }
 
         order.setPaymentMethod(request.getPaymentMethod());
         // Tiền mặt -- thu ngân cầm tiền trực tiếp nên coi như đã thanh toán ngay. Chuyển khoản thì
@@ -224,8 +242,10 @@ public class PosOrderService {
         Order order = findPendingInvoice(orderId);
 
         for (OrderItem item : order.getItems()) {
-            ProductVariant variant = item.getVariant();
-            if (variant != null) {
+            if (item.getVariant() != null) {
+                // findByIdForUpdate -- khoá row (xem chú thích ở addItem()).
+                ProductVariant variant = variantRepository.findByIdForUpdate(item.getVariant().getVariantId())
+                        .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
                 int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
                 variant.setStockQuantity(stock + item.getQuantity());
                 variantRepository.save(variant);
@@ -250,6 +270,10 @@ public class PosOrderService {
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             throw ApiException.badRequest("Hoá đơn đã được xác nhận thanh toán trước đó");
         }
+        // Hoá đơn đã bị huỷ/hoàn thì không còn ý nghĩa gì để xác nhận thanh toán nữa.
+        if (order.getStatus() != Order.Status.COMPLETED) {
+            throw ApiException.badRequest("Hoá đơn không ở trạng thái hợp lệ để xác nhận thanh toán");
+        }
         order.setPaymentStatus(Order.PaymentStatus.PAID);
         return toResponse(orderRepository.save(order));
     }
@@ -269,8 +293,10 @@ public class PosOrderService {
         }
 
         for (OrderItem item : order.getItems()) {
-            ProductVariant variant = item.getVariant();
-            if (variant != null) {
+            if (item.getVariant() != null) {
+                // findByIdForUpdate -- khoá row (xem chú thích ở addItem()).
+                ProductVariant variant = variantRepository.findByIdForUpdate(item.getVariant().getVariantId())
+                        .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
                 int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
                 variant.setStockQuantity(stock + item.getQuantity());
                 variantRepository.save(variant);
@@ -279,7 +305,13 @@ public class PosOrderService {
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
             voucherService.revertVoucherUsage(order.getVoucherCode());
         }
+        // Chỉ đánh dấu REFUNDED nếu hoá đơn thật sự đã PAID (BANK_TRANSFER chưa được thu ngân xác nhận
+        // thì vẫn đang UNPAID, không có gì để "hoàn" cả).
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
+        }
 
+        order.setReturnedAt(java.time.LocalDateTime.now());
         order.setStatus(Order.Status.RETURNED);
         return toResponse(orderRepository.save(order));
     }
@@ -307,7 +339,11 @@ public class PosOrderService {
         BigDecimal discount = BigDecimal.ZERO;
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
             try {
-                discount = voucherService.previewDiscount(order.getVoucherCode(), subtotal);
+                // previewDiscountForAppliedVoucher (KHÔNG kiểm tra lại usageLimit) -- mã này đã áp dụng
+                // thành công cho CHÍNH hoá đơn này rồi (đã cộng usedCount lúc applyVoucher), nếu dùng
+                // previewDiscount() thường sẽ tự thấy usedCount>=limit và bị coi là hết lượt ngay lần sửa
+                // hoá đơn tiếp theo, tự gỡ mã hợp lệ của chính mình.
+                discount = voucherService.previewDiscountForAppliedVoucher(order.getVoucherCode(), subtotal);
             } catch (ApiException ex) {
                 // Giỏ hàng thay đổi khiến mã không còn hợp lệ nữa (vd dưới min_order_value sau khi bớt
                 // hàng) -- tự bỏ mã thay vì giữ số tiền giảm cũ (sai) hoặc throw giữa lúc sửa giỏ hàng.

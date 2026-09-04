@@ -24,4 +24,9 @@ public class AdminVariantRequest {
     @NotNull(message = "Tồn kho không được để trống")
     @Min(value = 0, message = "Tồn kho không được âm")
     private Integer stockQuantity;
+
+    // Số tồn kho mà form ĐỌC ĐƯỢC lúc mở trang. Backend so sánh với stockQuantity để biết admin có thật
+    // sự muốn đổi tồn kho hay chỉ gửi lại con số cũ kèm theo khi sửa mô tả/giá -- xem
+    // AdminProductService.applyStock. null với phân loại tạo mới.
+    private Integer originalStockQuantity;
 }

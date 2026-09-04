@@ -4,10 +4,14 @@
    động khi server đang chạy (server tắt = lịch tắt theo, không tự bù lại lượt đã lỡ).
    ============================================================================ */
 const cron = require('node-cron');
-const { syncProducts } = require('./productSync');
+const { syncProducts, countProductChunks } = require('./productSync');
+const { syncPolicies, countPolicyChunks } = require('./policySync');
 
 const ENABLED = (process.env.PRODUCT_SYNC_ENABLED ?? 'true') !== 'false';
-const SCHEDULE = process.env.PRODUCT_SYNC_CRON || '0 3 * * *'; // 3h sáng mỗi ngày (giờ hệ thống chạy server)
+// Mỗi giờ, không phải 1 lần/ngày nữa: từ khi productSync so checksum, lần chạy "không có gì đổi" tốn 0
+// lượt gọi Gemini và vài giây -- không còn lý do để lịch thưa, mà lịch thưa chính là nguyên nhân bot đọc
+// giá cũ tới 24 tiếng và vẫn tư vấn sản phẩm admin vừa ẩn.
+const SCHEDULE = process.env.PRODUCT_SYNC_CRON || '0 * * * *';
 
 let isRunning = false;
 
@@ -32,9 +36,14 @@ async function runSync(trigger) {
   }
 }
 
-/** Gọi 1 lần lúc server khởi động (server.js). Không tự sync ngay khi bật (tránh mỗi lần deploy/restart
- * server đều tốn lượt gọi Gemini) -- chỉ đăng ký lịch, đợi đúng giờ mới chạy. Muốn sync ngay lập tức thì
- * vẫn dùng `node lib/productSync.js` (chạy tay) như trước, không đổi. */
+/**
+ * Gọi 1 lần lúc server khởi động (server.js).
+ *
+ * Vẫn KHÔNG sync vô điều kiện mỗi lần khởi động (tránh mỗi lần restart đều gọi Gemini), nhưng sync ngay
+ * nếu kho tri thức sản phẩm đang RỖNG. Trước đây chỉ đăng ký lịch: máy vừa cài xong / vừa dựng lại
+ * container / lịch chưa từng chạy vì máy tắt ban đêm -> kho rỗng cho tới 3h sáng hôm sau, và triệu chứng
+ * duy nhất là bot lịch sự trả "hiện chưa có sản phẩm phù hợp" -- không phân biệt được với hỏng cấu hình.
+ */
 function start() {
   if (!ENABLED) {
     console.log('  [scheduler] PRODUCT_SYNC_ENABLED=false -- không đăng ký lịch tự động (vẫn chạy tay được qua lib/productSync.js).');
@@ -46,6 +55,21 @@ function start() {
   }
   cron.schedule(SCHEDULE, () => runSync('cron'));
   console.log(`  [scheduler] đã đăng ký lịch tự động đồng bộ sản phẩm: "${SCHEDULE}"`);
+
+  // Tài liệu chính sách nằm trong repo (kb-files/seed) nên nạp được ngay, không phụ thuộc backend Java.
+  countPolicyChunks()
+    .then((n) => (n === 0 ? syncPolicies() : null))
+    .catch((e) => console.error('  [scheduler] không nạp được tài liệu chính sách:', e.message));
+
+  countProductChunks()
+    .then((n) => {
+      if (n === 0) {
+        console.warn('  [scheduler] kho tri thức sản phẩm đang RỖNG -- chạy đồng bộ ngay thay vì đợi lịch.');
+        return runSync('khởi động (kho rỗng)');
+      }
+      console.log(`  [scheduler] kho tri thức sản phẩm đã có ${n} sản phẩm -- không cần sync ngay, đợi lịch.`);
+    })
+    .catch((e) => console.error('  [scheduler] không kiểm tra được kho tri thức lúc khởi động:', e.message));
 }
 
 module.exports = { start };

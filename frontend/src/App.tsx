@@ -17,6 +17,7 @@ import AdminCategoriesPage from "./pages/AdminCategoriesPage";
 import AdminVouchersPage from "./pages/AdminVouchersPage";
 import AdminOrdersPage from "./pages/AdminOrdersPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminPermissionsPage from "./pages/AdminPermissionsPage";
 import AdminPosPage from "./pages/AdminPosPage";
 import PosInvoicePrintPage from "./pages/PosInvoicePrintPage";
 import AdminStatisticsPage from "./pages/AdminStatisticsPage";
@@ -103,6 +104,7 @@ function App() {
                     không qua ma trận STAFF. */}
                 <Route element={<RequireAdminRoute />}>
                   <Route path="users" element={<AdminUsersPage />} />
+                  <Route path="permissions" element={<AdminPermissionsPage />} />
                 </Route>
               </Route>
 

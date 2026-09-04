@@ -18,4 +18,9 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
             Long userId, Collection<Order.Status> statuses, Long productId);
 
     java.util.Optional<OrderItem> findByOrderItemIdAndOrder_OrderId(Long orderItemId, Long orderId);
+
+    // order_items.variant_id là FK KHÔNG có ON DELETE CASCADE -> xoá 1 biến thể đã từng được đặt hàng sẽ
+    // bị DB chặn. Kiểm tra trước để báo đúng bản chất ("đã phát sinh đơn hàng") thay vì để
+    // DataIntegrityViolationException rơi vào handler chung và trả về thông báo trùng lặp khó hiểu.
+    boolean existsByVariant_VariantId(Long variantId);
 }

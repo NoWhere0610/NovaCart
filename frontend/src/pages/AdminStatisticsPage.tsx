@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Bar,
   BarChart,
@@ -12,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { getStatisticsApi, type StatisticsResponse } from '../api/statisticsApi'
+import { getStatisticsApi, type RevenuePoint, type StatisticsResponse } from '../api/statisticsApi'
 import { getAdminBrandsApi, getAdminCategoriesApi, type AdminBrandDto, type AdminCategoryDto } from '../api/adminApi'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
@@ -22,11 +23,13 @@ const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 const ADMIN_ACCENT = '#c2410c' // orange-700
 const GRID_COLOR = '#e7e5e4' // stone-200
 
+// Khớp AdminInventoryService.LOW_STOCK_THRESHOLD / AdminStatisticsService bên backend.
+const LOW_STOCK_THRESHOLD = 5
+
 const PAYMENT_LABEL: Record<string, string> = {
   COD: 'Tiền mặt / COD',
   VNPAY: 'VNPay',
   BANK_TRANSFER: 'Chuyển khoản',
-  MOMO: 'Momo',
 }
 
 // Gắn CỐ ĐỊNH theo từng phương thức (không cycle theo thứ tự mảng) -- đã chạy qua validator (chroma,
@@ -35,12 +38,29 @@ const PAYMENT_COLOR: Record<string, string> = {
   COD: '#c2410c',
   VNPAY: '#2563eb',
   BANK_TRANSFER: '#059669',
-  MOMO: '#7c3aed',
 }
 const FALLBACK_COLOR = '#a8a29e'
 
-function toIsoDate(d: Date) {
-  return d.toISOString().slice(0, 10)
+// Định dạng ngày theo GIỜ ĐỊA PHƯƠNG. KHÔNG dùng toISOString() -- hàm đó đổi sang UTC, mà Việt Nam là
+// UTC+7 nên new Date(2026, 8, 1) (0h ngày 1/9 giờ VN) sẽ thành "2026-08-31". Toàn bộ nút chọn nhanh
+// (Tháng này/Tháng trước/Quý/Năm) vì thế từng bị lệch đúng 1 ngày về trước.
+export function toIsoDate(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** "2026-09-03" -> "03/09" (hiển thị trong biểu đồ/tooltip cho người Việt đọc). */
+function formatDayMonth(iso: string) {
+  const [, m, d] = iso.split('-')
+  return `${d}/${m}`
+}
+
+/** "2026-09-03" -> "03/09/2026" (dùng ở nhãn khoảng ngày đang xem). */
+function formatFullDate(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
 }
 
 // Nút chọn nhanh khoảng ngày -- các trang quản trị bán hàng lớn (Shopee Seller Center, Sapo,
@@ -56,7 +76,7 @@ type QuickRangeKey =
   | 'thisYear'
   | 'lastYear'
 
-function computeQuickRange(key: QuickRangeKey): { from: string; to: string } {
+export function computeQuickRange(key: QuickRangeKey): { from: string; to: string } {
   const today = new Date()
   const quarterOf = (m: number) => Math.floor(m / 3)
   switch (key) {
@@ -115,6 +135,58 @@ const QUICK_RANGES: { key: QuickRangeKey; label: string }[] = [
   { key: 'lastYear', label: 'Năm trước' },
 ]
 
+export type ChartPoint = { label: string; revenue: number; returnedRevenue: number; orderCount: number }
+
+/**
+ * Gộp dữ liệu ngày thành tuần/tháng khi khoảng xem quá dài. Chọn "Năm nay" sinh ~365 cặp cột trong ~1000px
+ * (mỗi cột dưới 1,5px) -- thành một vệt màu đặc, không đọc được gì. Ngưỡng chọn theo số cột còn đọc được.
+ */
+export function buildChartData(points: RevenuePoint[]): { data: ChartPoint[]; granularity: 'day' | 'week' | 'month' } {
+  if (points.length <= 62) {
+    return {
+      granularity: 'day',
+      data: points.map((p) => ({
+        label: formatDayMonth(p.date),
+        revenue: p.revenue,
+        returnedRevenue: p.returnedRevenue,
+        orderCount: p.orderCount,
+      })),
+    }
+  }
+
+  const monthly = points.length > 186
+  const buckets = new Map<string, ChartPoint>()
+  for (const p of points) {
+    const d = new Date(`${p.date}T00:00:00`)
+    let key: string
+    let label: string
+    if (monthly) {
+      key = p.date.slice(0, 7)
+      label = `${key.slice(5)}/${key.slice(0, 4)}`
+    } else {
+      // Mốc đầu tuần (thứ 2) làm khoá gộp.
+      const monday = new Date(d)
+      monday.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+      key = toIsoDate(monday)
+      label = formatDayMonth(key)
+    }
+    const current = buckets.get(key)
+    if (current) {
+      current.revenue += p.revenue
+      current.returnedRevenue += p.returnedRevenue
+      current.orderCount += p.orderCount
+    } else {
+      buckets.set(key, {
+        label,
+        revenue: p.revenue,
+        returnedRevenue: p.returnedRevenue,
+        orderCount: p.orderCount,
+      })
+    }
+  }
+  return { granularity: monthly ? 'month' : 'week', data: Array.from(buckets.values()) }
+}
+
 function formatPercent(p: number | null) {
   if (p == null) return null
   const sign = p > 0 ? '+' : ''
@@ -133,22 +205,51 @@ function TrendBadge({ percent }: { percent: number | null }) {
   )
 }
 
-function exportCsv(data: StatisticsResponse) {
+/** Bọc 1 ô CSV: nhân đôi dấu nháy kép rồi bọc cả chuỗi -- tên sản phẩm có dấu phẩy (vd "Áo sơ mi trắng,
+ *  tay dài") nếu ghi thẳng sẽ đẩy lệch toàn bộ cột phía sau khi mở bằng Excel. */
+function csvCell(value: string | number) {
+  const text = String(value ?? '')
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+function exportCsv(data: StatisticsResponse, context: { from: string; to: string; filters: string[] }) {
   const lines: string[] = []
-  lines.push('Ngày,Doanh thu,Hoàn trả,Số đơn')
+  // Ghi kèm ngữ cảnh -- mở lại file sau vài tuần vẫn biết đây là báo cáo khoảng nào, lọc những gì.
+  lines.push([csvCell('Khoảng ngày'), csvCell(`${formatFullDate(context.from)} - ${formatFullDate(context.to)}`)].join(','))
+  lines.push([csvCell('Bộ lọc'), csvCell(context.filters.length > 0 ? context.filters.join(' | ') : 'Không lọc')].join(','))
+  lines.push('')
+
+  lines.push(['Tổng quan', 'Giá trị'].map(csvCell).join(','))
+  lines.push([csvCell('Doanh thu gộp'), csvCell(data.summary.completedRevenue)].join(','))
+  lines.push([csvCell('Hoàn trả'), csvCell(data.summary.returnedRevenue)].join(','))
+  lines.push([csvCell('Doanh thu thuần'), csvCell(data.summary.totalRevenue)].join(','))
+  lines.push([csvCell('Số đơn thành công'), csvCell(data.summary.totalOrders)].join(','))
+  lines.push([csvCell('Giá trị đơn TB'), csvCell(data.summary.averageOrderValue)].join(','))
+  lines.push('')
+
+  lines.push(['Ngày', 'Doanh thu', 'Hoàn trả', 'Số đơn'].map(csvCell).join(','))
   data.revenueByDay.forEach((r) => {
-    lines.push(`${r.date},${r.revenue},${r.returnedRevenue},${r.orderCount}`)
+    lines.push([r.date, r.revenue, r.returnedRevenue, r.orderCount].map(csvCell).join(','))
   })
   lines.push('')
-  lines.push('Sản phẩm bán chạy,Số lượng bán,Doanh thu')
+
+  lines.push(['Sản phẩm bán chạy', 'Số lượng bán', 'Doanh thu'].map(csvCell).join(','))
   data.topProducts.forEach((p) => {
-    lines.push(`${p.productName},${p.quantitySold},${p.revenue}`)
+    lines.push([p.productName, p.quantitySold, p.revenue].map(csvCell).join(','))
   })
+  lines.push('')
+
+  lines.push(['Doanh thu theo danh mục', 'Số lượng bán', 'Doanh thu'].map(csvCell).join(','))
+  data.revenueByCategory.forEach((c) => {
+    lines.push([c.categoryName, c.quantitySold, c.revenue].map(csvCell).join(','))
+  })
+
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `thong-ke-${new Date().toISOString().slice(0, 10)}.csv`
+  // Đặt tên theo ĐÚNG khoảng đang xem -- dùng ngày hôm nay thì xuất 3 kỳ khác nhau ra 3 file trùng tên.
+  link.download = `thong-ke_${context.from}_den_${context.to}.csv`
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -182,49 +283,128 @@ function PaymentPieTooltip({ active, payload }: any) {
   )
 }
 
-export default function AdminStatisticsPage() {
-  const today = new Date()
-  const monthAgo = new Date()
-  monthAgo.setDate(today.getDate() - 29)
+/** Rút gọn trục tiền: 1.250.000 -> "1,3tr". Có làm tròn, không thì ra "1.234567tr" tràn khỏi trục. */
+function formatAxisMoney(v: number) {
+  const abs = Math.abs(v)
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1).replace('.0', '')}tr`
+  if (abs >= 1_000) return `${Math.round(v / 1_000)}k`
+  return String(v)
+}
 
-  const [from, setFrom] = useState(toIsoDate(monthAgo))
-  const [to, setTo] = useState(toIsoDate(today))
-  const [activeQuickRange, setActiveQuickRange] = useState<QuickRangeKey | null>('30d')
-  const [categoryId, setCategoryId] = useState('')
-  const [brandId, setBrandId] = useState('')
-  const [orderType, setOrderType] = useState<'' | 'ONLINE' | 'POS'>('')
-  const [paymentMethod, setPaymentMethod] = useState<'' | 'COD' | 'VNPAY' | 'BANK_TRANSFER' | 'MOMO'>('')
+type Filters = {
+  from: string
+  to: string
+  categoryId: string
+  brandId: string
+  orderType: '' | 'ONLINE' | 'POS'
+  paymentMethod: '' | 'COD' | 'VNPAY' | 'BANK_TRANSFER'
+}
+
+/** Đọc bộ lọc từ query string -- mở lại link/F5 phải ra đúng báo cáo cũ, không nhảy về mặc định. */
+function filtersFromUrl(params: URLSearchParams): Filters {
+  const fallback = computeQuickRange('30d')
+  const orderType = params.get('orderType')
+  const paymentMethod = params.get('paymentMethod')
+  return {
+    from: params.get('from') || fallback.from,
+    to: params.get('to') || fallback.to,
+    categoryId: params.get('categoryId') || '',
+    brandId: params.get('brandId') || '',
+    orderType: orderType === 'ONLINE' || orderType === 'POS' ? orderType : '',
+    paymentMethod:
+      paymentMethod === 'COD' || paymentMethod === 'VNPAY' || paymentMethod === 'BANK_TRANSFER'
+        ? paymentMethod
+        : '',
+  }
+}
+
+export default function AdminStatisticsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Chỉ đọc URL cho lần render đầu -- các lần sau URL do chính trang này ghi ra, đọc lại sẽ thành vòng lặp.
+  const [form, setForm] = useState<Filters>(() => filtersFromUrl(searchParams))
+  // Bộ lọc THỰC SỰ đang được phản ánh bởi dữ liệu đang hiển thị -- để biết form có bị sửa mà chưa bấm
+  // "Xem thống kê" hay không (nếu không có cái này, người xem dễ đọc số của bộ lọc cũ mà tưởng là số mới).
+  const [applied, setApplied] = useState<Filters>(form)
+  // Mở bằng link có sẵn khoảng ngày -> tô sáng đúng nút chọn nhanh tương ứng (nếu khớp), không mặc định
+  // sáng "30 ngày" trong khi đang xem khoảng khác.
+  const [activeQuickRange, setActiveQuickRange] = useState<QuickRangeKey | null>(() => {
+    const match = QUICK_RANGES.find((r) => {
+      const range = computeQuickRange(r.key)
+      return range.from === form.from && range.to === form.to
+    })
+    return match?.key ?? null
+  })
   const [categories, setCategories] = useState<AdminCategoryDto[]>([])
   const [brands, setBrands] = useState<AdminBrandDto[]>([])
   const [data, setData] = useState<StatisticsResponse | null>(null)
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    load()
-    // Chỉ lấy danh mục LÁ (có parentId) -- danh mục cha chỉ là nhóm tiêu đề, không gán trực tiếp cho
-    // sản phẩm nào nên lọc theo nó sẽ luôn ra 0 kết quả.
-    getAdminCategoriesApi()
-      .then((cats) => setCategories(cats.filter((c) => c.parentId !== null)))
-      .catch(() => {})
-    getAdminBrandsApi()
-      .then(setBrands)
-      .catch(() => {})
+    load(form)
+    getAdminCategoriesApi().then(setCategories).catch(() => {})
+    getAdminBrandsApi().then(setBrands).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function load(fromOverride?: string, toOverride?: string) {
+  // Cho chọn CẢ danh mục cha lẫn con: backend gộp luôn toàn bộ danh mục con khi chọn cha, nên "Áo" giờ ra
+  // tổng của Áo thun + Áo sơ mi + Áo khoác... thay vì 0₫ như trước (khi đó chỉ chọn được danh mục lá và
+  // muốn xem cả nhóm thì phải chọn từng lá rồi cộng tay). Xếp cha trước, con thụt lề ngay dưới cha.
+  const selectableCategories = useMemo(() => {
+    const active = categories.filter((c) => c.isActive)
+    const childrenOf = (parentId: number | null) => active.filter((c) => (c.parentId ?? null) === parentId)
+    const result: { id: number; label: string; depth: number }[] = []
+    const walk = (parentId: number | null, depth: number) => {
+      for (const c of childrenOf(parentId)) {
+        result.push({ id: c.categoryId, label: c.categoryName, depth })
+        walk(c.categoryId, depth + 1)
+      }
+    }
+    walk(null, 0)
+    return result
+  }, [categories])
+
+  const isDirty = useMemo(
+    () => (Object.keys(form) as (keyof Filters)[]).some((k) => form[k] !== applied[k]),
+    [form, applied],
+  )
+
+  const appliedFilterLabels = useMemo(() => {
+    const labels: string[] = []
+    if (applied.categoryId) {
+      const cat = categories.find((c) => String(c.categoryId) === applied.categoryId)
+      const hasChildren = categories.some((c) => String(c.parentId) === applied.categoryId)
+      // Nói rõ đang xem cả nhánh con, không thì người xem tưởng chỉ có sản phẩm gắn trực tiếp vào cha.
+      labels.push(`Danh mục: ${cat?.categoryName ?? applied.categoryId}${hasChildren ? ' (gồm danh mục con)' : ''}`)
+    }
+    if (applied.brandId) {
+      labels.push(`Thương hiệu: ${brands.find((b) => String(b.brandId) === applied.brandId)?.brandName ?? applied.brandId}`)
+    }
+    if (applied.orderType) labels.push(`Kênh: ${applied.orderType === 'ONLINE' ? 'Online' : 'Tại quầy (POS)'}`)
+    if (applied.paymentMethod) labels.push(`Thanh toán: ${PAYMENT_LABEL[applied.paymentMethod]}`)
+    return labels
+  }, [applied, categories, brands])
+
+  async function load(next: Filters) {
     setLoading(true)
     setError(null)
     try {
-      setData(
-        await getStatisticsApi(fromOverride ?? from, toOverride ?? to, 5, {
-          categoryId: categoryId ? Number(categoryId) : undefined,
-          brandId: brandId ? Number(brandId) : undefined,
-          orderType: orderType || undefined,
-          paymentMethod: paymentMethod || undefined,
-        }),
-      )
+      const res = await getStatisticsApi(next.from, next.to, 5, {
+        categoryId: next.categoryId ? Number(next.categoryId) : undefined,
+        brandId: next.brandId ? Number(next.brandId) : undefined,
+        orderType: next.orderType || undefined,
+        paymentMethod: next.paymentMethod || undefined,
+      })
+      setData(res)
+      setApplied(next)
+      // Ghi bộ lọc vào URL sau khi tải thành công -- bookmark/gửi link cho người khác vẫn ra đúng báo cáo
+      // này, F5 không mất bộ lọc. replace: true để không nhồi 1 mục lịch sử mỗi lần bấm "Xem thống kê".
+      const params: Record<string, string> = { from: next.from, to: next.to }
+      if (next.categoryId) params.categoryId = next.categoryId
+      if (next.brandId) params.brandId = next.brandId
+      if (next.orderType) params.orderType = next.orderType
+      if (next.paymentMethod) params.paymentMethod = next.paymentMethod
+      setSearchParams(params, { replace: true })
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Không thể tải dữ liệu thống kê. Vui lòng thử lại.')
     } finally {
@@ -234,151 +414,215 @@ export default function AdminStatisticsPage() {
 
   function applyQuickRange(key: QuickRangeKey) {
     const range = computeQuickRange(key)
+    const next = { ...form, from: range.from, to: range.to }
     setActiveQuickRange(key)
-    setFrom(range.from)
-    setTo(range.to)
-    load(range.from, range.to)
+    setForm(next)
+    load(next)
   }
+
+  function resetFilters() {
+    const range = computeQuickRange('30d')
+    const next: Filters = {
+      from: range.from,
+      to: range.to,
+      categoryId: '',
+      brandId: '',
+      orderType: '',
+      paymentMethod: '',
+    }
+    setActiveQuickRange('30d')
+    setForm(next)
+    load(next)
+  }
+
+  const chart = useMemo(
+    () => (data ? buildChartData(data.revenueByDay) : { data: [], granularity: 'day' as const }),
+    [data],
+  )
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-3">
-        {QUICK_RANGES.map((r) => (
-          <button
-            key={r.key}
-            onClick={() => applyQuickRange(r.key)}
-            className={`text-xs px-3 py-1.5 border ${
-              activeQuickRange === r.key
-                ? 'bg-stone-900 border-stone-900 text-white'
-                : 'border-stone-300 text-stone-600 hover:border-stone-900'
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-1">
+        <h1 className="text-2xl font-semibold text-stone-900">Thống kê bán hàng</h1>
+        <p className="text-sm text-stone-500">
+          Đang xem: <span className="font-medium text-stone-700">{formatFullDate(applied.from)} – {formatFullDate(applied.to)}</span>
+          {appliedFilterLabels.length > 0 && <span className="text-stone-400"> · {appliedFilterLabels.join(' · ')}</span>}
+        </p>
       </div>
-      <div className="flex flex-wrap items-end gap-3 mb-6">
-        <div>
-          <label className="block text-xs text-stone-500 mb-1">Từ ngày</label>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => {
-              setFrom(e.target.value)
-              setActiveQuickRange(null)
-            }}
-            className="border border-stone-300 px-2 py-1.5 text-sm"
-          />
+      <p className="text-sm text-stone-500 mb-5">
+        Doanh thu gộp gồm cả đơn sau đó bị trả lại; doanh thu thuần là phần tiền shop thực sự còn giữ.
+      </p>
+
+      <div className="border border-stone-200 bg-white p-4 mb-8">
+        <div className="flex flex-wrap gap-2 mb-4">
+          {QUICK_RANGES.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => applyQuickRange(r.key)}
+              className={`text-xs px-3 py-1.5 border ${
+                activeQuickRange === r.key
+                  ? 'bg-stone-900 border-stone-900 text-white'
+                  : 'border-stone-300 text-stone-600 hover:border-stone-900'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
-        <div>
-          <label className="block text-xs text-stone-500 mb-1">Đến ngày</label>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => {
-              setTo(e.target.value)
-              setActiveQuickRange(null)
-            }}
-            className="border border-stone-300 px-2 py-1.5 text-sm"
-          />
+
+        {/* Lưới cố định thay vì flex-wrap: các ô lọc luôn thẳng cột, không nhảy chỗ theo bề rộng màn hình. */}
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Từ ngày</label>
+            <input
+              type="date"
+              value={form.from}
+              max={form.to}
+              onChange={(e) => {
+                setForm({ ...form, from: e.target.value })
+                setActiveQuickRange(null)
+              }}
+              className="w-full border border-stone-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Đến ngày</label>
+            <input
+              type="date"
+              value={form.to}
+              min={form.from}
+              onChange={(e) => {
+                setForm({ ...form, to: e.target.value })
+                setActiveQuickRange(null)
+              }}
+              className="w-full border border-stone-300 px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Danh mục</label>
+            <select
+              value={form.categoryId}
+              onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
+              className="w-full border border-stone-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Tất cả danh mục</option>
+              {selectableCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {'  '.repeat(c.depth) + (c.depth > 0 ? '└ ' : '') + c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Thương hiệu</label>
+            <select
+              value={form.brandId}
+              onChange={(e) => setForm({ ...form, brandId: e.target.value })}
+              className="w-full border border-stone-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Tất cả thương hiệu</option>
+              {brands.map((b) => (
+                <option key={b.brandId} value={b.brandId}>
+                  {b.brandName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Kênh bán</label>
+            <select
+              value={form.orderType}
+              onChange={(e) => setForm({ ...form, orderType: e.target.value as Filters['orderType'] })}
+              className="w-full border border-stone-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Tất cả kênh</option>
+              <option value="ONLINE">Online</option>
+              <option value="POS">Tại quầy (POS)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-stone-500 mb-1">Thanh toán</label>
+            <select
+              value={form.paymentMethod}
+              onChange={(e) => setForm({ ...form, paymentMethod: e.target.value as Filters['paymentMethod'] })}
+              className="w-full border border-stone-300 px-2 py-1.5 text-sm"
+            >
+              <option value="">Tất cả phương thức</option>
+              <option value="COD">Tiền mặt / COD</option>
+              <option value="VNPAY">VNPay</option>
+              <option value="BANK_TRANSFER">Chuyển khoản</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="block text-xs text-stone-500 mb-1">Danh mục</label>
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            className="border border-stone-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">Tất cả danh mục</option>
-            {categories.map((c) => (
-              <option key={c.categoryId} value={c.categoryId}>
-                {c.categoryName}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-stone-500 mb-1">Thương hiệu</label>
-          <select
-            value={brandId}
-            onChange={(e) => setBrandId(e.target.value)}
-            className="border border-stone-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">Tất cả thương hiệu</option>
-            {brands.map((b) => (
-              <option key={b.brandId} value={b.brandId}>
-                {b.brandName}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-stone-500 mb-1">Kênh bán</label>
-          <select
-            value={orderType}
-            onChange={(e) => setOrderType(e.target.value as '' | 'ONLINE' | 'POS')}
-            className="border border-stone-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">Tất cả kênh</option>
-            <option value="ONLINE">Online</option>
-            <option value="POS">Tại quầy (POS)</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-stone-500 mb-1">Thanh toán</label>
-          <select
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
-            className="border border-stone-300 px-2 py-1.5 text-sm"
-          >
-            <option value="">Tất cả phương thức</option>
-            <option value="COD">Tiền mặt / COD</option>
-            <option value="VNPAY">VNPay</option>
-            <option value="BANK_TRANSFER">Chuyển khoản</option>
-            <option value="MOMO">Momo</option>
-          </select>
-        </div>
-        <button
-          onClick={() => load()}
-          className="bg-stone-900 hover:bg-stone-800 text-white text-sm font-semibold px-4 py-2"
-        >
-          Xem thống kê
-        </button>
-        {data && (
+
+        <div className="flex flex-wrap items-center gap-3 mt-4">
           <button
-            onClick={() => exportCsv(data)}
-            className="border border-stone-300 hover:border-stone-900 text-sm px-4 py-2"
+            onClick={() => load(form)}
+            disabled={loading}
+            className="bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white text-sm font-semibold px-4 py-2"
+          >
+            {loading ? 'Đang tải...' : 'Xem thống kê'}
+          </button>
+          <button
+            onClick={resetFilters}
+            disabled={loading}
+            className="border border-stone-300 hover:border-stone-900 disabled:opacity-60 text-sm px-4 py-2"
+          >
+            Đặt lại bộ lọc
+          </button>
+          {/* Luôn render (chỉ disable) -- render có điều kiện làm hàng nút co lại rồi bung ra mỗi lần tải. */}
+          <button
+            onClick={() => data && exportCsv(data, { from: applied.from, to: applied.to, filters: appliedFilterLabels })}
+            disabled={!data || loading}
+            className="border border-stone-300 hover:border-stone-900 disabled:opacity-60 text-sm px-4 py-2"
           >
             Xuất CSV
           </button>
-        )}
+          {isDirty && !loading && (
+            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1">
+              Bộ lọc đã đổi — số liệu bên dưới vẫn là của lần xem trước, bấm "Xem thống kê" để cập nhật.
+            </span>
+          )}
+        </div>
       </div>
 
-      {error ? (
-        <p className="text-sm text-red-600">{error}</p>
-      ) : loading || !data ? (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 animate-pulse">
+      {/* Lỗi hiện dạng banner, KHÔNG thay thế cả trang -- mất mạng 1 giây mà xoá sạch số liệu đang xem thì
+          người dùng tưởng trang hỏng, lại không có cách nào lấy lại ngoài F5. */}
+      {error && (
+        <div className="flex flex-wrap items-center gap-3 border border-red-200 bg-red-50 text-red-700 text-sm px-4 py-3 mb-6">
+          <span>{error}</span>
+          <button onClick={() => load(form)} className="border border-red-300 hover:bg-red-100 px-3 py-1 text-xs">
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {!data ? (
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 animate-pulse">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="border border-stone-200 p-4 h-20 bg-stone-100" />
+            <div key={i} className="border border-stone-200 h-24 bg-stone-100" />
           ))}
         </div>
       ) : (
-        <>
+        <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
           {/* Ô số liệu tổng quan -- tách rõ Doanh thu gộp / Hoàn trả / Doanh thu thuần thay vì gộp
-              chung 1 số có thể âm khó hiểu. */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+              chung 1 số có thể âm khó hiểu. 5 cột chỉ bật ở xl: vì vùng nội dung đã trừ mất sidebar
+              224px, ép 5 cột sớm hơn sẽ làm số tiền dài tràn ra ngoài viền ô. */}
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
             <SummaryCard
               label="Doanh thu gộp"
               value={formatVnd(data.summary.completedRevenue)}
               highlight
               trend={<TrendBadge percent={data.periodComparison.revenueChangePercent} />}
             />
-            <SummaryCard label="Hoàn trả" value={`-${formatVnd(data.summary.returnedRevenue)}`} negative />
             <SummaryCard
-              label="Doanh thu thuần"
-              value={formatVnd(data.summary.totalRevenue)}
-              negative={data.summary.totalRevenue < 0}
+              label="Hoàn trả"
+              // Chỉ tô đỏ + dấu trừ khi THỰC SỰ có khoản hoàn -- kỳ không ai trả hàng mà hiện "-0₫" đỏ
+              // chói giữa trang thì trạng thái bình thường nhất lại trông như đang có lỗi.
+              value={data.summary.returnedRevenue > 0 ? `-${formatVnd(data.summary.returnedRevenue)}` : formatVnd(0)}
+              negative={data.summary.returnedRevenue > 0}
             />
+            <SummaryCard label="Doanh thu thuần" value={formatVnd(data.summary.totalRevenue)} />
             <SummaryCard
               label="Số đơn thành công"
               value={String(data.summary.totalOrders)}
@@ -387,43 +631,42 @@ export default function AdminStatisticsPage() {
             <SummaryCard label="Giá trị đơn TB" value={formatVnd(data.summary.averageOrderValue)} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <SummaryCard label="Đơn huỷ" value={String(data.summary.cancelledOrders)} />
+            <SummaryCard label="Đơn trả hàng (đã hoàn + đang chờ)" value={String(data.summary.returnedOrders)} />
             <SummaryCard
-              label="Đơn huỷ"
-              value={String(data.summary.cancelledOrders)}
+              label="Bán online"
+              value={`${data.summary.onlineOrders} đơn`}
+              sub={formatVnd(data.summary.onlineRevenue)}
             />
             <SummaryCard
-              label="Đơn trả hàng (đã hoàn + đang chờ)"
-              value={String(data.summary.returnedOrders)}
+              label="Bán tại quầy (POS)"
+              value={`${data.summary.posOrders} đơn`}
+              sub={formatVnd(data.summary.posRevenue)}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="border border-stone-200 p-4">
-              <p className="text-xs text-stone-500 mb-1">Bán online</p>
-              <p className="text-lg font-semibold text-stone-900">{data.summary.onlineOrders} đơn</p>
-              <p className="text-sm text-stone-500">{formatVnd(data.summary.onlineRevenue)}</p>
+          {/* Doanh thu theo ngày -- 2 cột riêng biệt: cam = doanh thu (ghi vào NGÀY BÁN), đỏ = hoàn trả
+              (ghi vào NGÀY HOÀN, vẽ ÂM để tụt xuống dưới trục 0). */}
+          <section className="border border-stone-200 bg-white p-4 mb-8">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+              <h2 className="text-lg font-semibold text-stone-900">Doanh thu theo thời gian</h2>
+              <span className="text-xs text-stone-500">
+                {chart.granularity === 'day'
+                  ? 'Theo ngày'
+                  : chart.granularity === 'week'
+                  ? 'Gộp theo tuần (khoảng xem dài)'
+                  : 'Gộp theo tháng (khoảng xem dài)'}
+              </span>
             </div>
-            <div className="border border-stone-200 p-4">
-              <p className="text-xs text-stone-500 mb-1">Bán tại quầy (POS)</p>
-              <p className="text-lg font-semibold text-stone-900">{data.summary.posOrders} đơn</p>
-              <p className="text-sm text-stone-500">{formatVnd(data.summary.posRevenue)}</p>
-            </div>
-          </div>
-
-          {/* Doanh thu theo ngày -- 2 cột riêng biệt: cam = doanh thu (COMPLETED), đỏ = hoàn trả (vẽ
-              ÂM để tụt xuống dưới trục 0). Tách riêng để hoàn trả hiện rõ là "Hoàn trả" có chủ đích,
-              không phải 1 con số âm trông giống lỗi. */}
-          <div className="border border-stone-200 p-4 mb-8">
-            <p className="text-sm font-semibold text-stone-900 mb-4">Doanh thu theo ngày</p>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={240}>
               <BarChart
-                data={data.revenueByDay.map((r) => ({ ...r, returnedRevenueNeg: -r.returnedRevenue }))}
+                data={chart.data.map((r) => ({ ...r, returnedRevenueNeg: -r.returnedRevenue }))}
                 margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
               >
                 <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="3 3" />
                 <XAxis
-                  dataKey="date"
+                  dataKey="label"
                   tick={{ fontSize: 10, fill: '#78716c' }}
                   tickLine={false}
                   axisLine={{ stroke: GRID_COLOR }}
@@ -433,10 +676,8 @@ export default function AdminStatisticsPage() {
                   tick={{ fontSize: 10, fill: '#78716c' }}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(v) =>
-                    (Math.abs(v) >= 1000000 ? `${v / 1000000}tr` : Math.abs(v) >= 1000 ? `${v / 1000}k` : v)
-                  }
-                  width={40}
+                  tickFormatter={formatAxisMoney}
+                  width={48}
                 />
                 <Tooltip content={<RevenueTooltip />} cursor={{ fill: 'rgba(194,65,12,0.06)' }} />
                 <Legend
@@ -448,16 +689,16 @@ export default function AdminStatisticsPage() {
                 <Bar dataKey="returnedRevenueNeg" name="Hoàn trả" fill="#dc2626" radius={[0, 0, 4, 4]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </section>
 
           {/* Doanh thu theo danh mục + Phương thức thanh toán */}
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="border border-stone-200 p-4">
-              <p className="text-sm font-semibold text-stone-900 mb-4">Doanh thu theo danh mục</p>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-8">
+            <section className="border border-stone-200 bg-white p-4">
+              <h2 className="text-lg font-semibold text-stone-900 mb-4">Doanh thu theo danh mục</h2>
               {data.revenueByCategory.length === 0 ? (
                 <p className="text-sm text-stone-400 py-6 text-center">Chưa có dữ liệu</p>
               ) : (
-                <ResponsiveContainer width="100%" height={Math.max(140, data.revenueByCategory.length * 36)}>
+                <ResponsiveContainer width="100%" height={Math.max(160, data.revenueByCategory.length * 36)}>
                   <BarChart
                     data={data.revenueByCategory}
                     layout="vertical"
@@ -469,7 +710,7 @@ export default function AdminStatisticsPage() {
                       tick={{ fontSize: 10, fill: '#78716c' }}
                       tickLine={false}
                       axisLine={{ stroke: GRID_COLOR }}
-                      tickFormatter={(v) => (v >= 1000000 ? `${v / 1000000}tr` : v >= 1000 ? `${v / 1000}k` : v)}
+                      tickFormatter={formatAxisMoney}
                     />
                     <YAxis
                       type="category"
@@ -477,17 +718,17 @@ export default function AdminStatisticsPage() {
                       tick={{ fontSize: 11, fill: '#44403c' }}
                       tickLine={false}
                       axisLine={false}
-                      width={110}
+                      width={130}
                     />
                     <Tooltip content={<RevenueTooltip />} cursor={{ fill: 'rgba(194,65,12,0.06)' }} />
                     <Bar dataKey="revenue" name="Doanh thu" fill={ADMIN_ACCENT} radius={[0, 4, 4, 0]} maxBarSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
-            </div>
+            </section>
 
-            <div className="border border-stone-200 p-4">
-              <p className="text-sm font-semibold text-stone-900 mb-4">Phương thức thanh toán</p>
+            <section className="border border-stone-200 bg-white p-4">
+              <h2 className="text-lg font-semibold text-stone-900 mb-4">Phương thức thanh toán</h2>
               {data.paymentMethodBreakdown.length === 0 ? (
                 <p className="text-sm text-stone-400 py-6 text-center">Chưa có dữ liệu</p>
               ) : (
@@ -499,14 +740,14 @@ export default function AdminStatisticsPage() {
                     percent: p.revenue / total,
                   }))
                   return (
-                    <ResponsiveContainer width="100%" height={220}>
+                    <ResponsiveContainer width="100%" height={240}>
                       <PieChart>
                         <Pie
                           data={pieData}
                           dataKey="revenue"
                           nameKey="label"
-                          innerRadius={50}
-                          outerRadius={80}
+                          innerRadius={55}
+                          outerRadius={85}
                           paddingAngle={2}
                           strokeWidth={2}
                           stroke="#fff"
@@ -530,71 +771,79 @@ export default function AdminStatisticsPage() {
                   )
                 })()
               )}
-            </div>
-          </div>
-
-          {/* Cảnh báo tồn kho thấp -- KHÔNG phụ thuộc khoảng ngày đang xem, luôn là tồn kho hiện tại */}
-          <div className="border border-stone-200 p-4 mb-8">
-            <p className="text-sm font-semibold text-stone-900 mb-4">Cảnh báo tồn kho thấp</p>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-stone-500 border-b border-stone-200">
-                  <th className="py-2 font-normal">Sản phẩm</th>
-                  <th className="py-2 font-normal">Size / Màu</th>
-                  <th className="py-2 font-normal text-right">Còn lại</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.lowStockVariants.map((v, i) => (
-                  <tr key={i} className="border-b border-stone-100 last:border-0">
-                    <td className="py-2 text-stone-900">{v.productName}</td>
-                    <td className="py-2 text-stone-600">
-                      {v.size} / {v.color}
-                    </td>
-                    <td className="py-2 text-right font-medium text-red-600">{v.stockQuantity}</td>
-                  </tr>
-                ))}
-                {data.lowStockVariants.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="py-4 text-center text-stone-400">
-                      Không có biến thể nào sắp hết hàng
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            </section>
           </div>
 
           {/* Top sản phẩm bán chạy */}
-          <div className="border border-stone-200 p-4">
-            <p className="text-sm font-semibold text-stone-900 mb-4">Sản phẩm bán chạy</p>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-stone-500 border-b border-stone-200">
-                  <th className="py-2 font-normal">Sản phẩm</th>
-                  <th className="py-2 font-normal text-right">Số lượng bán</th>
-                  <th className="py-2 font-normal text-right">Doanh thu</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.topProducts.map((p) => (
-                  <tr key={p.productName} className="border-b border-stone-100 last:border-0">
-                    <td className="py-2 text-stone-900">{p.productName}</td>
-                    <td className="py-2 text-right text-stone-600">{p.quantitySold}</td>
-                    <td className="py-2 text-right text-stone-900 font-medium">{formatVnd(p.revenue)}</td>
+          <section className="border border-stone-200 bg-white p-4 mb-8">
+            <h2 className="text-lg font-semibold text-stone-900 mb-4">Sản phẩm bán chạy</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-stone-500 border-b border-stone-200">
+                    <th className="py-2 font-normal">Sản phẩm</th>
+                    <th className="py-2 font-normal text-right w-32">Số lượng bán</th>
+                    <th className="py-2 font-normal text-right w-40">Doanh thu</th>
                   </tr>
-                ))}
-                {data.topProducts.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="py-4 text-center text-stone-400">
-                      Chưa có dữ liệu bán hàng trong khoảng thời gian này
-                    </td>
+                </thead>
+                <tbody>
+                  {data.topProducts.map((p) => (
+                    <tr key={p.productName} className="border-b border-stone-100 last:border-0">
+                      <td className="py-2 text-stone-900">{p.productName}</td>
+                      <td className="py-2 text-right text-stone-600 tabular-nums">{p.quantitySold}</td>
+                      <td className="py-2 text-right text-stone-900 font-medium tabular-nums">{formatVnd(p.revenue)}</td>
+                    </tr>
+                  ))}
+                  {data.topProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-4 text-center text-stone-400">
+                        Chưa có dữ liệu bán hàng trong khoảng thời gian này
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Cảnh báo tồn kho thấp -- KHÔNG phụ thuộc khoảng ngày/bộ lọc đang xem */}
+          <section className="border border-stone-200 bg-white p-4">
+            <h2 className="text-lg font-semibold text-stone-900">Cảnh báo tồn kho thấp</h2>
+            <p className="text-xs text-stone-500 mb-4">
+              Tồn kho hiện tại của sản phẩm đang kinh doanh (còn ≤ {LOW_STOCK_THRESHOLD}) — không theo khoảng ngày
+              và bộ lọc phía trên.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-stone-500 border-b border-stone-200">
+                    <th className="py-2 font-normal">Sản phẩm</th>
+                    <th className="py-2 font-normal w-40">Size / Màu</th>
+                    <th className="py-2 font-normal text-right w-28">Còn lại</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
+                </thead>
+                <tbody>
+                  {data.lowStockVariants.map((v, i) => (
+                    <tr key={i} className="border-b border-stone-100 last:border-0">
+                      <td className="py-2 text-stone-900">{v.productName}</td>
+                      <td className="py-2 text-stone-600">
+                        {v.size} / {v.color}
+                      </td>
+                      <td className="py-2 text-right font-medium text-red-600 tabular-nums">{v.stockQuantity}</td>
+                    </tr>
+                  ))}
+                  {data.lowStockVariants.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="py-4 text-center text-stone-400">
+                        Không có biến thể nào sắp hết hàng
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   )
@@ -603,12 +852,14 @@ export default function AdminStatisticsPage() {
 function SummaryCard({
   label,
   value,
+  sub,
   highlight,
   negative,
   trend,
 }: {
   label: string
   value: string
+  sub?: string
   highlight?: boolean
   negative?: boolean
   trend?: ReactNode
@@ -616,17 +867,20 @@ function SummaryCard({
   return (
     <div
       className={`border p-4 ${
-        highlight ? 'border-orange-700 bg-orange-50' : negative ? 'border-red-200 bg-red-50' : 'border-stone-200'
+        highlight ? 'border-orange-700 bg-orange-50' : negative ? 'border-red-200 bg-red-50' : 'border-stone-200 bg-white'
       }`}
     >
       <p className="text-xs text-stone-500 mb-1">{label}</p>
+      {/* break-words + tabular-nums: số tiền lớn (vd 125.000.000₫) trong ô hẹp phải xuống dòng trong ô,
+          không được tràn đè sang ô bên cạnh. */}
       <p
-        className={`text-lg font-semibold ${
+        className={`text-lg font-semibold wrap-break-word tabular-nums ${
           highlight ? 'text-orange-700' : negative ? 'text-red-600' : 'text-stone-900'
         }`}
       >
         {value}
       </p>
+      {sub && <p className="text-sm text-stone-500 tabular-nums">{sub}</p>}
       {trend && <div className="mt-1">{trend}</div>}
     </div>
   )

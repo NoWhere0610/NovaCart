@@ -9,6 +9,9 @@ export interface AdminVariantDto {
   color: string
   sku?: string
   stockQuantity: number
+  // Tồn kho ĐỌC ĐƯỢC lúc mở form. Backend so sánh với stockQuantity để phân biệt "admin thật sự sửa tồn
+  // kho" với "form gửi lại con số cũ kèm theo khi chỉ sửa mô tả/giá" -- xem AdminProductService.applyStock.
+  originalStockQuantity?: number | null
 }
 
 export interface AdminProductDto {
@@ -43,9 +46,11 @@ export interface AdminProductPayload {
   variants: AdminVariantDto[]
 }
 
-export async function getAdminProductsApi(keyword: string, page = 0, size = 20) {
+export async function getAdminProductsApi(keyword: string, page = 0, size = 20, lowStockOnly = false) {
   const { data } = await apiClient.get<PageResponse<AdminProductDto>>('/admin/products', {
-    params: { keyword: keyword || undefined, page, size },
+    // lowStockOnly lọc ở BACKEND (query trên toàn bộ sản phẩm), không lọc lại ở client trên trang hiện tại
+    // -- nếu lọc ở client thì mặt hàng sắp hết nằm ở trang sau sẽ không bao giờ hiện ra.
+    params: { keyword: keyword || undefined, page, size, lowStockOnly: lowStockOnly || undefined },
   })
   return data
 }
@@ -74,18 +79,23 @@ export async function uploadAdminProductImageApi(file: File) {
 }
 
 // ================== INVENTORY (sửa nhanh tồn kho 1 biến thể) ==================
-// Không còn màn "Kho tồn hàng" riêng (đã gộp vào trang Sản phẩm) -- API này giờ chỉ dùng nội bộ cho
-// nút +/- điều chỉnh nhanh tồn kho ngay trong bảng sản phẩm, không cần mở form sửa cả sản phẩm.
+// Không còn màn "Kho tồn hàng" riêng (đã gộp vào trang Sản phẩm) -- API này giờ chỉ dùng cho nút +/-
+// điều chỉnh nhanh tồn kho ngay trong bảng sản phẩm.
 
-export interface AdminInventoryUpdatePayload {
-  size: string
-  color: string
-  sku?: string
-  stockQuantity: number
-}
-
-export async function updateAdminInventoryItemApi(variantId: number, payload: AdminInventoryUpdatePayload) {
-  await apiClient.put(`/admin/inventory/${variantId}`, payload)
+/**
+ * Gửi MỨC THAY ĐỔI (+1/-1), không gửi số tồn kho cuối cùng.
+ *
+ * Bản cũ tự cộng trên state của trình duyệt rồi PUT lên số tuyệt đối. Con số đó tính từ dữ liệu đọc lúc
+ * tải trang, nên mọi giao dịch xảy ra sau đó (POS bán, đơn online, admin khác nhập kho) đều bị ghi đè im
+ * lặng -- bấm + nhanh 3 lần cũng chỉ tăng 1. Gửi delta thì phép cộng chạy ở backend trong transaction đã
+ * khoá row nên không mất cập nhật nào; trả về số tồn kho THẬT sau khi cộng để UI hiển thị đúng.
+ */
+export async function adjustAdminInventoryStockApi(variantId: number, delta: number) {
+  const { data } = await apiClient.patch<{ stockQuantity: number }>(
+    `/admin/inventory/${variantId}/stock`,
+    { delta },
+  )
+  return data.stockQuantity
 }
 
 // ================== CATEGORIES ==================
@@ -271,5 +281,24 @@ export async function lockAdminUserApi(userId: number) {
 
 export async function unlockAdminUserApi(userId: number) {
   const { data } = await apiClient.put<AdminUserDto>(`/admin/users/${userId}/unlock`)
+  return data
+}
+
+// ================== PERMISSIONS (phân quyền nhân viên) ==================
+
+export interface AdminPermissionItemDto {
+  code: string
+  group: string
+  label: string
+  granted: boolean
+}
+
+export async function getStaffPermissionsApi() {
+  const { data } = await apiClient.get<AdminPermissionItemDto[]>('/admin/permissions/staff')
+  return data
+}
+
+export async function updateStaffPermissionsApi(permissions: Record<string, boolean>) {
+  const { data } = await apiClient.put<AdminPermissionItemDto[]>('/admin/permissions/staff', { permissions })
   return data
 }

@@ -12,7 +12,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "orders")
+// Index cho 2 cột mà thống kê luôn lọc theo khoảng (WHERE created_at BETWEEN.../returned_at BETWEEN...) --
+// bảng orders hiện chỉ có sẵn index cho user_id và status, quét theo ngày đang phải full scan.
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_orders_created_at", columnList = "created_at"),
+        @Index(name = "idx_orders_returned_at", columnList = "returned_at")
+})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -34,11 +39,12 @@ public class Order {
         RETURNED           // admin đã duyệt trả hàng/hoàn tiền
     }
 
+    /** Chỉ 3 phương thức thực sự có luồng xử lý. Cố tình KHÔNG khai báo sẵn phương thức chưa tích hợp
+     *  (trước đây có MOMO) -- enum có giá trị mà không cổng nào xử lý chỉ tạo ra đường đi lỗi. */
     public enum PaymentMethod {
         COD,
         BANK_TRANSFER,
-        VNPAY,
-        MOMO
+        VNPAY
     }
 
     public enum PaymentStatus {
@@ -122,6 +128,19 @@ public class Order {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // Thời điểm CHUYỂN sang RETURNED (khác createdAt -- 1 đơn có thể tạo tháng 7 nhưng trả hàng tháng 9).
+    // Thống kê hoàn trả phải nhóm theo cột này, không phải createdAt, không thì báo cáo tháng tạo đơn bị
+    // "sửa ngược" thành có khoản hoàn trong khi tháng thực sự phát sinh hoàn lại không thấy gì.
+    @Column(name = "returned_at")
+    private LocalDateTime returnedAt;
+
+    // Optimistic lock -- 2 request cùng load rồi cùng sửa 1 đơn (vd double-click checkout, admin xác
+    // nhận trùng lúc khách huỷ, POS checkout/huỷ cùng lúc) thì request save() SAU sẽ bị JPA ném
+    // ObjectOptimisticLockingFailureException thay vì âm thầm ghi đè -- xem GlobalExceptionHandler.
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();

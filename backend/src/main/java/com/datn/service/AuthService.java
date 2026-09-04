@@ -41,6 +41,16 @@ public class AuthService {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw ApiException.badRequest("Email đã được sử dụng");
         }
+        // CustomUserDetailsService cho đăng nhập bằng username HOẶC email, thử username TRƯỚC -- nếu
+        // không chặn chéo ở đây, user B đăng ký username trùng ĐÚNG email của user A (2 cột khác nhau nên
+        // 2 check ở trên đều pass) sẽ khiến việc "đăng nhập bằng email" của A bị nhập nhằng, có thể vô
+        // tình khớp nhầm sang tài khoản B trước.
+        if (userRepository.existsByUsername(request.getEmail())) {
+            throw ApiException.badRequest("Email này đang trùng với tên đăng nhập của một tài khoản khác");
+        }
+        if (userRepository.existsByEmail(request.getUsername())) {
+            throw ApiException.badRequest("Tên đăng nhập này đang trùng với email của một tài khoản khác");
+        }
 
         Role customerRole = roleRepository.findByRoleName(DEFAULT_ROLE)
                 // Báo lỗi rõ ràng thay vì NullPointerException nếu role mặc định chưa có trong DB.

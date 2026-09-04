@@ -56,7 +56,17 @@ public class AddressService {
     @Transactional
     public void delete(Long userId, Long addressId) {
         Address address = getOwnedAddressOrThrow(userId, addressId);
+        boolean wasDefault = Boolean.TRUE.equals(address.getIsDefault());
         addressRepository.delete(address);
+
+        // Xoá đúng địa chỉ đang là mặc định -- tự đôn 1 địa chỉ còn lại lên làm mặc định, không thì
+        // tài khoản không còn địa chỉ mặc định nào (checkout sẽ không tự chọn sẵn được địa chỉ nào).
+        if (wasDefault) {
+            addressRepository.findByUser_UserId(userId).stream().findFirst().ifPresent(next -> {
+                next.setIsDefault(true);
+                addressRepository.save(next);
+            });
+        }
     }
 
     // ----- helper nội bộ -----
@@ -79,6 +89,17 @@ public class AddressService {
                 });
     }
 
+    // Toạ độ khách gửi lên KHÔNG được xác minh có thực sự khớp với tỉnh/phường đã chọn hay không (client
+    // tự gửi lat/lng, không bắt buộc đi qua VietMap Autocomplete) -- việc đối chiếu ngược bằng reverse
+    // geocode + so khớp tên tỉnh không đủ tin cậy để chặn cứng (VietMap còn lỗi tên tỉnh cũ/mới sau cải
+    // cách hành chính, xem VietMapService), nên CHỈ chặn được trường hợp rõ ràng vô lý: toạ độ nằm ngoài
+    // hẳn lãnh thổ Việt Nam (dữ liệu rác/lỗi phía client), không chặn được việc khách cố tình khai toạ độ
+    // gần showroom để giảm phí ship trong khi khai địa chỉ giao ở tỉnh khác.
+    private static final double VN_MIN_LAT = 8.0;
+    private static final double VN_MAX_LAT = 23.5;
+    private static final double VN_MIN_LNG = 102.0;
+    private static final double VN_MAX_LNG = 115.0;
+
     private void applyRequest(Address address, AddressRequest request) {
         address.setReceiverName(request.getReceiverName());
         address.setPhone(request.getPhone());
@@ -86,8 +107,15 @@ public class AddressService {
         address.setDistrict(request.getDistrict());
         address.setWard(request.getWard());
         address.setDetailAddress(request.getDetailAddress());
-        address.setLatitude(request.getLatitude());
-        address.setLongitude(request.getLongitude());
+
+        Double lat = request.getLatitude();
+        Double lng = request.getLongitude();
+        if (lat != null && lng != null
+                && (lat < VN_MIN_LAT || lat > VN_MAX_LAT || lng < VN_MIN_LNG || lng > VN_MAX_LNG)) {
+            throw ApiException.badRequest("Toạ độ địa chỉ không hợp lệ, vui lòng chọn lại từ gợi ý hoặc bản đồ");
+        }
+        address.setLatitude(lat);
+        address.setLongitude(lng);
     }
 
     /** Tạo reference User chỉ chứa id để gán vào @ManyToOne mà không cần query cả bản ghi User. */

@@ -3500,8 +3500,8 @@ SET IDENTITY_INSERT [dbo].[roles] OFF
 INSERT [dbo].[user_roles] ([user_id], [role_id]) VALUES (1, 1)
 SET IDENTITY_INSERT [dbo].[users] ON
 
--- Admin mặc định -- mật khẩu: Admin@123 (cột password bên dưới là hash BCrypt của mật khẩu này)
-INSERT [dbo].[users] ([user_id], [username], [password], [email], [full_name], [phone], [avatar_url], [is_active], [created_at], [updated_at]) VALUES (1, N'admin', N'$2b$10$WMXDnk1Ql7sDS7YIoe8KyetKu6SAB2b4GGyVld1tg/zZt8nr97xEC', N'admin@menswear.com', N'Quản trị viên', NULL, NULL, 1, CAST(N'2026-08-02T20:35:57.8210607' AS DateTime2), CAST(N'2026-08-03T21:44:37.0266667' AS DateTime2))
+-- Admin mặc định -- mật khẩu: admin@123 (cột password bên dưới là hash BCrypt của mật khẩu này)
+INSERT [dbo].[users] ([user_id], [username], [password], [email], [full_name], [phone], [avatar_url], [is_active], [created_at], [updated_at]) VALUES (1, N'admin', N'$2b$10$Ra0s6V9Z1y5gaGwxlDtE9.jW4lvfGV7awIX330tS0mqZctjqLvj16', N'admin@menswear.com', N'Quản trị viên', NULL, NULL, 1, CAST(N'2026-08-02T20:35:57.8210607' AS DateTime2), CAST(N'2026-08-03T21:44:37.0266667' AS DateTime2))
 SET IDENTITY_INSERT [dbo].[users] OFF
 SET IDENTITY_INSERT [dbo].[vouchers] ON 
 
@@ -3803,7 +3803,7 @@ REFERENCES [dbo].[users] ([user_id])
 GO
 ALTER TABLE [dbo].[wishlist] CHECK CONSTRAINT [FKtrd6335blsefl2gxpb8lr0gr7]
 GO
-ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_method]='VNPAY' OR [payment_method]='MOMO' OR [payment_method]='BANK_TRANSFER' OR [payment_method]='COD'))
+ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_method]='VNPAY' OR [payment_method]='BANK_TRANSFER' OR [payment_method]='COD'))
 GO
 ALTER TABLE [dbo].[orders]  WITH CHECK ADD CHECK  (([payment_status]='REFUNDED' OR [payment_status]='PAID' OR [payment_status]='UNPAID'))
 GO

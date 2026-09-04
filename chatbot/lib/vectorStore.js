@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS kb_chunk (
   gia           NUMERIC(12,2),
   sizes         TEXT[],
   colors        TEXT[],
+  -- Danh sách CẶP size|màu thật sự còn hàng, vd {'m|đen','l|trắng'} (chữ thường). Bắt buộc phải có
+  -- riêng, KHÔNG suy ra được từ sizes + colors: 2 mảng đó rời nhau nên "M, L" x "Đen, Trắng" ngụ ý 4 tổ
+  -- hợp trong khi thực tế chỉ tồn tại 2 -- bot sẽ khẳng định còn hàng cho tổ hợp không hề tồn tại.
+  size_colors   TEXT[],
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- ADD COLUMN IF NOT EXISTS cho DB đã tạo từ trước khi có các cột metadata này (idempotent, an toàn
@@ -76,6 +80,7 @@ ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS thuong_hieu TEXT;
 ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS gia NUMERIC(12,2);
 ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS sizes TEXT[];
 ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS colors TEXT[];
+ALTER TABLE kb_chunk ADD COLUMN IF NOT EXISTS size_colors TEXT[];
 CREATE INDEX IF NOT EXISTS kb_chunk_embedding_idx ON kb_chunk USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS kb_chunk_scope_idx ON kb_chunk (namespace, folder_id);
 CREATE INDEX IF NOT EXISTS kb_chunk_document_idx ON kb_chunk (document_id);
@@ -133,4 +138,32 @@ async function query(text, params) {
   return pool.query(text, params);
 }
 
-module.exports = { pool, query, ensureSchema };
+/**
+ * In ra tình trạng kho tri thức của ĐÚNG namespace đang dùng, gọi lúc khởi động server.
+ *
+ * Lý do cần: sai namespace (Java `novacart.chatbot.namespace` lệch với CHATBOT_NAMESPACE của kit),
+ * chưa chạy đồng bộ lần nào, và kho tri thức rỗng cho ra CÙNG một triệu chứng duy nhất — bot lịch sự
+ * trả "hiện chưa có sản phẩm phù hợp", HTTP 200, không log gì. Đứng trước câu đó không ai phân biệt
+ * được hệ thống hỏng hay bot đang trả lời trung thực. In sẵn số đoạn tri thức theo từng nhóm ngay lúc
+ * khởi động để nhìn console là biết.
+ */
+async function logKnowledgeBaseStatus(namespace) {
+  try {
+    const r = await query(
+      `SELECT folder_id, COUNT(*)::int AS so_doan FROM kb_chunk WHERE namespace = $1 GROUP BY folder_id ORDER BY folder_id`,
+      [namespace],
+    );
+    const total = r.rows.reduce((s, row) => s + row.so_doan, 0);
+    if (!total) {
+      console.warn(`  [vector-store] CẢNH BÁO: namespace "${namespace}" chưa có đoạn tri thức nào -- bot sẽ luôn trả lời "chưa có thông tin".`);
+      console.warn('  [vector-store] Kiểm tra: (1) đã chạy "node lib/productSync.js" chưa, (2) CHATBOT_NAMESPACE có khớp novacart.chatbot.namespace bên Java không.');
+      return;
+    }
+    const detail = r.rows.map((row) => `${row.folder_id}=${row.so_doan}`).join(', ');
+    console.log(`  [vector-store] namespace "${namespace}": ${total} đoạn tri thức (${detail})`);
+  } catch (e) {
+    console.error('  [vector-store] không kiểm tra được tình trạng kho tri thức:', e.message);
+  }
+}
+
+module.exports = { pool, query, ensureSchema, logKnowledgeBaseStatus };

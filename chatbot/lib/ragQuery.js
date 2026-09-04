@@ -27,7 +27,10 @@ const embeddings = require('./embeddings');
 
 const TOP_K = Number(process.env.RAG_TOP_K ?? 8);
 const MAX_DISTANCE = Number(process.env.RAG_MAX_DISTANCE ?? 0.35); // cosine distance <=> 0.35 ~ similarity >= 0.65, cần tinh chỉnh theo thực tế
-const MEMORY_TURNS = 8; // N tin nhắn gần nhất đưa vào ngữ cảnh
+// 8 LƯỢT hỏi-đáp = 16 dòng tin nhắn (mỗi lượt gồm 1 tin của khách + 1 tin của bot). Bản trước lấy LIMIT
+// 8 dòng nhưng tài liệu/comment lại ghi "nhớ 8 lượt" -- thực tế chỉ nhớ được 4 lượt, sai gấp đôi.
+const MEMORY_TURNS = Number(process.env.RAG_MEMORY_TURNS ?? 8);
+const MEMORY_MESSAGE_LIMIT = MEMORY_TURNS * 2;
 const CALL_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS ?? 30000); // fetch() không có timeout mặc định — 1 lượt treo sẽ khiến người dùng chờ vô thời hạn không có lỗi hiển thị
 
 // Folder cố định chứa dữ liệu SẢN PHẨM đồng bộ tự động mỗi ngày từ NovaCart (xem
@@ -35,6 +38,31 @@ const CALL_TIMEOUT_MS = Number(process.env.GEMINI_CHAT_TIMEOUT_MS ?? 30000); // 
 // đúng folder này; tài liệu FAQ/chính sách tải tay ở folder khác không có các
 // cột metadata này (NULL) nên không bị/không cần lọc kiểu này.
 const PRODUCT_FOLDER_ID = 'products';
+
+// Trần riêng cho câu hỏi LIỆT KÊ/ĐẾM. Với câu hỏi thường, TOP_K = 8 là đủ và giữ prompt gọn; nhưng câu
+// "liệt kê tất cả áo sơ mi" mà cắt ở 8 thì bot kê 8 mẫu với giọng như thể đó là tất cả.
+const LIST_LIMIT = Number(process.env.RAG_LIST_LIMIT ?? 60);
+
+/**
+ * Ý định LIỆT KÊ / ĐẾM -- loại câu hỏi mà truy hồi top-K trả lời sai về bản chất: nó lấy K đoạn giống
+ * nhất, nó không có khái niệm "hết".
+ *
+ * TUYỆT ĐỐI KHÔNG dùng \b ở đây. Trong regex JavaScript, \b chỉ biết ký tự từ ASCII [A-Za-z0-9_], nên
+ * /\bliệt\s*kê\b/ KHÔNG BAO GIỜ khớp: "kê" kết thúc bằng "ê" -- không phải ký tự từ -- nên ranh giới
+ * cuối không tồn tại. Cùng lỗi với "tất cả" (ả), "toàn bộ" (ộ). Đã kiểm chứng trên chính máy này:
+ * /\bliệt\s*kê\b/.test('liệt kê tất cả sản phẩm') === false.
+ * Dùng lookbehind \p{L} + cờ u thay thế.
+ *
+ * "bao nhiêu"/"có mấy" phải loại trừ các cụm hỏi về thời gian/tiền ("bao nhiêu lâu", "bao nhiêu tiền")
+ * -- những câu đó không phải câu đếm sản phẩm.
+ */
+const LIST_INTENT = new RegExp(
+    '(?<![\\p{L}])('
+    + 'liệt\\s*kê|danh\\s*sách|tất\\s*cả|toàn\\s*bộ|có\\s*những|gồm\\s*những'
+    + '|bao\\s*nhiêu(?!\\s*(lâu|tiền|đồng|ngày|phút))|có\\s*mấy(?!\\s*(lâu|tiền|ngày))'
+    // Danh từ tiếng Việt phần lớn 2 tiếng, nên "các SẢN PHẨM nào" sẽ trượt nếu chỉ cho 1 tiếng ở giữa.
+    + '|những\\s+(?:\\S+\\s+){1,3}nào|các\\s+(?:\\S+\\s+){1,3}nào'
+    + ')', 'iu');
 
 const AI = {
   model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
@@ -78,12 +106,110 @@ const FILTER_SCHEMA = {
   required: ['hasFilter'],
 };
 
+/**
+ * Danh sách danh mục CÓ THẬT trong kho, nạp một lần rồi giữ trong RAM.
+ *
+ * Vì sao cần: khách gọi sản phẩm bằng lời của họ ("áo phông", "quần bò", "áo bỏ trong quần"), còn cột
+ * danh_muc lưu tên của cửa hàng ("Áo thun", "Quần jean", "Áo sơ mi"). Bản đầu của prompt bảo model
+ * "trích CHÍNH XÁC điều kiện khách nêu", nên nó chép lại đúng chữ của khách -- và câu SQL
+ * `danh_muc ILIKE '%áo bỏ trong quần%'` không khớp gì cả.
+ *
+ * Đo được bằng bộ đo (scripts/do-loc-san-pham.js) trên bộ câu hỏi dùng khẩu ngữ: trích đúng danh mục
+ * chỉ 15%, kéo theo precision/recall 32%. Đưa danh sách thật vào prompt và bắt model CHỌN TỪ DANH SÁCH
+ * chính là cách chữa -- model làm việc ánh xạ ngôn ngữ, không phải việc đoán tên cột.
+ */
+let danhMucCache = null;
+let danhMucCacheAt = 0;
+const DANH_MUC_CACHE_MS = 10 * 60 * 1000;
+
+async function danhMucCoThat(namespace) {
+  if (danhMucCache && Date.now() - danhMucCacheAt < DANH_MUC_CACHE_MS) return danhMucCache;
+  try {
+    const r = await vectorStore.query(
+      `SELECT DISTINCT danh_muc FROM kb_chunk
+        WHERE namespace = $1 AND folder_id = $2 AND danh_muc IS NOT NULL ORDER BY 1`,
+      [namespace, PRODUCT_FOLDER_ID],
+    );
+    danhMucCache = r.rows.map((x) => x.danh_muc);
+    danhMucCacheAt = Date.now();
+  } catch (e) {
+    console.error('  [rag] không đọc được danh sách danh mục:', e.message);
+    danhMucCache = danhMucCache || [];
+  }
+  return danhMucCache;
+}
+
+/** Danh sách MÀU có thật trong kho — dùng cho bước bổ khuyết tất định (xem boSungTatDinh). */
+let mauCache = null;
+let mauCacheAt = 0;
+
+async function mauCoThat(namespace) {
+  if (mauCache && Date.now() - mauCacheAt < DANH_MUC_CACHE_MS) return mauCache;
+  try {
+    const r = await vectorStore.query(
+      `SELECT DISTINCT LOWER(c) AS mau FROM kb_chunk, unnest(colors) AS c
+        WHERE namespace = $1 AND folder_id = $2 ORDER BY 1`,
+      [namespace, PRODUCT_FOLDER_ID],
+    );
+    mauCache = r.rows.map((x) => x.mau);
+    mauCacheAt = Date.now();
+  } catch (e) {
+    console.error('  [rag] không đọc được danh sách màu:', e.message);
+    mauCache = mauCache || [];
+  }
+  return mauCache;
+}
+
+// Đúng danh sách size mà form quản trị cho chọn (FULL_SIZES ở AdminProductsPage) -- tập đóng, dò được
+// bằng mã chứ không cần model.
+const SIZE_CHUAN = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL'];
+
+/**
+ * BỔ KHUYẾT TẤT ĐỊNH cho kết quả trích của model.
+ *
+ * Vì sao cần: bước trích do LLM làm nên KHÔNG tất định. Đã đo được: cùng một câu hỏi "size M màu
+ * Trắng", có lần model trả đủ cả 2 trường, có lần bỏ mất màu -- tỉ lệ dao động 1/3 tới 3/3 giữa các
+ * lần chạy. Mà bộ lọc theo CẶP size/màu (thứ chặn bot khẳng định tổ hợp không tồn tại) chỉ bật khi có
+ * ĐỦ cả hai. Siết prompt không giải quyết được tận gốc vì bản chất là xác suất.
+ *
+ * Size và màu đều là TẬP ĐÓNG, biết trước, nên dò bằng mã được -- không cần đoán. Chỉ bổ khuyết khi
+ * model BỎ TRỐNG trường đó, không bao giờ ghi đè giá trị model đã trích.
+ */
+function boSungTatDinh(filters, searchText, danhSachMau) {
+  const text = String(searchText || '');
+  const thuong = text.toLowerCase();
+
+  if (!filters.size) {
+    // Đòi có chữ "size"/"sz"/"cỡ" ngay trước để không bắt nhầm chữ M/L nằm lẻ trong câu.
+    const m = text.match(new RegExp(`(?:size|sz|cỡ)\\s*[:\\-]?\\s*(${SIZE_CHUAN.join('|')})\\b`, 'i'));
+    if (m) filters.size = m[1].toUpperCase();
+  }
+
+  if (!filters.color) {
+    // Ưu tiên tên màu DÀI nhất khớp được ("xanh navy" phải thắng "xanh").
+    const khop = (danhSachMau || [])
+      .filter((mau) => thuong.includes(mau))
+      .sort((a, b) => b.length - a.length);
+    if (khop.length) filters.color = khop[0];
+  }
+
+  return filters;
+}
+
 /** Trích điều kiện lọc sản phẩm (giá/size/màu/danh mục) từ câu hỏi khách, nếu khách có nêu RÕ.
  * Không suy đoán thêm — khách hỏi chung chung thì trả hasFilter=false, đi tiếp nhánh semantic-thuần. */
-async function extractProductFilters(searchText) {
+async function extractProductFilters(searchText, danhMuc = []) {
   const prompt = `Bạn nhận 1 câu hỏi/tin nhắn của khách mua sắm thời trang nam. Nếu khách nêu RÕ ít nhất 1 điều kiện lọc sản phẩm (khoảng giá, size, màu sắc, loại/danh mục sản phẩm như áo sơ mi/quần jean/áo khoác...), hãy trích CHÍNH XÁC điều kiện đó — kể cả cách nói khẩu ngữ về giá (vd "3 xị" = 300000đ, "1 củ" = 1000000đ, "dưới nửa triệu" = maxPrice 500000, "tầm 2-3 trăm" = minPrice 200000 maxPrice 300000).
 
 QUAN TRỌNG — trường "size" CHỈ là size QUẦN ÁO chuẩn: S, M, L, XL, XXL, 3XL... (hoặc số đo cụ thể nếu khách nói). KHÔNG được điền các từ mô tả FORM/KIỂU DÁNG như "slim", "regular", "rộng", "ôm", "suông", "form rộng"... vào trường size — những từ đó KHÔNG phải size, bỏ qua không lọc theo chúng (vẫn có thể giữ lại trong "category" nếu là 1 phần tên loại sản phẩm, vd "quần tây ống suông").
+
+QUAN TRỌNG — trường "category": cửa hàng chỉ có ĐÚNG các danh mục sau đây:
+${danhMuc.length ? danhMuc.map((x) => `- ${x}`).join('\n') : '(chưa nạp được danh sách danh mục)'}
+
+Khách hàng gọi sản phẩm bằng lời của họ, không dùng tên danh mục của cửa hàng. Nhiệm vụ của bạn là ÁNH XẠ về đúng một tên trong danh sách trên rồi CHÉP LẠI CHÍNH XÁC tên đó (giữ nguyên chữ hoa/thường và dấu). Ví dụ: "áo phông"/"áo cộc tay" -> "Áo thun"; "quần bò"/"quần denim" -> "Quần jean"; "áo bỏ trong quần"/"áo có cổ đi làm" -> "Áo sơ mi"; "bộ vest" -> "Bộ suit"; "quần âu" -> "Quần tây"; "quần đùi"/"quần cộc" -> "Quần short".
+TUYỆT ĐỐI KHÔNG tự đặt tên danh mục mới và KHÔNG chép lại nguyên văn chữ của khách nếu chữ đó không có trong danh sách. Không ánh xạ được về danh mục nào thì để trống trường category (các điều kiện khác vẫn trích bình thường).
+
+TRÍCH ĐỦ MỌI ĐIỀU KIỆN KHÁCH ĐÃ NÊU, không bỏ sót trường nào. Đặc biệt: khách nêu CẢ size LẪN màu thì PHẢI điền cả hai trường "size" và "color" -- điền thiếu một trong hai sẽ khiến hệ thống trả về sản phẩm không đúng thứ khách hỏi.
 
 TUYỆT ĐỐI không suy đoán hay tự thêm điều kiện khách không nói. Nếu khách chỉ hỏi chung chung, chào hỏi, hoặc hỏi về chính sách/FAQ (không phải điều kiện lọc sản phẩm cụ thể), trả hasFilter=false và bỏ trống các trường còn lại.
 
@@ -109,23 +235,65 @@ TIN NHẮN CỦA KHÁCH: ${searchText}`;
 
 /** Lọc cứng theo giá/size/màu/danh mục (SQL) trong đúng PRODUCT_FOLDER_ID, rồi rerank bằng vector
  * trong đúng tập đã lọc — chính xác hơn semantic-thuần khi khách nêu rõ điều kiện. */
-async function retrieveFilteredProducts({ namespace, qVec, filters }) {
+async function retrieveFilteredProducts({ namespace, qVec, filters, lietKe = false }) {
+  // Khách nêu CẢ size lẫn màu -> phải khớp đúng CẶP đó còn hàng, không phải "có size này" VÀ (độc lập)
+  // "có màu này". Sản phẩm còn M/Đen và L/Trắng mà kiểm 2 điều kiện rời nhau sẽ khớp cả "M màu Trắng" --
+  // một tổ hợp không tồn tại, và bot sẽ khẳng định với khách là còn hàng. Xem chú thích ở
+  // productSync.js#productToText và cột kb_chunk.size_colors.
+  const pairKey = filters.size && filters.color
+    ? `${String(filters.size).toLowerCase()}|${String(filters.color).toLowerCase()}`
+    : null;
+
+  // Câu hỏi liệt kê/đếm: mệnh đề WHERE bằng SQL ĐÃ là cổng chặt và chính xác, vector chỉ còn để sắp
+  // thứ tự trong tập đã lọc. Vô hiệu ngưỡng khoảng cách (2 > mọi khoảng cách cosine) và nới trần --
+  // đo được các đoạn sản phẩm chỉ cách nhau 0,14-0,19 nên ngưỡng 0,35 không lọc được gì có ích ở đây,
+  // chỉ cắt oan mất sản phẩm đúng điều kiện.
+  const nguong = lietKe ? 2 : MAX_DISTANCE;
+  const gioiHan = lietKe ? LIST_LIMIT : TOP_K;
+
   const r = await vectorStore.query(
-    `SELECT kc.noi_dung, kf.ten AS folder_ten, (kc.embedding <=> $1::vector) AS distance
+    // COUNT(*) OVER() đếm SAU mệnh đề WHERE nhưng TRƯỚC LIMIT -> tổng số thật, không tốn thêm truy vấn.
+    // Đây là thứ truy hồi vector không bao giờ có: khái niệm "hết".
+    `SELECT kc.noi_dung, kf.ten AS folder_ten, (kc.embedding <=> $1::vector) AS distance,
+            COUNT(*) OVER() AS tong_khop
      FROM kb_chunk kc JOIN kb_folder kf ON kf.id = kc.folder_id
      WHERE kc.namespace = $2 AND kc.folder_id = $3
        AND ($4::numeric IS NULL OR kc.gia >= $4)
        AND ($5::numeric IS NULL OR kc.gia <= $5)
+       -- Có cả size lẫn màu: khớp theo cặp. Chỉ có 1 trong 2: khớp lẻ như cũ.
+       AND ($9::text IS NULL OR $9 = ANY(kc.size_colors))
        -- so khớp size/màu KHÔNG phân biệt hoa/thường -- Gemini có thể trích ra chữ thường ("trắng")
        -- trong khi dữ liệu đồng bộ lưu hoa đầu ("Trắng"), = ANY() thường (case-sensitive) sẽ trượt.
-       AND ($6::text IS NULL OR EXISTS (SELECT 1 FROM unnest(kc.sizes) s WHERE LOWER(s) = LOWER($6)))
-       AND ($7::text IS NULL OR EXISTS (SELECT 1 FROM unnest(kc.colors) c WHERE LOWER(c) = LOWER($7)))
+       AND ($9::text IS NOT NULL OR $6::text IS NULL
+            OR EXISTS (SELECT 1 FROM unnest(kc.sizes) s WHERE LOWER(s) = LOWER($6)))
+       AND ($9::text IS NOT NULL OR $7::text IS NULL
+            OR EXISTS (SELECT 1 FROM unnest(kc.colors) c WHERE LOWER(c) = LOWER($7)))
        -- so khớp danh mục 2 CHIỀU -- Gemini có thể trích cụm dài hơn giá trị lưu (vd "áo sơ mi trắng đi
        -- làm" trong khi danh_muc chỉ lưu "Áo sơ mi") hoặc ngược lại.
        AND ($8::text IS NULL OR kc.danh_muc ILIKE '%' || $8 || '%' OR $8 ILIKE '%' || kc.danh_muc || '%')
+       -- Ngưỡng liên quan ngữ nghĩa, GIỐNG nhánh semantic. Thiếu nó thì khi Gemini trích thiếu điều kiện
+       -- (vd "quần jean dưới 300k" mà bỏ trống category), WHERE rút gọn còn mỗi "giá <= 300k" và câu
+       -- truy vấn trả về 8 sản phẩm rẻ nhất bất kể loại gì -- bot gợi ý áo thun, thắt lưng cho người
+       -- đang hỏi quần jean.
+       AND (kc.embedding <=> $1::vector) <= $10
      ORDER BY kc.embedding <=> $1::vector
-     LIMIT $9`,
-    [qVec, namespace, PRODUCT_FOLDER_ID, filters.minPrice, filters.maxPrice, filters.size, filters.color, filters.category, TOP_K],
+     LIMIT $11`,
+    [qVec, namespace, PRODUCT_FOLDER_ID, filters.minPrice, filters.maxPrice, filters.size, filters.color,
+     filters.category, pairKey, nguong, gioiHan],
+  );
+  return r.rows;
+}
+
+/** Đoạn tri thức NGOÀI folder sản phẩm (FAQ/chính sách) liên quan tới câu hỏi — nhánh lọc cứng khoá cứng
+ * trong folder sản phẩm nên nếu không gộp thêm ở đây, câu hỏi lai kiểu "áo sơ mi này đổi trả mấy ngày?"
+ * (Gemini rất dễ trích category="áo sơ mi" -> hasFilter=true) sẽ không bao giờ nhìn thấy tài liệu chính sách. */
+async function retrieveNonProductChunks({ namespace, qVec, limit }) {
+  const r = await vectorStore.query(
+    `SELECT kc.noi_dung, kf.ten AS folder_ten, (kc.embedding <=> $1::vector) AS distance
+     FROM kb_chunk kc JOIN kb_folder kf ON kf.id = kc.folder_id
+     WHERE kc.namespace = $2 AND kc.folder_id <> $3 AND (kc.embedding <=> $1::vector) <= $4
+     ORDER BY kc.embedding <=> $1::vector LIMIT $5`,
+    [qVec, namespace, PRODUCT_FOLDER_ID, MAX_DISTANCE, limit],
   );
   return r.rows;
 }
@@ -144,14 +312,34 @@ async function retrieveChunks({ namespace, question, history = [], allowedFolder
 
   // Bước 1: thử trích điều kiện lọc cứng (giá/size/màu/danh mục) — CHỈ áp dụng khi không bị giới hạn
   // allowedFolders khác PRODUCT_FOLDER_ID (extension point hiện NovaCart không dùng tới).
+  // Nhận diện ý định liệt kê/đếm bằng regex -- MIỄN PHÍ, chạy trước mọi lượt gọi model.
+  const lietKe = LIST_INTENT.test(question);
+
   if (!allowedFolders || allowedFolders.includes(PRODUCT_FOLDER_ID)) {
-    const filters = await extractProductFilters(searchText);
+    let filters = await extractProductFilters(searchText, await danhMucCoThat(namespace));
+    // Bổ khuyết size/màu bằng mã khi model bỏ sót -- xem chú thích ở boSungTatDinh.
     if (filters.hasFilter) {
-      const filtered = await retrieveFilteredProducts({ namespace, qVec, filters });
-      if (filtered.length) return { chunks: filtered, nearestFolder: null };
-      // Có điều kiện lọc nhưng không sản phẩm nào khớp -> KHÔNG rơi về semantic-thuần (sẽ trả sản phẩm
-      // không đúng điều kiện khách nêu, gây hiểu lầm) — trả rỗng thẳng, để LLM báo "chưa có phù hợp".
-      return { chunks: [], nearestFolder: null };
+      filters = boSungTatDinh(filters, question, await mauCoThat(namespace));
+    }
+    if (filters.hasFilter) {
+      // Phần SẢN PHẨM vẫn lọc cứng và KHÔNG rơi về semantic-thuần khi rỗng (trả sản phẩm không đúng
+      // điều kiện khách nêu còn gây hiểu lầm hơn là nói "chưa có phù hợp").
+      const filtered = await retrieveFilteredProducts({ namespace, qVec, filters, lietKe });
+      // Nhưng vẫn phải gộp thêm FAQ/chính sách: câu hỏi lai "áo sơ mi này đổi trả mấy ngày?" cũng cho
+      // hasFilter=true, mà tài liệu chính sách lại nằm ngoài folder sản phẩm.
+      // (Bỏ qua khi nơi gọi đã giới hạn allowedFolders -- tôn trọng phạm vi họ chỉ định.)
+      const faq = allowedFolders ? [] : await retrieveNonProductChunks({ namespace, qVec, limit: TOP_K });
+
+      // GIỮ CHỖ RIÊNG cho đoạn chính sách thay vì sắp xếp thuần theo khoảng cách. Đo thực tế: đoạn sản
+      // phẩm cách câu hỏi 0,14-0,19 còn đoạn chính sách 0,35-0,39, nên sắp xếp thuần thì sản phẩm luôn
+      // đứng trước và đoạn chính sách bị đẩy hết ra ngoài -- đúng câu hỏi lai ("áo sơ mi này đổi trả
+      // mấy ngày?") lại mất phần trả lời được câu hỏi.
+      const gioiHanGop = lietKe ? LIST_LIMIT : TOP_K;
+      const soFaq = Math.min(faq.length, filtered.length ? 3 : TOP_K);
+      const merged = [...filtered.slice(0, Math.max(gioiHanGop - soFaq, 0)), ...faq.slice(0, soFaq)];
+      // Trả kèm `filters` để bộ đo chất lượng (scripts/do-loc-san-pham.js) chấm được bước trích điều
+      // kiện mà không phải gọi Gemini thêm một lượt nữa. askQuestion không dùng tới trường này.
+      return { chunks: merged, nearestFolder: null, filters };
     }
   }
 
@@ -192,8 +380,8 @@ async function retrieveChunks({ namespace, question, history = [], allowedFolder
 async function recentMessages(sessionId) {
   if (!sessionId) return [];
   const r = await vectorStore.query(
-    `SELECT vai_tro, noi_dung FROM chat_message WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2`,
-    [sessionId, MEMORY_TURNS],
+    `SELECT vai_tro, noi_dung FROM chat_message WHERE session_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+    [sessionId, MEMORY_MESSAGE_LIMIT],
   );
   return r.rows.reverse();
 }
@@ -210,6 +398,11 @@ QUY TẮC TUYỆT ĐỐI VỀ ĐƠN HÀNG (vi phạm = LỪA khách hàng thật
 QUY TẮC VỀ CAM KẾT CỤ THỂ (giao hàng/khuyến mãi/tồn kho) — cùng mức độ nghiêm trọng như quy tắc đơn hàng ở trên, vì đây cũng là dạng "hứa hẹn cụ thể với 1 khách hàng thật" chứ không phải tư vấn chung chung:
 - KHÔNG bao giờ tự đưa ra 1 mốc thời gian giao hàng CỤ THỂ cho đơn của khách (vd "2 ngày nữa sẽ tới", "giao trong sáng mai") trừ khi con số đó xuất hiện ĐÚNG NGUYÊN trong đoạn tri thức được cung cấp (vd chính sách vận chuyển thật). Nếu khách hỏi "bao giờ nhận được hàng" mà không có thông tin này trong đoạn tri thức, trả lời rằng thời gian giao hàng cụ thể phụ thuộc đơn vị vận chuyển và hướng khách xem trang chi tiết đơn hàng/chính sách vận chuyển trên web, KHÔNG tự đoán số ngày.
 - KHÔNG tự bịa ra mã giảm giá/% khuyến mãi không có trong đoạn tri thức. Chỉ nhắc mã/mức giảm nếu nó xuất hiện đúng trong dữ liệu được cung cấp.
+- GIÁ trong đoạn tri thức là GIÁ THAM KHẢO tại thời điểm đồng bộ, KHÔNG phải giá đảm bảo. Được phép nói giá để khách hình dung tầm tiền, nhưng phải nói theo kiểu tham khảo ("khoảng 350.000đ") và nhắc khách xem giá chính xác ở trang sản phẩm. TUYỆT ĐỐI không cam kết kiểu "giá đúng 350.000đ", "em đảm bảo giá này".
+- Đoạn tri thức sản phẩm liệt kê "Các phân loại còn hàng (size/màu)" theo từng CẶP. CHỈ những cặp được liệt kê mới có thật. TUYỆT ĐỐI không ghép size của cặp này với màu của cặp khác rồi nói là còn hàng — vd chỉ có "M/Đen, L/Trắng" thì KHÔNG được nói còn "M màu Trắng".
+- Khi giới thiệu 1 sản phẩm, nhắc kèm đường dẫn của nó (có trong đoạn tri thức, dạng /products/<mã>) để khách bấm vào xem giá và tồn kho thực tế.
+- Nếu phần đoạn tri thức có dòng bắt đầu bằng [TỔNG SỐ], con số trong đó là số đếm CHÍNH XÁC từ cơ sở dữ liệu. PHẢI nêu đúng con số đó khi khách hỏi "có bao nhiêu" hoặc "liệt kê tất cả". Nếu số mục được liệt kê ít hơn tổng, phải nói rõ dạng "hiện có N mẫu, em kể vài mẫu tiêu biểu" — TUYỆT ĐỐI không nói "đây là tất cả" khi đang hiển thị ít hơn tổng.
+- Nếu KHÔNG có dòng [TỔNG SỐ], bạn KHÔNG biết tổng số là bao nhiêu: được phép giới thiệu các sản phẩm đang có trong đoạn tri thức, nhưng không được khẳng định "shop có đúng N mẫu" hay "đây là tất cả".
 - KHÔNG khẳng định chắc chắn 1 sản phẩm/size/màu CÒN HÀNG hay HẾT HÀNG nếu thông tin tồn kho không có trong đoạn tri thức — nói rằng tồn kho có thể thay đổi theo thời gian thực và hướng khách xem trực tiếp ở trang sản phẩm.
 
 Ngoài quy tắc trên, nhiệm vụ tư vấn của bạn:
@@ -264,14 +457,20 @@ async function callGemini(systemPrompt, contextText, history, question) {
 // hội thoại THẬT tái hiện được lỗi (giống cách bug số điện thoại được phát hiện) mới thiết kế đúng được
 // pattern mà không chặn nhầm câu trả lời chính sách hợp lệ. Nếu gặp trường hợp bot tự bịa ngày giao/mã
 // giảm giá/tồn kho, LƯU LẠI ĐÚNG đoạn hội thoại rồi quay lại thêm guard cứng tương tự bên dưới.
-const VN_PHONE_PATTERN = /(?:\+84|0)(?:3|5|7|8|9)\d{8}\b/;
+// So khớp SAU KHI đã xoá dấu cách/chấm/gạch/ngoặc — người Việt viết số điện thoại là "0912 345 678"
+// hoặc "0912.345.678" nhiều hơn hẳn viết liền 10 số. Bản trước chỉ khớp chuỗi liền nên đúng cái bug nó
+// sinh ra để chặn ("tên + SĐT + địa chỉ" khiến bot giả vờ chốt đơn) vẫn tái hiện được dễ dàng.
+const VN_PHONE_PATTERN = /(?:\+84|0)(?:3|5|7|8|9)\d{8}/;
+function containsVnPhone(text) {
+  return VN_PHONE_PATTERN.test(String(text).replace(/[\s.\-()]/g, ''));
+}
 const ORDER_REDIRECT_MESSAGE =
   'Dạ em chỉ hỗ trợ tư vấn chọn sản phẩm thôi ạ, chưa nhận/xử lý đơn hàng qua khung chat được. Để đặt hàng, anh/chị vào đúng trang sản phẩm, chọn size/màu phù hợp rồi bấm "Thêm vào giỏ hàng" và tiến hành thanh toán trên website giúp em nhé!';
 
 /** Điểm vào chính — dùng cho routes/chatSession.js. `userId` chỉ dùng để ghi log câu hỏi chưa trả lời
  * được (thống kê), không dùng để lọc quyền xem (kit này không có khái niệm phân quyền theo người dùng). */
 async function askQuestion({ namespace, userId, question, sessionId, allowedFolders = null }) {
-  if (VN_PHONE_PATTERN.test(question)) {
+  if (containsVnPhone(question)) {
     return { ok: true, answer: ORDER_REDIRECT_MESSAGE, sources: [], answered: true };
   }
 
@@ -280,7 +479,17 @@ async function askQuestion({ namespace, userId, question, sessionId, allowedFold
   const { chunks, nearestFolder } = await retrieveChunks({ namespace, question, history, allowedFolders });
 
   const sources = [...new Set(chunks.map((c) => c.folder_ten))];
-  const contextText = chunks.map((c, i) => `[${i + 1}] (Nguồn: ${c.folder_ten})\n${c.noi_dung}`).join('\n\n');
+  // TỔNG SỐ THẬT do SQL đếm (COUNT(*) OVER(), xem retrieveFilteredProducts) -- thứ mà truy hồi vector
+  // không bao giờ có được. Không có dòng này thì bot chỉ biết số đoạn nó nhận được và sẽ tường thuật
+  // con số đó như thể là tất cả.
+  const tongKhop = chunks.reduce((max, c) => Math.max(max, Number(c.tong_khop) || 0), 0);
+  const soSanPham = chunks.filter((c) => c.tong_khop != null).length;
+  const dongTong = tongKhop > 0
+    ? `[TỔNG SỐ] Có đúng ${tongKhop} sản phẩm thoả điều kiện. Dưới đây là ${soSanPham} mục.\n\n`
+    : '';
+
+  const contextText = dongTong
+      + chunks.map((c, i) => `[${i + 1}] (Nguồn: ${c.folder_ten})\n${c.noi_dung}`).join('\n\n');
 
   const r = await callGemini(buildSystemPrompt(), contextText, history, question);
 
@@ -297,4 +506,6 @@ async function askQuestion({ namespace, userId, question, sessionId, allowedFold
   return { ok: true, answer: r.answer, sources: r.answered === false ? [] : sources, answered: r.answered };
 }
 
-module.exports = { askQuestion, retrieveChunks };
+// containsVnPhone xuất ra để kiểm thử được mà không cần Gemini -- đây là guard CỨNG duy nhất chặn bot
+// giả vờ chốt đơn khi khách gửi tên + số điện thoại + địa chỉ. Xem chatbot/test/phoneGuard.test.js.
+module.exports = { askQuestion, retrieveChunks, containsVnPhone, LIST_INTENT };

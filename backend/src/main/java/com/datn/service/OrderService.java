@@ -38,7 +38,10 @@ public class OrderService {
 
     @Transactional
     public OrderResponse checkout(Long userId, CheckoutRequest request) {
-        Cart cart = cartRepository.findByUser_UserId(userId)
+        // findByUser_UserIdForUpdate -- khoá row Cart tới hết transaction. Không có khoá này, double-click
+        // "Đặt hàng" hoặc gửi 2 request checkout gần như đồng thời có thể cả hai cùng đọc y hệt danh sách
+        // item TRƯỚC KHI request kia kịp xoá giỏ, tạo ra 2 đơn hàng trùng nhau cho cùng 1 lần mua.
+        Cart cart = cartRepository.findByUser_UserIdForUpdate(userId)
                 .orElseThrow(() -> ApiException.badRequest("Giỏ hàng trống, không thể đặt hàng"));
 
         if (cart.getItems().isEmpty()) {
@@ -79,6 +82,12 @@ public class OrderService {
         for (CartItem cartItem : itemsToCheckout) {
             ProductVariant variant = variantRepository.findById(cartItem.getVariant().getVariantId())
                     .orElseThrow(() -> ApiException.notFound("Sản phẩm không còn tồn tại"));
+            // Sản phẩm có thể đã bị admin ẩn/ngừng bán SAU KHI khách bỏ vào giỏ -- kiểm tra lại ngay lúc
+            // đặt hàng, không chỉ tin trạng thái lúc thêm vào giỏ.
+            if (variant.getProduct().getStatus() != Product.Status.ACTIVE) {
+                throw ApiException.badRequest(
+                        "Sản phẩm \"" + variant.getProduct().getProductName() + "\" hiện không còn kinh doanh");
+            }
 
             int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
             if (cartItem.getQuantity() > stock) {
@@ -150,13 +159,27 @@ public class OrderService {
         // Chỉ hoàn kho nếu đơn đã CONFIRMED (lúc đó kho mới thực sự bị trừ) -- PENDING chưa đụng kho.
         if (order.getStatus() == Order.Status.CONFIRMED) {
             for (OrderItem item : order.getItems()) {
-                ProductVariant variant = item.getVariant();
-                if (variant != null) {
+                if (item.getVariant() != null) {
+                    // findByIdForUpdate -- khoá row, tránh mất cập nhật tồn kho nếu đúng lúc này biến thể
+                    // đang được bán ở nơi khác (PosOrderService/AdminOrderService).
+                    ProductVariant variant = variantRepository.findByIdForUpdate(item.getVariant().getVariantId())
+                            .orElseThrow(() -> ApiException.notFound("Không tìm thấy sản phẩm"));
                     int stock = variant.getStockQuantity() == null ? 0 : variant.getStockQuantity();
                     variant.setStockQuantity(stock + item.getQuantity());
                     variantRepository.save(variant);
                 }
             }
+        }
+
+        // Mã giảm giá đã bị tính dùng ngay lúc checkout (VoucherService.applyVoucher) -- huỷ đơn thì
+        // phải trả lại lượt, không thì khách mất 1 lượt dùng cho đơn không hề mua được gì.
+        if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
+            voucherService.revertVoucherUsage(order.getVoucherCode());
+        }
+        // Đơn đã trả tiền thật (chuyển khoản/VNPay) rồi mới huỷ -- đánh dấu REFUNDED để không lẫn với
+        // đơn thật sự chưa ai trả tiền (UNPAID); COD ở PENDING/CONFIRMED luôn đang UNPAID nên vô hại.
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
         }
 
         order.setStatus(Order.Status.CANCELLED);
@@ -274,10 +297,21 @@ public class OrderService {
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             throw ApiException.badRequest("Đơn hàng đã được thanh toán");
         }
+        // Đơn VNPay CHƯA thanh toán thì luôn đang ở PENDING (không thể sang CONFIRMED khi còn UNPAID --
+        // xem AdminOrderService.updateStatus) -- mọi trạng thái khác (CANCELLED, RETURN_REQUESTED...) đều
+        // là đơn đã "chết", không được sinh URL thanh toán mới cho nó (khách trả tiền xong callback vẫn bị
+        // handleVnpayReturn() từ chối vì đơn không còn PENDING, tiền mất mà đơn vẫn huỷ).
+        if (order.getStatus() != Order.Status.PENDING) {
+            throw ApiException.badRequest("Đơn hàng không còn ở trạng thái chờ thanh toán");
+        }
         return vnPayService.buildPaymentUrl(order, request);
     }
 
-    /** Xử lý VNPay redirect sau thanh toán -- chỉ cập nhật paymentStatus khi chữ ký hợp lệ và mã trả về là "00". */
+    /**
+     * Xử lý VNPay redirect sau thanh toán -- chỉ cập nhật paymentStatus khi chữ ký hợp lệ, mã trả về là
+     * "00", SỐ TIỀN khớp đúng đơn hàng, và đơn đang ở trạng thái còn hợp lệ để nhận thanh toán. Idempotent:
+     * gọi lại nhiều lần (VNPay có thể gửi trùng) không xử lý lại/không lỗi nếu đơn đã PAID rồi.
+     */
     @Transactional
     public boolean handleVnpayReturn(java.util.Map<String, String> params) {
         if (!vnPayService.verifyReturn(params)) {
@@ -298,11 +332,28 @@ public class OrderService {
         Order order = orderRepository.findById(orderId).orElse(null);
         if (order == null || order.getPaymentMethod() != Order.PaymentMethod.VNPAY) return false;
 
-        if ("00".equals(responseCode)) {
-            order.setPaymentStatus(Order.PaymentStatus.PAID);
-            orderRepository.save(order);
-            return true;
+        // Đã xử lý PAID trước đó rồi -- coi là thành công, không xử lý lại (VNPay có thể gửi callback trùng).
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) return true;
+        // Đơn đã bị huỷ/trả hàng (vd khách huỷ trong lúc đang thanh toán) -- KHÔNG được set PAID đè lên,
+        // tiền thật đã về tài khoản shop nhưng cần admin xử lý hoàn tiền thủ công, không tự động coi là ổn.
+        if (order.getStatus() == Order.Status.CANCELLED || order.getStatus() == Order.Status.RETURNED) return false;
+
+        if (!"00".equals(responseCode)) return false;
+
+        // Đối chiếu đúng số tiền VNPay báo về khớp với số tiền đơn hàng thật -- không chỉ tin response
+        // code, tránh callback với vnp_Amount sai/cũ (dù chữ ký hợp lệ) vẫn bị tin và set PAID.
+        String amountParam = params.get("vnp_Amount");
+        BigDecimal expectedAmount = order.getTotalAmount().multiply(BigDecimal.valueOf(100));
+        try {
+            if (amountParam == null || new BigDecimal(amountParam).compareTo(expectedAmount) != 0) {
+                return false;
+            }
+        } catch (NumberFormatException e) {
+            return false;
         }
-        return false;
+
+        order.setPaymentStatus(Order.PaymentStatus.PAID);
+        orderRepository.save(order);
+        return true;
     }
 }

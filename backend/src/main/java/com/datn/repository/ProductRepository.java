@@ -13,6 +13,10 @@ import java.util.List;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
 
+        // products.slug có ràng buộc UNIQUE ở DB -- dùng để tìm hậu tố còn trống thay vì bốc đại rồi để
+        // DB ném lỗi trùng (xem AdminProductService.resolveSlug).
+        boolean existsBySlug(String slug);
+
         // @EntityGraph tránh N+1 khi load category/brand/images cho từng Product (service cần cả 3 field này).
         @EntityGraph(attributePaths = { "images", "category", "brand" })
         Page<Product> findByStatusOrderByCreatedAtDesc(Product.Status status, Pageable pageable);
@@ -43,23 +47,27 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         // Trang quản trị: không lọc status để admin thấy cả sản phẩm ẩn/hết hàng.
         // Không thêm "variants" cùng "images" vào entity graph -- 2 bag collection fetch-join sẽ ném
         // MultipleBagFetchException; variants được batch-fetch riêng (ProductVariantRepository.findByProduct_ProductIdIn).
+        // Khớp cả tên sản phẩm lẫn SKU biến thể (thu ngân gõ/quét mã SKU ở POS cũng ra đúng sản phẩm).
+        //
+        // "Chỉ hiện sắp hết hàng" phải lọc NGAY TRONG QUERY chứ không lọc ở frontend trên số bản ghi vừa
+        // tải: lọc phía client chỉ soi được đúng trang hiện tại, mặt hàng sắp hết nằm ở trang sau sẽ biến
+        // mất khỏi kết quả -> bảng trống khiến admin kết luận "kho vẫn ổn" trong khi thực tế ngược lại.
+        //
+        // Dùng EXISTS thay JOIN variants để không nhân dòng (DISTINCT + ORDER BY cột ngoài SELECT bị SQL
+        // Server chặn).
         @EntityGraph(attributePaths = { "images", "category", "brand" })
-        Page<Product> findByProductNameContainingIgnoreCase(String keyword, Pageable pageable);
-
-        // Như trên nhưng khớp CẢ theo tên SẢN PHẨM lẫn SKU của biến thể -- dùng ở ô tìm kiếm POS để thu
-        // ngân gõ/quét mã SKU cũng ra đúng sản phẩm, không chỉ gõ tên mới tìm được (EXISTS + DISTINCT vì
-        // JOIN thẳng variants có thể nhân dòng nếu 1 sản phẩm có nhiều biến thể khớp).
-        @EntityGraph(attributePaths = { "images", "category", "brand" })
-        @Query("SELECT DISTINCT p FROM Product p WHERE " +
-                        "LOWER(p.productName) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
-                        "OR EXISTS (SELECT 1 FROM ProductVariant v WHERE v.product = p AND LOWER(v.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))")
-        Page<Product> findByProductNameOrVariantSkuContainingIgnoreCase(@Param("keyword") String keyword, Pageable pageable);
-
-        // Override findAll(Pageable) để gắn @EntityGraph -- admin không có từ khoá tìm kiếm gọi thẳng
-        // method này. Không có "variants": lý do như comment method trên.
-        @Override
-        @EntityGraph(attributePaths = { "images", "category", "brand" })
-        Page<Product> findAll(Pageable pageable);
+        @Query("SELECT p FROM Product p WHERE " +
+                        "(:keyword IS NULL OR :keyword = '' " +
+                        " OR LOWER(p.productName) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+                        " OR EXISTS (SELECT 1 FROM ProductVariant v WHERE v.product = p " +
+                        "            AND LOWER(v.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))) " +
+                        "AND (:lowStockOnly = false OR EXISTS (SELECT 1 FROM ProductVariant v2 " +
+                        "     WHERE v2.product = p AND v2.stockQuantity <= :lowStockThreshold))")
+        Page<Product> searchForAdmin(
+                        @Param("keyword") String keyword,
+                        @Param("lowStockOnly") boolean lowStockOnly,
+                        @Param("lowStockThreshold") int lowStockThreshold,
+                        Pageable pageable);
 
         // Lọc trang Shop: danh mục (đã gom cả con) + từ khoá + giá + size/màu, tham số optional (null/rỗng
         // = bỏ qua). Dùng EXISTS thay vì JOIN v.size/v.color để tránh nhân dòng (JOIN cần DISTINCT, mà

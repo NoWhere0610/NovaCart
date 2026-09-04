@@ -38,9 +38,10 @@ public class AdminProductController {
     @PreAuthorize("@perm.has('PRODUCT_VIEW')")
     public ResponseEntity<PageResponse<AdminProductResponse>> list(
             @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean lowStockOnly,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(adminProductService.list(keyword, page, size));
+        return ResponseEntity.ok(adminProductService.list(keyword, lowStockOnly, page, size));
     }
 
     @GetMapping("/{productId}")

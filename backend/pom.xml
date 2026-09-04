@@ -107,6 +107,19 @@
 			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Loại test gắn @Tag("integration") khỏi "mvn test" mặc định.
+					     Lý do: BackendApplicationTests là @SpringBootTest, nó KẾT NỐI THẬT vào MSSQL
+					     localhost:1433 khi chạy. Máy nào chưa cài/chưa bật SQL Server thì "mvn test"
+					     hỏng, nghĩa là phần lớn thành viên trong nhóm không chạy được test nào, kể cả
+					     những test thuần logic vốn chẳng cần cơ sở dữ liệu.
+					     Muốn chạy cả nhóm integration: mvn test -Dgroups=integration -->
+					<excludedGroups>integration</excludedGroups>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<executions>
 					<execution>
