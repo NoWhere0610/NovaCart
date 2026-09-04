@@ -133,6 +133,15 @@ public class OrderService {
         BigDecimal shippingFee = shippingService.calculateFee(address, total);
         order.setShippingFee(shippingFee);
         order.setTotalAmount(total.subtract(discount).add(shippingFee));
+
+        // Đơn 0 đồng (mã giảm 100% + miễn phí ship) KHÔNG đi qua cổng thanh toán được -- VNPay/chuyển
+        // khoản không có giao dịch 0đ. Không đánh dấu đã thanh toán ngay ở đây thì đơn kẹt vĩnh viễn:
+        // khách bấm thanh toán không xong, mà admin cũng không xác nhận được vì updateStatus đòi đơn
+        // VNPAY/BANK_TRANSFER phải PAID. Chẳng còn ai trả gì nữa nên coi là đã thanh toán là đúng.
+        if (order.getTotalAmount().signum() == 0) {
+            order.setPaymentStatus(Order.PaymentStatus.PAID);
+        }
+
         Order saved = orderRepository.save(order);
 
         // Chỉ xoá đúng các dòng đã đặt hàng -- các dòng còn lại (nếu mua đơn lẻ 1 phần) vẫn giữ nguyên trong giỏ.
@@ -322,7 +331,10 @@ public class OrderService {
      *
      * Báo lỗi cụ thể từng ô thiếu, không gộp thành một câu chung chung "thiếu thông tin".
      */
-    private void ghiThongTinHoanTien(Order order, String bankName, String accountNumber, String accountHolder) {
+    // static + package-private: AdminOrderService cũng cần đúng quy tắc này khi admin điền hộ số tài
+    // khoản cho đơn không hỏi được khách. Dùng chung một hàm để hai đường không thể lệch nhau -- cùng
+    // cách làm với CartService.effectivePrice.
+    static void ghiThongTinHoanTien(Order order, String bankName, String accountNumber, String accountHolder) {
         if (isBlank(bankName)) {
             throw ApiException.badRequest("Vui lòng chọn ngân hàng nhận tiền hoàn");
         }
@@ -341,7 +353,7 @@ public class OrderService {
         order.setRefundStatus(Order.RefundStatus.PENDING);
     }
 
-    private boolean isBlank(String s) {
+    private static boolean isBlank(String s) {
         return s == null || s.isBlank();
     }
 
@@ -405,6 +417,7 @@ public class OrderService {
                 .qrCodeUrl(needsQrCode(order) ? vietQrService.buildQrUrl(order.getOrderCode(), order.getTotalAmount()) : null)
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
+                .daTraTien(khachDaTraTien(order))
                 // Quy null về NONE -- xem chú thích cùng chỗ trong AdminOrderService.toResponse.
                 .refundStatus(order.getRefundStatus() == null ? Order.RefundStatus.NONE : order.getRefundStatus())
                 .refundBankName(order.getRefundBankName())
@@ -515,22 +528,47 @@ public class OrderService {
             return VnpayIpnResult.ALREADY_CONFIRMED;
         }
 
-        // Đơn đã bị huỷ/trả hàng (vd khách tự huỷ trong lúc đang ở cổng thanh toán) -- KHÔNG set PAID đè
-        // lên. Tiền thật đã về tài khoản shop nên phải ghi log ở mức ERROR để còn đối soát và hoàn tiền
-        // thủ công; trả 02 để VNPay dừng thử lại (thử lại cũng không đổi được gì).
+        boolean giaoDichThanhCong = "00".equals(params.get("vnp_ResponseCode"));
+
+        /*
+         * Đơn đã bị huỷ/trả hàng rồi mà tiền vẫn về (khách bấm huỷ ở tab khác trong lúc đang đứng ở
+         * cổng thanh toán, rồi quay lại bấm trả tiền).
+         *
+         * KHÔNG set PAID đè lên -- đơn đã chết, không hồi sinh được. Nhưng cũng KHÔNG được chỉ ghi log
+         * rồi bỏ đi như bản trước: tiền thật đã nằm trong tài khoản shop, mà đơn thì mang
+         * CANCELLED/UNPAID/refundStatus=NONE nên không lọt vào bất kỳ danh sách nào -- không hàng chờ
+         * chuyển tiền, không thống kê, không nút thao tác. Dấu vết duy nhất là một dòng log trên đĩa,
+         * và không ai đọc log ứng dụng hằng ngày để đối soát ngân hàng.
+         *
+         * Nay sinh thẳng khoản phải hoàn, y như nhánh admin huỷ đơn đã thanh toán. Số tài khoản để
+         * trống -- admin điền sau qua PATCH /admin/orders/{id}/refund-account.
+         */
         if (order.getStatus() == Order.Status.CANCELLED || order.getStatus() == Order.Status.RETURNED) {
-            log.error("[vnpay/{}] CẦN ĐỐI SOÁT THỦ CÔNG: đơn {} đã ở trạng thái {} nhưng VNPay báo giao dịch "
-                            + "{} với số tiền {}. Kiểm tra cổng VNPay và hoàn tiền cho khách nếu tiền đã về.",
-                    nguon, orderId, order.getStatus(), params.get("vnp_ResponseCode"), amountParam);
-            return VnpayIpnResult.ALREADY_CONFIRMED;
+            if (!giaoDichThanhCong) {
+                // Giao dịch hỏng trên một đơn đã chết: không có đồng nào về, không nợ ai cả.
+                log.info("[vnpay/{}] đơn {} đã {} và giao dịch cũng không thành công (mã {}) -- không phát sinh gì",
+                        nguon, orderId, order.getStatus(), params.get("vnp_ResponseCode"));
+                return VnpayIpnResult.PAID_ON_DEAD_ORDER;
+            }
+            log.error("[vnpay/{}] TIỀN VỀ TRÊN ĐƠN ĐÃ {}: đơn {} số tiền {}. Đã ghi nhận thành khoản phải "
+                            + "hoàn (refundStatus=PENDING), cần liên hệ khách lấy số tài khoản rồi chuyển trả.",
+                    nguon, order.getStatus(), orderId, amountParam);
+            order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
+            if (order.getRefundStatus() != Order.RefundStatus.COMPLETED) {
+                order.setRefundStatus(Order.RefundStatus.PENDING);
+            }
+            orderRepository.save(order);
+            return VnpayIpnResult.PAID_ON_DEAD_ORDER;
         }
 
         // Giao dịch THẤT BẠI (khách bấm huỷ ở cổng, thẻ không đủ tiền...): vẫn là một thông báo đã được
-        // xử lý xong -- trả 00 để VNPay dừng gửi lại. Đơn giữ nguyên UNPAID, khách trả lại được.
-        if (!"00".equals(params.get("vnp_ResponseCode"))) {
+        // xử lý xong -- trả RspCode 00 để VNPay dừng gửi lại. Đơn giữ nguyên UNPAID, khách trả lại được.
+        // Trả PROCESSED_BUT_FAILED chứ KHÔNG phải SUCCESS: hai thứ đó khác nhau, và dùng chung SUCCESS
+        // chính là lý do trang kết quả từng báo "Thanh toán thành công" cho giao dịch khách vừa huỷ.
+        if (!giaoDichThanhCong) {
             log.info("[vnpay/{}] đơn {} thanh toán không thành công, mã {}",
                     nguon, orderId, params.get("vnp_ResponseCode"));
-            return VnpayIpnResult.SUCCESS;
+            return VnpayIpnResult.PROCESSED_BUT_FAILED;
         }
 
         order.setPaymentStatus(Order.PaymentStatus.PAID);

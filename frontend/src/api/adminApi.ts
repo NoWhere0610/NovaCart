@@ -217,6 +217,16 @@ export async function confirmAdminOrderPaymentApi(orderId: number) {
   return data
 }
 
+/** Admin điền/sửa tài khoản nhận tiền hoàn. Dùng cho khoản hoàn phát sinh mà không hỏi được khách:
+ *  admin tự huỷ đơn đã thanh toán, hoặc tiền VNPay về sau khi đơn đã bị huỷ. */
+export async function updateAdminOrderRefundAccountApi(
+  orderId: number,
+  payload: { refundBankName: string; refundAccountNumber: string; refundAccountHolder: string },
+) {
+  const { data } = await apiClient.patch<AdminOrderDto>(`/admin/orders/${orderId}/refund-account`, payload)
+  return data
+}
+
 /** Admin xác nhận ĐÃ chuyển tiền hoàn lại cho khách. Backend chỉ cho gọi khi đơn đã ở trạng thái
  *  RETURNED (đã duyệt trả hàng) và refundStatus đang là PENDING. */
 export async function confirmAdminOrderRefundApi(orderId: number) {

@@ -2,6 +2,7 @@ package com.datn.service;
 
 import com.datn.dto.PageResponse;
 import com.datn.dto.admin.AdminOrderResponse;
+import com.datn.dto.admin.UpdateRefundAccountRequest;
 import com.datn.dto.order.OrderItemResponse;
 import com.datn.entity.Order;
 import com.datn.entity.OrderItem;
@@ -35,7 +36,12 @@ public class AdminOrderService {
     static {
         ALLOWED_TRANSITIONS.put(Order.Status.PENDING, EnumSet.of(Order.Status.CONFIRMED, Order.Status.CANCELLED));
         ALLOWED_TRANSITIONS.put(Order.Status.CONFIRMED, EnumSet.of(Order.Status.SHIPPING, Order.Status.CANCELLED));
-        ALLOWED_TRANSITIONS.put(Order.Status.SHIPPING, EnumSet.of(Order.Status.DELIVERED));
+        // SHIPPING phải có lối ra cho GIAO THẤT BẠI (khách từ chối nhận, không có nhà, hàng quay về
+        // shop). Thiếu mũi tên này thì nhân viên muốn đóng đơn chỉ còn đúng một nút "Đã giao hàng", tức
+        // là buộc phải ghi nhận sai sự thật -- và với đơn COD, "đã giao" chính là căn cứ duy nhất để hệ
+        // thống tin rằng khách đã trả tiền, nên khách chưa trả đồng nào vẫn đòi hoàn tiền được.
+        ALLOWED_TRANSITIONS.put(Order.Status.SHIPPING,
+                EnumSet.of(Order.Status.DELIVERED, Order.Status.CANCELLED));
         // DELIVERED -> COMPLETED thường do khách tự bấm (OrderService.completeMyOrder), nhưng admin có thể đóng hộ.
         ALLOWED_TRANSITIONS.put(Order.Status.DELIVERED, EnumSet.of(Order.Status.COMPLETED));
         // COMPLETED là điểm cuối với admin -- khách vẫn có thể tự chuyển sang RETURN_REQUESTED
@@ -126,7 +132,10 @@ public class AdminOrderService {
 
         // Huỷ đơn chỉ hoàn kho nếu đã ở CONFIRMED (đã từng bị trừ kho); huỷ từ PENDING thì chưa đụng kho.
         // RETURNED luôn hoàn kho vì chắc chắn đã qua CONFIRMED trước đó.
-        boolean shouldRestoreStock = (newStatus == Order.Status.CANCELLED && oldStatus == Order.Status.CONFIRMED)
+        // Huỷ từ CONFIRMED hoặc SHIPPING đều phải hoàn kho -- cả hai trạng thái đó đều đã qua bước trừ
+        // kho ở PENDING -> CONFIRMED. Huỷ từ PENDING thì chưa đụng kho.
+        boolean shouldRestoreStock = (newStatus == Order.Status.CANCELLED
+                        && (oldStatus == Order.Status.CONFIRMED || oldStatus == Order.Status.SHIPPING))
                 || newStatus == Order.Status.RETURNED;
         if (shouldRestoreStock) {
             for (OrderItem item : order.getItems()) {
@@ -227,7 +236,9 @@ public class AdminOrderService {
     public AdminOrderResponse confirmRefund(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
-        requireOnlineOrder(order);
+        // CỐ Ý không gọi requireOnlineOrder: hoá đơn POS thanh toán bằng chuyển khoản rồi bị huỷ cũng
+        // sinh ra khoản phải hoàn thật (tiền đã nằm trong tài khoản ngân hàng của shop, không trả tay
+        // tại quầy được). Chặn POS ở đây thì khoản đó không bao giờ tất toán được trong hệ thống.
 
         if (order.getRefundStatus() == Order.RefundStatus.COMPLETED) {
             throw ApiException.badRequest("Đơn hàng này đã được xác nhận hoàn tiền trước đó");
@@ -253,6 +264,34 @@ public class AdminOrderService {
 
         order.setRefundStatus(Order.RefundStatus.COMPLETED);
         order.setRefundCompletedAt(java.time.LocalDateTime.now());
+        return toResponse(orderRepository.save(order), true);
+    }
+
+    /**
+     * Admin điền/sửa tài khoản nhận tiền hoàn cho một khoản đang chờ chuyển.
+     *
+     * Dành cho những khoản phải hoàn phát sinh mà KHÔNG hỏi khách được: admin tự huỷ đơn đã thanh
+     * toán, hoặc tiền VNPay về sau khi đơn đã bị huỷ. Không có endpoint này thì những đơn ấy kẹt vĩnh
+     * viễn trong hàng chờ -- confirmRefund từ chối vì thiếu số tài khoản, mà API của khách lại từ chối
+     * đơn đã CANCELLED nên khách cũng không tự khai lại được.
+     *
+     * Dùng chung OrderService.ghiThongTinHoanTien để quy tắc kiểm định dạng không lệch với đường khách
+     * tự khai.
+     */
+    @Transactional
+    public AdminOrderResponse updateRefundAccount(Long orderId, UpdateRefundAccountRequest request) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
+
+        if (order.getRefundStatus() == Order.RefundStatus.COMPLETED) {
+            throw ApiException.badRequest("Đơn hàng này đã hoàn tiền xong, không sửa được tài khoản nhận nữa");
+        }
+        if (order.getRefundStatus() != Order.RefundStatus.PENDING) {
+            throw ApiException.badRequest("Đơn hàng này không có khoản hoàn tiền nào đang chờ xử lý");
+        }
+
+        OrderService.ghiThongTinHoanTien(order, request.getRefundBankName(),
+                request.getRefundAccountNumber(), request.getRefundAccountHolder());
         return toResponse(orderRepository.save(order), true);
     }
 

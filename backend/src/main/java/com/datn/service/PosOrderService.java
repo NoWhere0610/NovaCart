@@ -312,6 +312,15 @@ public class PosOrderService {
         // thì vẫn đang UNPAID, không có gì để "hoàn" cả).
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
+
+            // Tiền mặt thì trả ngay tại quầy, xong luôn. Nhưng CHUYỂN KHOẢN thì tiền đã nằm trong tài
+            // khoản ngân hàng của shop, phải chuyển trả -- việc đó xảy ra sau, không phải tại quầy.
+            // Không ghi vào hàng chờ thì khoản nợ khách đó không nằm ở đâu cả: paymentStatus = REFUNDED
+            // chỉ là bút toán đảo khoản, không nói lên tiền đã đi hay chưa.
+            if (order.getPaymentMethod() == Order.PaymentMethod.BANK_TRANSFER
+                    && order.getRefundStatus() != Order.RefundStatus.COMPLETED) {
+                order.setRefundStatus(Order.RefundStatus.PENDING);
+            }
         }
 
         order.setReturnedAt(java.time.LocalDateTime.now());

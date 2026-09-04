@@ -46,6 +46,11 @@ export interface OrderDto {
    * paymentStatus='REFUNDED' chỉ là bút toán đảo khoản, được đặt ngay lúc admin duyệt trả hàng.
    * refundStatus='COMPLETED' mới nghĩa là tiền đã thực sự chuyển đi. Xem Order.RefundStatus bên backend.
    */
+  /**
+   * Khách đã thực sự đưa tiền cho shop chưa -- BACKEND tính, đừng tự suy lại ở đây.
+   * Quy tắc có nhánh COD rất dễ chép sai (đơn COD giữ paymentStatus='UNPAID' vĩnh viễn).
+   */
+  daTraTien: boolean
   refundStatus: 'NONE' | 'PENDING' | 'COMPLETED'
   refundBankName: string | null
   refundAccountNumber: string | null

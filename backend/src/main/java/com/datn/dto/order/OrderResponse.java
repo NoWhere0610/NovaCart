@@ -32,6 +32,16 @@ public class OrderResponse {
 
     // Khách cũng cần thấy tiến độ hoàn tiền của chính mình -- gửi yêu cầu xong mà màn hình không nói gì
     // thêm thì chỉ còn cách gọi điện hỏi. Số tài khoản trả về để khách tự đối chiếu xem có khai nhầm không.
+    /**
+     * Khách đã thực sự đưa tiền cho shop chưa -- do BACKEND tính, frontend chỉ đọc.
+     *
+     * Cố ý trả về đây thay vì để frontend tự suy từ paymentMethod/paymentStatus: quy tắc này có nhánh
+     * COD rất dễ chép sai (đơn COD giữ paymentStatus = UNPAID vĩnh viễn, phải xét mốc đã giao). Đã có
+     * lần frontend chép thành "COD thì luôn là đã trả tiền", khiến khách COD huỷ đơn chưa giao vẫn bị
+     * bắt khai số tài khoản ngân hàng -- rồi backend lại vứt số đó đi vì đúng ra chẳng có gì để hoàn.
+     */
+    private boolean daTraTien;
+
     private Order.RefundStatus refundStatus;
     private String refundBankName;
     private String refundAccountNumber;

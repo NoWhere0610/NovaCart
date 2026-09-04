@@ -191,15 +191,14 @@ export default function OrderDetailPage() {
   const [cancelAccount, setCancelAccount] = useState<RefundAccount>(REFUND_ACCOUNT_RONG);
 
   /**
-   * Đơn này có tiền để hoàn lại hay không -- quyết định có hỏi tài khoản ngân hàng không.
+   * Đơn này có tiền để hoàn lại hay không -- ĐỌC TỪ BACKEND, không tự suy.
    *
-   * Bản sao của OrderService.khachDaTraTien. Chú ý nhánh COD: đơn COD giữ paymentStatus = 'UNPAID'
-   * VĨNH VIỄN vì hệ thống không có bước xác nhận đã thu tiền mặt, nên viết gọn thành
-   * `paymentStatus !== 'UNPAID'` là toàn bộ khách COD -- nhóm đông nhất -- không bao giờ được hỏi số
-   * tài khoản. Yêu cầu trả hàng chỉ mở ở đơn đã giao, mà COD giao xong nghĩa là đã thu tiền.
+   * Bản trước tự chép quy tắc và chép SAI: viết `paymentMethod === "COD"` là true vô điều kiện, trong
+   * khi backend còn xét đơn đã giao hay chưa. Hậu quả: khách COD huỷ đơn chưa giao -- trường hợp
+   * thường gặp nhất -- bị bắt khai số tài khoản ngân hàng, rồi backend lại vứt số đó đi vì đúng ra
+   * chẳng có gì để hoàn. Chú thích khi đó còn tự nhận là "bản sao của OrderService.khachDaTraTien".
    */
-  const canHoanTien =
-    order != null && (order.paymentMethod === "COD" || order.paymentStatus !== "UNPAID");
+  const canHoanTien = order?.daTraTien ?? false;
   const { confirm, dialog } = useConfirmDialog();
   const { alertDialog, dialog: alertDialogEl } = useAlertDialog();
 

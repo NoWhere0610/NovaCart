@@ -188,7 +188,15 @@ public class AdminStatisticsService {
             // khác nhau, xảy ra ở 2 thời điểm khác nhau. Nếu cộng cả doanh thu vào ngày hoàn thì biểu đồ
             // hiện "bán được 500k" đúng vào hôm shop không bán gì mà còn phải trả tiền lại cho khách.
             // Đơn cũ chưa có returnedAt (tạo trước khi thêm cột) fallback về createdAt thay vì NPE.
-            revenueByDate.merge(o.getCreatedAt().toLocalDate(), amount, BigDecimal::add);
+            // KẸP ngày bán vào trong kỳ đang xem. Đơn bán tháng 7, trả hàng tháng 9: xem báo cáo tháng 9
+            // thì findForStatistics vẫn lấy đơn này vào (lọc RETURNED theo returnedAt), và ô "Doanh thu
+            // gộp" CÓ cộng phần doanh thu của nó. Nhưng ngày bán 10/07 nằm ngoài vòng lặp vẽ biểu đồ nên
+            // phần doanh thu ấy rơi mất khỏi các cột -- tổng cột doanh thu nhỏ hơn ô "Doanh thu gộp" mà
+            // không có gì giải thích chênh lệch. Kẹp về ngày đầu kỳ để hai con số dùng chung một định
+            // nghĩa; đây là cách ghi nhận "mang sang từ kỳ trước" quen thuộc trong báo cáo.
+            LocalDate ngayGhiDoanhThu = o.getCreatedAt().toLocalDate();
+            if (ngayGhiDoanhThu.isBefore(from)) ngayGhiDoanhThu = from;
+            revenueByDate.merge(ngayGhiDoanhThu, amount, BigDecimal::add);
             LocalDate refundDate = (o.getReturnedAt() != null ? o.getReturnedAt() : o.getCreatedAt()).toLocalDate();
             returnedByDate.merge(refundDate, amount, BigDecimal::add);
         }

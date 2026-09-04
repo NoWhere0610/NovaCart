@@ -234,6 +234,81 @@ class AdminOrderServiceRefundTest {
         assertThat(o.getStatus()).isEqualTo(Order.Status.COMPLETED);
     }
 
+    // ===================== Giao thất bại + điền tài khoản hộ khách =====================
+
+    @Test
+    @DisplayName("Giao thất bại: huỷ được từ SHIPPING, hoàn kho, KHÔNG ghi mốc đã giao")
+    void giaoThatBai_huyDuocVaHoanKho() {
+        Order o = don(Order.Status.SHIPPING, Order.RefundStatus.NONE);
+        o.setPaymentMethod(Order.PaymentMethod.COD);
+        o.setPaymentStatus(Order.PaymentStatus.UNPAID);
+
+        service.updateStatus(1L, Order.Status.CANCELLED);
+
+        assertThat(o.getStatus()).isEqualTo(Order.Status.CANCELLED);
+        // Thiếu lối ra này thì nhân viên buộc phải bấm "Đã giao hàng" cho một đơn giao hỏng -- và với
+        // COD, "đã giao" chính là căn cứ duy nhất để hệ thống tin khách đã trả tiền, nên khách chưa trả
+        // đồng nào vẫn đòi hoàn tiền được.
+        assertThat(o.getDeliveredAt()).as("Giao hỏng thì không được ghi mốc đã giao").isNull();
+        // SHIPPING đã qua bước trừ kho ở PENDING -> CONFIRMED nên phải hoàn lại.
+        assertThat(o.getItems().get(0).getVariant().getStockQuantity()).isEqualTo(12);
+    }
+
+    @Test
+    @DisplayName("Admin điền hộ tài khoản nhận cho khoản hoàn không hỏi được khách")
+    void adminDienHoTaiKhoanNhan() {
+        Order o = don(Order.Status.CANCELLED, Order.RefundStatus.PENDING);
+        o.setRefundBankName(null);
+        o.setRefundAccountNumber(null);
+        o.setRefundAccountHolder(null);
+
+        var r = new com.datn.dto.admin.UpdateRefundAccountRequest();
+        r.setRefundBankName("Vietcombank (Ngoại thương)");
+        r.setRefundAccountNumber("1234 5678 9012"); // cố tình dán kèm dấu cách
+        r.setRefundAccountHolder("  NGUYEN VAN A  ");
+        service.updateRefundAccount(1L, r);
+
+        // Không có đường này thì khoản hoàn kẹt vĩnh viễn: confirmRefund đòi có số tài khoản, mà API
+        // của khách lại từ chối đơn đã CANCELLED nên khách cũng không tự khai lại được.
+        assertThat(o.getRefundAccountNumber()).isEqualTo("123456789012");
+        assertThat(o.getRefundAccountHolder()).isEqualTo("NGUYEN VAN A");
+        assertThat(o.getRefundBankName()).isEqualTo("Vietcombank (Ngoại thương)");
+
+        // Điền xong thì xác nhận hoàn tiền được ngay.
+        service.confirmRefund(1L);
+        assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("Số tài khoản admin gõ sai định dạng: từ chối, dùng chung quy tắc với đường khách khai")
+    void adminGoSaiDinhDang_biTuChoi() {
+        don(Order.Status.CANCELLED, Order.RefundStatus.PENDING);
+
+        var r = new com.datn.dto.admin.UpdateRefundAccountRequest();
+        r.setRefundBankName("ACB");
+        r.setRefundAccountNumber("12AB");
+        r.setRefundAccountHolder("A");
+
+        assertThatThrownBy(() -> service.updateRefundAccount(1L, r))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("chỉ gồm chữ số");
+    }
+
+    @Test
+    @DisplayName("Đơn đã hoàn tiền xong: không cho sửa tài khoản nhận nữa")
+    void daHoanXong_khongChoSuaTaiKhoan() {
+        don(Order.Status.CANCELLED, Order.RefundStatus.COMPLETED);
+
+        var r = new com.datn.dto.admin.UpdateRefundAccountRequest();
+        r.setRefundBankName("ACB");
+        r.setRefundAccountNumber("1234567890");
+        r.setRefundAccountHolder("A");
+
+        assertThatThrownBy(() -> service.updateRefundAccount(1L, r))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("đã hoàn tiền xong");
+    }
+
     @Test
     @DisplayName("Duyệt trả hàng: khoản chờ hoàn VẪN chờ, không tự nhảy sang đã hoàn")
     void duyetTraHang_vanConCho() {

@@ -2,12 +2,30 @@ import { useEffect, useState } from 'react'
 import {
   confirmAdminOrderPaymentApi,
   confirmAdminOrderRefundApi,
+  updateAdminOrderRefundAccountApi,
   getAdminOrdersApi,
   updateAdminOrderStatusApi,
   type AdminOrderDto,
 } from '../api/adminApi'
 import { useAlertDialog } from '../hooks/useAlertDialog'
 import { useConfirmDialog } from '../hooks/useConfirmDialog'
+import RefundAccountFields, {
+  REFUND_ACCOUNT_RONG,
+  kiemTaiKhoanHoanTien,
+  type RefundAccount,
+} from '../components/RefundAccountFields'
+
+const PAYMENT_LABEL: Record<string, string> = {
+  COD: 'COD (thu khi giao)',
+  BANK_TRANSFER: 'Chuyển khoản',
+  VNPAY: 'VNPay',
+}
+
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  UNPAID: 'Chưa thanh toán',
+  PAID: 'Đã thanh toán',
+  REFUNDED: 'Đã đảo khoản',
+}
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -80,6 +98,10 @@ export default function AdminOrdersPage() {
   const { alertDialog, dialog } = useAlertDialog()
   // Đặt tên khác `dialog` ở trên -- hai hook đều trả về một phần tử phải render, trùng tên là mất một cái.
   const { confirm: confirmDialog, dialog: confirmDialogEl } = useConfirmDialog()
+  // Đơn đang mở ô nhập tài khoản nhận tiền hoàn (null = không mở ô nào).
+  const [nhapTkChoDon, setNhapTkChoDon] = useState<number | null>(null)
+  const [tkHoanTien, setTkHoanTien] = useState<RefundAccount>(REFUND_ACCOUNT_RONG)
+  const [loiTkHoanTien, setLoiTkHoanTien] = useState<string | null>(null)
 
   useEffect(() => {
     loadOrders()
@@ -114,6 +136,30 @@ export default function AdminOrdersPage() {
       await loadOrders()
     } catch (err: any) {
       await alertDialog(err.response?.data?.message ?? 'Không thể xác nhận thanh toán')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleLuuTaiKhoanHoanTien(orderId: number) {
+    const loi = kiemTaiKhoanHoanTien(tkHoanTien)
+    if (loi) {
+      setLoiTkHoanTien(loi)
+      return
+    }
+    setBusyId(orderId)
+    try {
+      await updateAdminOrderRefundAccountApi(orderId, {
+        refundBankName: tkHoanTien.bankName,
+        refundAccountNumber: tkHoanTien.accountNumber,
+        refundAccountHolder: tkHoanTien.accountHolder,
+      })
+      setNhapTkChoDon(null)
+      setTkHoanTien(REFUND_ACCOUNT_RONG)
+      setLoiTkHoanTien(null)
+      await loadOrders()
+    } catch (err: any) {
+      setLoiTkHoanTien(err.response?.data?.message ?? 'Không lưu được tài khoản nhận tiền hoàn')
     } finally {
       setBusyId(null)
     }
@@ -172,6 +218,7 @@ export default function AdminOrdersPage() {
                 <th className="px-4 py-3">Mã đơn</th>
                 <th className="px-4 py-3">Khách hàng</th>
                 <th className="px-4 py-3">Tổng tiền</th>
+                <th className="px-4 py-3">Thanh toán</th>
                 <th className="px-4 py-3">Trạng thái</th>
                 <th className="px-4 py-3">Ngày đặt</th>
                 <th className="px-4 py-3">Thao tác</th>
@@ -186,6 +233,22 @@ export default function AdminOrdersPage() {
                     <div className="text-xs text-stone-400">{o.buyerEmail}</div>
                   </td>
                   <td className="px-4 py-3">{formatVnd(o.totalAmount)}</td>
+                  {/* Trước đây bảng không hiện phương thức/tình trạng thanh toán ở bất kỳ cột nào, nên
+                      người duyệt hoàn tiền không có tín hiệu nào để nghi ngờ một đơn chưa từng thu tiền. */}
+                  <td className="px-4 py-3 text-xs">
+                    <div className="text-stone-700">{PAYMENT_LABEL[o.paymentMethod] ?? o.paymentMethod}</div>
+                    <div
+                      className={
+                        o.paymentStatus === 'PAID'
+                          ? 'text-green-700'
+                          : o.paymentStatus === 'REFUNDED'
+                            ? 'text-stone-500'
+                            : 'text-amber-700'
+                      }
+                    >
+                      {PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-1 rounded ${STATUS_COLOR[o.status]}`}>
                       {STATUS_LABEL[o.status]}
@@ -211,9 +274,54 @@ export default function AdminOrdersPage() {
                             <p className="font-mono tabular-nums">{o.refundAccountNumber}</p>
                             <p>{o.refundAccountHolder}</p>
                           </>
+                        ) : nhapTkChoDon === o.orderId ? (
+                          <div className="mt-1 bg-white p-2 border border-amber-200">
+                            <RefundAccountFields giaTri={tkHoanTien} onChange={setTkHoanTien} />
+                            {loiTkHoanTien && <p className="text-red-600 mt-2">{loiTkHoanTien}</p>}
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                disabled={busyId === o.orderId}
+                                onClick={() => handleLuuTaiKhoanHoanTien(o.orderId)}
+                                className="border border-stone-900 bg-stone-900 text-white px-2 py-1 disabled:opacity-50"
+                              >
+                                Lưu
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setNhapTkChoDon(null)
+                                  setLoiTkHoanTien(null)
+                                }}
+                                className="border border-stone-300 px-2 py-1"
+                              >
+                                Huỷ
+                              </button>
+                            </div>
+                          </div>
                         ) : (
-                          <p className="text-red-700">
-                            Chưa có tài khoản nhận — liên hệ khách để lấy thông tin.
+                          <>
+                            <p className="text-red-700">Chưa có tài khoản nhận — liên hệ khách để lấy thông tin.</p>
+                            {/* Không có ô nhập thì khoản này kẹt vĩnh viễn: xác nhận hoàn tiền đòi phải
+                                có số tài khoản, mà API của khách lại từ chối đơn đã huỷ nên khách cũng
+                                không tự khai lại được. */}
+                            <button
+                              onClick={() => {
+                                setNhapTkChoDon(o.orderId)
+                                setTkHoanTien(REFUND_ACCOUNT_RONG)
+                                setLoiTkHoanTien(null)
+                              }}
+                              className="mt-1 underline font-medium"
+                            >
+                              Nhập tài khoản nhận
+                            </button>
+                          </>
+                        )}
+                        {/* Đơn COD: hệ thống KHÔNG có bước xác nhận đã thu tiền mặt, nên nó không thể
+                            biết khách đã thực sự trả tiền hay chưa (vd đơn giao thất bại bị đóng nhầm
+                            thành "đã giao"). Người chuyển khoản phải tự kiểm biên lai. */}
+                        {o.paymentMethod === 'COD' && (
+                          <p className="mt-1.5 pt-1.5 border-t border-amber-300 text-amber-800">
+                            Đơn COD — hệ thống không xác minh được đã thu tiền hay chưa. Kiểm biên lai
+                            giao hàng trước khi chuyển.
                           </p>
                         )}
                       </div>

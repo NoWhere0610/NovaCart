@@ -136,25 +136,46 @@ class OrderServiceVnpayTest {
     }
 
     @Test
-    @DisplayName("Khách huỷ ở cổng thanh toán: trả 00 (đã ghi nhận) nhưng đơn giữ nguyên UNPAID")
+    @DisplayName("Khách huỷ ở cổng thanh toán: trả RspCode 00 (đã ghi nhận) nhưng KHÔNG phải là đã thanh toán")
     void thanhToanThatBaiVanTra00() {
-        assertThat(ipn(thamSo("24", 350_000)))
+        VnpayIpnResult kq = ipn(thamSo("24", 350_000));
+
+        assertThat(kq.getRspCode())
                 .as("Đây là thông báo đã xử lý xong -- trả mã lỗi sẽ khiến VNPay gọi lại 10 lần vô ích")
-                .isEqualTo(VnpayIpnResult.SUCCESS);
+                .isEqualTo("00");
+        // Hai câu hỏi KHÁC NHAU, và trước đây bị gộp làm một: "mình đã xử lý xong thông báo chưa" (trả
+        // cho VNPay) với "khách đã trả tiền chưa" (hiển thị cho khách). Gộp lại khiến trang kết quả báo
+        // "Thanh toán thành công" cho đúng giao dịch khách vừa bấm huỷ.
+        assertThat(kq.laThanhToanThanhCong())
+                .as("Khách huỷ ở cổng thì thẻ chưa bị trừ -- không được nói với khách là đã thanh toán")
+                .isFalse();
         assertThat(don.getPaymentStatus())
                 .as("Thanh toán hỏng thì đơn phải còn UNPAID để khách trả lại được")
                 .isEqualTo(Order.PaymentStatus.UNPAID);
     }
 
     @Test
-    @DisplayName("Đơn đã bị huỷ giữa lúc thanh toán: KHÔNG set PAID đè lên, trả 02")
+    @DisplayName("Đơn đã bị huỷ giữa lúc thanh toán: KHÔNG set PAID đè lên, và ghi nhận thành khoản phải hoàn")
     void donDaHuyThiKhongSetPaid() {
         don.setStatus(Order.Status.CANCELLED);
+        don.setRefundStatus(Order.RefundStatus.NONE);
 
-        assertThat(ipn(thamSo("00", 350_000))).isEqualTo(VnpayIpnResult.ALREADY_CONFIRMED);
+        VnpayIpnResult kq = ipn(thamSo("00", 350_000));
+
+        assertThat(kq.getRspCode()).as("Trả 02 để VNPay dừng gửi lại -- đơn đã chết, thử lại vô ích")
+                .isEqualTo("02");
+        assertThat(kq.laThanhToanThanhCong())
+                .as("Đơn đã huỷ thì không phải là đơn đã thanh toán xong").isFalse();
+        assertThat(don.getStatus())
+                .as("Không hồi sinh đơn đã huỷ").isEqualTo(Order.Status.CANCELLED);
+        // Bản trước dừng ở đây (chỉ khẳng định không set PAID) và bỏ lửng câu hỏi quan trọng hơn: THẾ
+        // CÒN SỐ TIỀN ĐÃ VỀ THÌ SAO. Nó chỉ được ghi vào log, không vào bất kỳ danh sách nào.
+        assertThat(don.getRefundStatus())
+                .as("Tiền thật đã về shop -- phải nổi lên hàng chờ chuyển tiền, không chỉ nằm trong log")
+                .isEqualTo(Order.RefundStatus.PENDING);
         assertThat(don.getPaymentStatus())
-                .as("Tiền đã về shop nhưng đơn đã chết -- phải đối soát tay, không tự coi là ổn")
-                .isEqualTo(Order.PaymentStatus.UNPAID);
+                .as("Bút toán đảo khoản: đã thu rồi phải trả lại, không để lẫn với đơn chưa ai trả tiền")
+                .isEqualTo(Order.PaymentStatus.REFUNDED);
     }
 
     // ----- ReturnUrl (redirect trình duyệt) dùng chung lõi -----

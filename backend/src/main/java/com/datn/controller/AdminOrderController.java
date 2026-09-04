@@ -47,6 +47,16 @@ public class AdminOrderController {
         return ResponseEntity.ok(adminOrderService.confirmRefund(orderId));
     }
 
+    /** Admin điền/sửa tài khoản nhận tiền hoàn -- dùng khi khoản hoàn phát sinh mà không hỏi được khách
+     *  (admin tự huỷ đơn đã thanh toán, hoặc tiền VNPay về sau khi đơn đã huỷ). */
+    @PatchMapping("/{orderId}/refund-account")
+    @PreAuthorize("@perm.has('ORDER_UPDATE_STATUS')")
+    public ResponseEntity<AdminOrderResponse> updateRefundAccount(
+            @PathVariable Long orderId,
+            @Valid @RequestBody com.datn.dto.admin.UpdateRefundAccountRequest request) {
+        return ResponseEntity.ok(adminOrderService.updateRefundAccount(orderId, request));
+    }
+
     @PatchMapping("/{orderId}/confirm-payment")
     @PreAuthorize("@perm.has('ORDER_UPDATE_STATUS')")
     public ResponseEntity<AdminOrderResponse> confirmPayment(@PathVariable Long orderId) {
