@@ -11,6 +11,14 @@ interface AuthContextValue {
   login: (payload: LoginPayload) => Promise<void>
   register: (payload: RegisterPayload) => Promise<void>
   logout: () => void
+  /**
+   * Cập nhật vài trường của người dùng đang đăng nhập (vd sửa họ tên ở màn Tài khoản).
+   *
+   * Cần thiết vì thông tin hiển thị được đọc từ bản sao trong localStorage, KHÔNG gọi lại API mỗi lần
+   * vẽ. Sửa họ tên mà không đồng bộ vào đây thì Header vẫn hiện tên cũ cho tới lần đăng nhập sau --
+   * người dùng tưởng là chưa lưu được.
+   */
+  updateUser: (thayDoi: Partial<AuthUser>) => void
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -97,6 +105,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persistSession(result)
   }
 
+  const updateUser = useCallback((thayDoi: Partial<AuthUser>) => {
+    setUser((truoc) => {
+      if (!truoc) return truoc // đã đăng xuất giữa chừng -> không dựng lại phiên từ một bản vá lẻ
+      const sau = { ...truoc, ...thayDoi }
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(sau))
+      return sau
+    })
+  }, [])
+
   const value: AuthContextValue = {
     user,
     isAuthenticated: user !== null,
@@ -104,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     register,
     logout: clearSession,
+    updateUser,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

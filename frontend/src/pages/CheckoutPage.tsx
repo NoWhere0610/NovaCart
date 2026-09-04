@@ -7,6 +7,7 @@ import { getShippingFeeApi } from "../api/shippingApi";
 import { previewVoucherApi } from "../api/voucherApi";
 import { useCart } from "../contexts/CartContext";
 import BackButton from "../components/BackButton";
+import AccountPhonePrompt from "../components/AccountPhonePrompt";
 
 const formatVnd = (n: number) => n.toLocaleString("vi-VN") + "₫";
 
@@ -37,6 +38,8 @@ export default function CheckoutPage() {
   const [checkingVoucher, setCheckingVoucher] = useState(false);
   const [shippingFee, setShippingFee] = useState(0);
   const [loadingFee, setLoadingFee] = useState(false);
+  const diaChiDangChon =
+    addresses.find((a) => a.addressId === selectedAddressId) ?? null;
 
   // Chỉ đúng các dòng đang thực sự đặt hàng ở lượt này -- cả giỏ nếu cartItemIds không có.
   const checkoutItems = cart
@@ -257,6 +260,13 @@ export default function CheckoutPage() {
             ))}
           </div>
         )}
+
+        {/* Đặt SAU khối địa chỉ để điền sẵn được số của địa chỉ đang chọn -- người dùng chỉ cần bấm
+            một nút. Tự ẩn khi tài khoản đã có số điện thoại. */}
+        <AccountPhonePrompt
+          soGoiY={diaChiDangChon?.phone}
+          tenGoiY={diaChiDangChon?.receiverName}
+        />
 
         <h2 className="text-sm font-semibold text-stone-700 mb-2">
           Phương thức thanh toán

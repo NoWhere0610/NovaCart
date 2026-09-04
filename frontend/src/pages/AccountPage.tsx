@@ -21,6 +21,8 @@ import {
 import BackButton from '../components/BackButton'
 import AddressMapPicker from '../components/AddressMapPicker'
 import SearchableSelect from '../components/SearchableSelect'
+import ProfileForm from '../components/ProfileForm'
+import ChangePasswordForm from '../components/ChangePasswordForm'
 
 const EMPTY_FORM = {
   receiverName: '',
@@ -258,7 +260,16 @@ export default function AccountPage() {
           <IconChevronRight size={16} className="text-stone-400" />
         </Link>
 
-        <h2 className="text-lg font-medium text-stone-900 mb-3">Sổ địa chỉ</h2>
+        <h2 className="text-lg font-medium text-stone-900 mb-3">Thông tin cá nhân</h2>
+        <ProfileForm />
+
+        <div className="border-t border-stone-200 my-6 pt-6">
+          <ChangePasswordForm />
+        </div>
+
+        {/* Số điện thoại ở phần trên là số liên hệ của TÀI KHOẢN; số dưới đây là số NGƯỜI NHẬN của từng
+            địa chỉ giao hàng, cố ý tách riêng vì mua hộ/gửi người nhà thì hai số khác nhau. */}
+        <h2 className="text-lg font-medium text-stone-900 mb-3 border-t border-stone-200 pt-6">Sổ địa chỉ</h2>
 
         {loadingAddresses ? (
           <p className="text-sm text-stone-500">Đang tải...</p>

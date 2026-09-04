@@ -29,4 +29,17 @@ public class AddressRequest {
     private Double latitude;
     private Double longitude;
     private Boolean isDefault;
+
+    /*
+     * Cắt khoảng trắng hai đầu trước khi @Pattern chấm điểm -- cùng lý do đã ghi kỹ trong
+     * UpdateProfileRequest.setPhone(): Jackson gọi setter TRƯỚC khi @Valid chạy, nên đây là chỗ duy
+     * nhất cắt kịp. Số dán từ tin nhắn thường dính dấu cách và trước đây bị đánh trượt oan.
+     */
+    public void setPhone(String phone) {
+        this.phone = phone == null ? null : phone.trim();
+    }
+
+    public void setReceiverName(String receiverName) {
+        this.receiverName = receiverName == null ? null : receiverName.trim();
+    }
 }

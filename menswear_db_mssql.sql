@@ -158,6 +158,27 @@ PRIMARY KEY CLUSTERED
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
+/****** Object:  Table [dbo].[password_reset_tokens] ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/* Vé một lần cho luồng "quên mật khẩu" (xem PasswordResetToken.java).
+   token_hash lưu bản BĂM SHA-256 (64 ký tự hex) của mã, KHÔNG lưu mã gốc -- ai đọc được bảng này cũng
+   không dựng lại được link đặt lại mật khẩu. Mã gốc chỉ tồn tại trong email đã gửi đi. */
+CREATE TABLE [dbo].[password_reset_tokens](
+	[token_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[token_hash] [varchar](64) NOT NULL,
+	[expires_at] [datetime2](7) NOT NULL,
+	[used_at] [datetime2](7) NULL,
+	[created_at] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED
+(
+	[token_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
 /****** Object:  Table [dbo].[product_images]    Script Date: 8/4/2026 3:07:55 PM ******/
 SET ANSI_NULLS ON
 GO
@@ -3724,6 +3745,17 @@ GO
 ALTER TABLE [dbo].[vouchers] ADD  DEFAULT ((1)) FOR [is_active]
 GO
 ALTER TABLE [dbo].[addresses]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[password_reset_tokens] ADD UNIQUE NONCLUSTERED
+(
+	[token_hash] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+/* CASCADE: xoá tài khoản thì mọi vé đặt lại mật khẩu của tài khoản đó phải mất theo, không để lại
+   mã còn sống trỏ tới một user_id đã biến mất. */
+ALTER TABLE [dbo].[password_reset_tokens]  WITH CHECK ADD FOREIGN KEY([user_id])
 REFERENCES [dbo].[users] ([user_id])
 ON DELETE CASCADE
 GO

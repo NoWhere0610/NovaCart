@@ -4,6 +4,8 @@ import CategoriesPage from "./pages/CategoriesPage";
 import ShopPage from "./pages/ShopPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AccountPage from "./pages/AccountPage";
 import ProductDetailPage from "./pages/ProductDetailPage";
 import CartPage from "./pages/CartPage";
@@ -44,9 +46,12 @@ function App() {
         <FloatingSocialButtons />
         <ChatWidget />
         <Routes>
-          {/* Chỉ 2 route này KHÔNG cần đăng nhập */}
+          {/* Các route xác thực -- KHÔNG cần đăng nhập (hiển nhiên: người quên mật khẩu thì không
+              đăng nhập được để mà vào lấy lại mật khẩu) */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Header + Footer cố định cho mọi trang khách hàng -- gồm cả trang PUBLIC (xem tự do,
               khớp đúng /api/home/** permitAll() ở backend) lẫn trang riêng tư (bắt buộc đăng nhập). */}
