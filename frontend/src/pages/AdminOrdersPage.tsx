@@ -47,7 +47,7 @@ const NEXT_STATUS: Record<string, { status: string; label: string; danger?: bool
   COMPLETED: [],
   CANCELLED: [],
   RETURN_REQUESTED: [
-    { status: 'RETURNED', label: 'Duyệt trả hàng', danger: true },
+    { status: 'RETURNED', label: 'Xác nhận đã hoàn tiền', danger: true },
     { status: 'COMPLETED', label: 'Từ chối (giữ Hoàn thành)' },
   ],
   RETURNED: [],
@@ -128,6 +128,7 @@ export default function AdminOrdersPage() {
                 <th className="px-4 py-3">Khách hàng</th>
                 <th className="px-4 py-3">Tổng tiền</th>
                 <th className="px-4 py-3">Trạng thái</th>
+                <th className="px-4 py-3">Tài khoản hoàn tiền</th>
                 <th className="px-4 py-3">Ngày đặt</th>
                 <th className="px-4 py-3">Thao tác</th>
               </tr>
@@ -149,6 +150,17 @@ export default function AdminOrdersPage() {
                       <div className="text-xs text-stone-400 mt-1 max-w-[220px]">
                         Lý do: {o.returnReason}
                       </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-stone-500">
+                    {o.returnBankName ? (
+                      <div className="max-w-50">
+                        <div className="text-stone-700">{o.returnBankName}</div>
+                        <div>{o.returnAccountNumber}</div>
+                        <div className="text-xs text-stone-400">{o.returnAccountHolder}</div>
+                      </div>
+                    ) : (
+                      '—'
                     )}
                   </td>
                   <td className="px-4 py-3 text-stone-500">
@@ -185,7 +197,7 @@ export default function AdminOrdersPage() {
               ))}
               {orders.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
                     Không có đơn hàng nào
                   </td>
                 </tr>

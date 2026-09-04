@@ -183,6 +183,9 @@ export interface AdminOrderDto {
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED'
   note: string | null
   returnReason: string | null
+  returnBankName: string | null
+  returnAccountNumber: string | null
+  returnAccountHolder: string | null
   createdAt: string
   items: { productId: number | null; productName: string; size: string; color: string; unitPrice: number; quantity: number; subtotal: number }[] | null
 }

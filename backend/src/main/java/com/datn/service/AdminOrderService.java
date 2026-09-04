@@ -194,6 +194,9 @@ public class AdminOrderService {
                 .paymentStatus(order.getPaymentStatus())
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
+                .returnBankName(order.getReturnBankName())
+                .returnAccountNumber(order.getReturnAccountNumber())
+                .returnAccountHolder(order.getReturnAccountHolder())
                 .createdAt(order.getCreatedAt())
                 .items(includeItems ? order.getItems().stream().map(i -> OrderItemResponse.builder()
                         .productId(i.getVariant() != null && i.getVariant().getProduct() != null

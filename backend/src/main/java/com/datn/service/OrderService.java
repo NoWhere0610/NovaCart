@@ -212,6 +212,9 @@ public class OrderService {
 
         order.setStatus(Order.Status.RETURN_REQUESTED);
         order.setReturnReason(request.getReason());
+        order.setReturnBankName(request.getBankName());
+        order.setReturnAccountNumber(request.getAccountNumber());
+        order.setReturnAccountHolder(request.getAccountHolder());
         return toResponse(orderRepository.save(order), true);
     }
 
@@ -275,6 +278,9 @@ public class OrderService {
                 .qrCodeUrl(needsQrCode(order) ? vietQrService.buildQrUrl(order.getOrderCode(), order.getTotalAmount()) : null)
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
+                .returnBankName(order.getReturnBankName())
+                .returnAccountNumber(order.getReturnAccountNumber())
+                .returnAccountHolder(order.getReturnAccountHolder())
                 .createdAt(order.getCreatedAt())
                 .items(items)
                 .build();

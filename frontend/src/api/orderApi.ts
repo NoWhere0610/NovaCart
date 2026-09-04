@@ -41,6 +41,9 @@ export interface OrderDto {
   qrCodeUrl: string | null
   note: string | null
   returnReason: string | null
+  returnBankName: string | null
+  returnAccountNumber: string | null
+  returnAccountHolder: string | null
   createdAt: string
   items: OrderItemDto[] | null
 }
@@ -87,8 +90,15 @@ export async function completeOrderApi(orderId: number): Promise<OrderDto> {
   return data
 }
 
-export async function requestReturnApi(orderId: number, reason: string): Promise<OrderDto> {
-  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/request-return`, { reason })
+export interface RequestReturnPayload {
+  reason: string
+  bankName: string
+  accountNumber: string
+  accountHolder: string
+}
+
+export async function requestReturnApi(orderId: number, payload: RequestReturnPayload): Promise<OrderDto> {
+  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/request-return`, payload)
   return data
 }
 
