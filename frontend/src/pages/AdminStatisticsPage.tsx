@@ -829,13 +829,20 @@ export default function AdminStatisticsPage() {
                       <td className="py-2 text-stone-600">
                         {v.size} / {v.color}
                       </td>
-                      <td className="py-2 text-right font-medium text-red-600 tabular-nums">{v.stockQuantity}</td>
+                      {/* 0 là ĐÃ HẾT, không phải "sắp hết" -- hai mức này cần phân biệt vì hành động
+                          khác hẳn nhau: một cái là nhập thêm cho kịp, một cái là đang mất đơn. */}
+                      <td className="py-2 text-right font-medium text-red-600 tabular-nums">
+                        {v.stockQuantity}
+                        {v.stockQuantity === 0 && (
+                          <span className="ml-1 text-xs font-normal">(đã hết)</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {data.lowStockVariants.length === 0 && (
                     <tr>
                       <td colSpan={3} className="py-4 text-center text-stone-400">
-                        Không có biến thể nào sắp hết hàng
+                        Không có phân loại nào sắp hết hoặc đã hết hàng
                       </td>
                     </tr>
                   )}

@@ -391,7 +391,8 @@ export default function AdminProductsPage() {
         />
         <label className="flex items-center gap-2 text-sm text-stone-600">
           <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
-          Chỉ hiện sắp hết hàng (≤ {LOW_STOCK_THRESHOLD})
+          {/* Bộ lọc lấy cả phân loại còn 0 -- nói "sắp hết" không thôi là mô tả thiếu. */}
+          Chỉ hiện sắp hết / đã hết hàng (≤ {LOW_STOCK_THRESHOLD})
         </label>
         <span className="text-sm text-stone-500 ml-auto">
           {loading ? 'Đang tải...' : `Hiển thị ${rangeFrom}–${rangeTo} trong ${totalElements} sản phẩm`}
@@ -421,7 +422,26 @@ export default function AdminProductsPage() {
             <tbody className="divide-y divide-stone-100">
               {products.map((p) => {
                 const totalStock = p.variants.reduce((s, v) => s + v.stockQuantity, 0)
-                const hasLowStock = p.variants.some((v) => v.stockQuantity <= LOW_STOCK_THRESHOLD)
+                /*
+                 * Nhãn cảnh báo phải nói đúng thứ nó đang mô tả.
+                 *
+                 * Bản trước ghi "(sắp hết)" cạnh TỔNG tồn kho, trong khi cờ lại tính theo TỪNG PHÂN
+                 * LOẠI -- nên một sản phẩm còn 590 cái nhưng có đúng một phân loại còn 4 vẫn hiện
+                 * "590 (sắp hết)". Người đọc hiểu thành "590 là sắp hết" và không tin bảng nữa.
+                 * Và số 0 thì không phải "sắp hết" -- nó là ĐÃ HẾT.
+                 */
+                const soPhanLoaiHet = p.variants.filter((v) => v.stockQuantity === 0).length
+                const soPhanLoaiSapHet = p.variants.filter(
+                  (v) => v.stockQuantity > 0 && v.stockQuantity <= LOW_STOCK_THRESHOLD,
+                ).length
+                const canhBaoTonKho = totalStock === 0
+                  ? 'đã hết hàng'
+                  : soPhanLoaiHet > 0
+                    // Ưu tiên hiện ca nặng hơn. Chi tiết từng phân loại xem ở dòng mở rộng bên dưới.
+                    ? `hết ${soPhanLoaiHet} phân loại`
+                    : soPhanLoaiSapHet > 0
+                      ? `sắp hết ${soPhanLoaiSapHet} phân loại`
+                      : null
                 const expanded = expandedProductId === p.productId
                 return (
                   <Fragment key={p.productId}>
@@ -452,9 +472,11 @@ export default function AdminProductsPage() {
                           {STATUS_LABELS[p.status] ?? p.status}
                         </span>
                       </td>
-                      <td className={`px-4 py-3 ${hasLowStock ? 'text-red-600 font-semibold' : ''}`}>
+                      <td className={`px-4 py-3 ${canhBaoTonKho ? 'text-red-600 font-semibold' : ''}`}>
                         {totalStock}
-                        {hasLowStock && <span className="ml-1 text-xs font-normal">(sắp hết)</span>}
+                        {canhBaoTonKho && (
+                          <span className="ml-1 text-xs font-normal">({canhBaoTonKho})</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -481,6 +503,8 @@ export default function AdminProductsPage() {
                             </thead>
                             <tbody>
                               {p.variants.map((v) => {
+                                // Tô đỏ cho cả hai mức, nhưng phân biệt rõ: 0 là đã hết, 1..5 là sắp hết.
+                                const het = v.stockQuantity === 0
                                 const low = v.stockQuantity <= LOW_STOCK_THRESHOLD
                                 const busy = adjustingVariantId === v.variantId
                                 return (
@@ -502,6 +526,11 @@ export default function AdminProductsPage() {
                                         <span className={`w-8 text-center font-semibold ${low ? 'text-red-600' : ''}`}>
                                           {v.stockQuantity}
                                         </span>
+                                        {low && (
+                                          <span className="text-xs text-red-600 whitespace-nowrap">
+                                            {het ? 'đã hết' : 'sắp hết'}
+                                          </span>
+                                        )}
                                         {isAdmin && (
                                           <button
                                             onClick={() => quickAdjustStock(p.productId, v.variantId, 1)}
