@@ -294,8 +294,20 @@ export interface AdminUserDto {
   createdAt: string
 }
 
-export async function getAdminUsersApi(page = 0, size = 20) {
-  const { data } = await apiClient.get<PageResponse<AdminUserDto>>('/admin/users', { params: { page, size } })
+/** keyword lọc ở BACKEND trên toàn bộ người dùng (khớp cả email lẫn tên đăng nhập), không lọc lại
+ *  trên trang hiện tại -- người cần tìm rất có thể nằm ở trang sau. */
+export async function getAdminUsersApi(page = 0, size = 20, keyword = '') {
+  const { data } = await apiClient.get<PageResponse<AdminUserDto>>('/admin/users', {
+    params: { page, size, keyword: keyword || undefined },
+  })
+  return data
+}
+
+export type VaiTro = 'ADMIN' | 'STAFF' | 'CUSTOMER'
+
+/** Đổi vai trò. Backend chặn hai ca nguy hiểm: tự hạ vai trò của mình, và hạ admin cuối cùng. */
+export async function updateAdminUserRoleApi(userId: number, roleName: VaiTro) {
+  const { data } = await apiClient.put<AdminUserDto>(`/admin/users/${userId}/role`, { roleName })
   return data
 }
 

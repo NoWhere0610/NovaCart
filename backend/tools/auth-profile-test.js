@@ -5,12 +5,11 @@
    email có tài khoản" chẳng hạn — bấm tay hai lần rồi so hai câu bằng mắt thì rất dễ bỏ sót một dấu
    chấm khác nhau, mà chỉ cần khác một chữ là lộ ra email nào đã đăng ký.
 
-   Cách chạy (backend đang chạy):
+   Cách chạy (backend đang chạy, sqlcmd có trong PATH):
        node auth-profile-test.js
-       node auth-profile-test.js --user admin --pass admin@123 --api http://localhost:8080/api
+       node auth-profile-test.js --api http://localhost:8080/api
 
-   GHI THẬT vào cơ sở dữ liệu: kịch bản "lưu số điện thoại hợp lệ" đổi hồ sơ của tài khoản đăng nhập.
-   Script tự khôi phục lại giá trị cũ ở cuối, kể cả khi có kịch bản trượt.
+   Chạy trên TÀI KHOẢN DÙNG MỘT LẦN do script tự đăng ký rồi tự xoá -- không đụng tới tài khoản thật nào.
    ============================================================================ */
 
 function docThamSo() {
@@ -21,12 +20,31 @@ function docThamSo() {
   };
   return {
     api: lay('api', 'http://localhost:8080/api'),
-    user: lay('user', 'admin'),
-    pass: lay('pass', 'admin@123'),
+    sql: {
+      server: lay('sql-server', 'localhost,1433'), db: lay('sql-db', 'menswear_shop'),
+      user: lay('sql-user', 'sa'), pass: lay('sql-pass', '123456'),
+    },
   };
 }
 
-const { api, user, pass } = docThamSo();
+const { api, sql } = docThamSo();
+
+/*
+ * Tài khoản DÙNG MỘT LẦN, script tự đăng ký rồi tự xoá.
+ *
+ * Bản trước dùng thẳng tài khoản `admin` thật. Sai lầm: kịch bản "lưu hồ sơ hợp lệ" GHI ĐÈ họ tên và
+ * số điện thoại của admin, mà bước khôi phục lại không chạy được khi số điện thoại ban đầu để trống
+ * (số điện thoại nay là trường bắt buộc, không PUT lại giá trị rỗng được). Kết quả: mỗi lần chạy công
+ * cụ là tên admin bị đổi thành "Người Kiểm Thử" và nằm lại đó -- một công cụ kiểm thử KHÔNG được để
+ * lại dấu vết trên dữ liệu thật, dù chỉ là một cái tên.
+ */
+const dau = Date.now();
+const TEN_DN = `kiemhoso${dau}`.slice(0, 40);
+const MK = 'matkhau123';
+
+const chaySql = (c) => require('child_process').execFileSync('sqlcmd',
+  ['-S', sql.server, '-U', sql.user, '-P', sql.pass, '-d', sql.db, '-C', '-h', '-1', '-W', '-Q', c],
+  { encoding: 'utf8' });
 
 let token = null;
 let soKiemDat = 0;
@@ -60,21 +78,27 @@ function kiem(ten, dieuKien, chiTiet = '') {
   }
 }
 
-async function main() {
-  console.log(`\n  Kiểm ${api} — đăng nhập bằng "${user}"\n`);
+let userId = null;
+const user = TEN_DN;
+const pass = MK;
 
-  // ---------- Đăng nhập ----------
-  const dn = await goi('/auth/login', {
+async function main() {
+  console.log(`\n  Kiểm ${api}`);
+  console.log(`  Tài khoản dùng một lần: ${TEN_DN}\n`);
+
+  // ---------- Dựng tài khoản tạm ----------
+  const dk = await goi('/auth/register', {
     method: 'POST',
     coToken: false,
-    body: { usernameOrEmail: user, password: pass },
+    body: { username: TEN_DN, password: MK, email: `${TEN_DN}@example.invalid`, fullName: 'Khách kiểm thử' },
   });
-  if (dn.http !== 200) {
-    console.error(`  ⊘ BỎ QUA: không đăng nhập được (HTTP ${dn.http}). Backend có đang chạy không, `
-      + `tài khoản "${user}" có đúng mật khẩu không?`);
+  if (dk.http !== 200) {
+    console.error(`  ⊘ BỎ QUA: không đăng ký được tài khoản tạm (HTTP ${dk.http}). `
+      + 'Backend có đang chạy không?');
     process.exit(0); // 0 = chưa chạy được, KHÁC 1 = chạy ra kết quả sai
   }
-  token = dn.body.accessToken;
+  token = dk.body.accessToken;
+  userId = dk.body.userId;
 
   // ---------- Hồ sơ ----------
   console.log('  --- Hồ sơ tài khoản ---');
@@ -199,25 +223,20 @@ async function main() {
   kiem('Mã đặt lại bịa ra -> 400', maBia.http === 400,
     `nhận HTTP ${maBia.http}: ${JSON.stringify(maBia.body)}`);
 
-  // ---------- Khôi phục ----------
+  // ---------- Dọn ----------
   //
-  // Kịch bản "lưu số hợp lệ" đổi CẢ HAI trường (fullName lẫn phone) vì PUT /users/me yêu cầu gửi đủ.
-  // Bản đầu của script này chỉ nhắc trả lại số điện thoại và ÂM THẦM để nguyên họ tên đã bị ghi đè --
-  // đúng kiểu tác dụng phụ lặng lẽ mà một công cụ kiểm thử tuyệt đối không được để lại.
-  if (luuTot.http === 200) {
-    const khoiPhucDuocQuaApi = soCu && soCu.trim() !== '';
-    if (khoiPhucDuocQuaApi) {
-      await goi('/users/me', { method: 'PUT', body: { fullName: tenCu ?? user, phone: soCu } });
-      console.log(`\n  ↺ Đã trả hồ sơ về như cũ (fullName=${JSON.stringify(tenCu)}, phone=${soCu}).`);
-    } else {
-      // Số cũ rỗng thì KHÔNG PUT lại được: số điện thoại giờ là trường bắt buộc, gửi rỗng sẽ bị 400.
-      // Bắt buộc phải dọn thẳng bằng SQL, và phải dọn cả hai trường.
-      console.log(`\n  ↺ Hồ sơ "${user}" trước khi chạy chưa có số điện thoại nên KHÔNG khôi phục qua API được.`);
-      console.log('      Chạy câu này để trả về đúng trạng thái cũ:');
-      console.log(`          UPDATE users SET phone=${soCu === null ? 'NULL' : `'${soCu}'`}, `
-        + `full_name=${tenCu === null ? 'NULL' : `N'${String(tenCu).replace(/'/g, "''")}'`} `
-        + `WHERE username='${user}';`);
-    }
+  // Xoá hẳn tài khoản tạm. Không còn bước "khôi phục hồ sơ về như cũ" nữa vì không có gì để khôi phục
+  // -- tài khoản này sinh ra chỉ để bị sửa. Bản trước dùng tài khoản admin thật nên phải khôi phục, và
+  // bước khôi phục đó lại không chạy được khi số điện thoại ban đầu để trống.
+  try {
+    chaySql(`DELETE FROM password_reset_tokens WHERE user_id=${userId}; `
+      + `DELETE FROM user_roles WHERE user_id=${userId}; `
+      + `DELETE FROM carts WHERE user_id=${userId}; `
+      + `DELETE FROM users WHERE user_id=${userId};`);
+    console.log(`\n  ↺ Đã xoá tài khoản tạm ${TEN_DN}.`);
+  } catch (e) {
+    console.error(`\n  ! Không xoá được tài khoản tạm ${TEN_DN} (id ${userId}): ${e.message}`);
+    console.error(`      Dọn tay: DELETE FROM users WHERE user_id=${userId};`);
   }
 
   console.log('');

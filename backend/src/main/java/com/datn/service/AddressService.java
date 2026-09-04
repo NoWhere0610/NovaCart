@@ -6,6 +6,7 @@ import com.datn.entity.Address;
 import com.datn.entity.User;
 import com.datn.exception.ApiException;
 import com.datn.repository.AddressRepository;
+import com.datn.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import java.util.List;
 public class AddressService {
 
     private final AddressRepository addressRepository;
+    private final UserRepository userRepository;
 
     public List<AddressResponse> getMyAddresses(Long userId) {
         return addressRepository.findByUser_UserId(userId).stream()
@@ -28,7 +30,7 @@ public class AddressService {
     public AddressResponse create(Long userId, AddressRequest request) {
         Address address = new Address();
         address.setUser(userRef(userId));
-        applyRequest(address, request);
+        applyRequest(address, request, userId);
 
         // Địa chỉ đầu tiên của user -> tự động set làm mặc định.
         boolean isFirstAddress = addressRepository.findByUser_UserId(userId).isEmpty();
@@ -43,7 +45,7 @@ public class AddressService {
     @Transactional
     public AddressResponse update(Long userId, Long addressId, AddressRequest request) {
         Address address = getOwnedAddressOrThrow(userId, addressId);
-        applyRequest(address, request);
+        applyRequest(address, request, userId);
 
         if (Boolean.TRUE.equals(request.getIsDefault()) && !Boolean.TRUE.equals(address.getIsDefault())) {
             unsetCurrentDefault(userId);
@@ -100,9 +102,23 @@ public class AddressService {
     private static final double VN_MIN_LNG = 102.0;
     private static final double VN_MAX_LNG = 115.0;
 
-    private void applyRequest(Address address, AddressRequest request) {
-        address.setReceiverName(request.getReceiverName());
-        address.setPhone(request.getPhone());
+    private void applyRequest(Address address, AddressRequest request, Long userId) {
+        // Người nhận LUÔN lấy từ hồ sơ tài khoản, không nhận từ request -- xem AddressRequest.
+        // Đọc lại mỗi lần lưu địa chỉ nên sửa hồ sơ xong, lưu lại địa chỉ là số mới có hiệu lực ngay.
+        User chuTaiKhoan = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy tài khoản"));
+
+        // Cột receiver_name/phone của bảng addresses là NOT NULL, và đơn hàng lấy thẳng số này để giao.
+        // Hồ sơ thiếu thì phải chặn tại đây với câu chỉ rõ phải làm gì, chứ không để lỗi ràng buộc cơ
+        // sở dữ liệu bắn ra một thông báo chẳng ai hiểu.
+        if (chuTaiKhoan.getFullName() == null || chuTaiKhoan.getFullName().isBlank()
+                || chuTaiKhoan.getPhone() == null || chuTaiKhoan.getPhone().isBlank()) {
+            throw ApiException.badRequest(
+                    "Vui lòng điền Họ tên và Số điện thoại ở mục Thông tin cá nhân trước khi thêm địa chỉ giao hàng");
+        }
+
+        address.setReceiverName(chuTaiKhoan.getFullName());
+        address.setPhone(chuTaiKhoan.getPhone());
         address.setProvince(request.getProvince());
         address.setDistrict(request.getDistrict());
         address.setWard(request.getWard());

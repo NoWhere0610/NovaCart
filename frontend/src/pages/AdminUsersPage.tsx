@@ -1,24 +1,75 @@
 import { useEffect, useState } from 'react'
-import { getAdminUsersApi, lockAdminUserApi, unlockAdminUserApi, type AdminUserDto } from '../api/adminApi'
+import {
+  getAdminUsersApi,
+  lockAdminUserApi,
+  unlockAdminUserApi,
+  updateAdminUserRoleApi,
+  type AdminUserDto,
+  type VaiTro,
+} from '../api/adminApi'
 import { useAlertDialog } from '../hooks/useAlertDialog'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
+
+const VAI_TRO: { value: VaiTro; label: string }[] = [
+  { value: 'CUSTOMER', label: 'CUSTOMER — khách mua hàng' },
+  { value: 'STAFF', label: 'STAFF — nhân viên (quyền theo ma trận)' },
+  { value: 'ADMIN', label: 'ADMIN — toàn quyền' },
+]
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUserDto[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [tuKhoa, setTuKhoa] = useState('')
+  // Đơn đang mở ô chọn vai trò (null = không mở ô nào). Không dùng <select> hiện sẵn trên mọi dòng --
+  // đổi vai trò là thao tác hiếm và nguy hiểm, để sẵn một ô chọn ở mỗi dòng rất dễ bấm nhầm.
+  const [doiVaiTroChoId, setDoiVaiTroChoId] = useState<number | null>(null)
   const { alertDialog, dialog } = useAlertDialog()
+  const { confirm: confirmDialog, dialog: confirmDialogEl } = useConfirmDialog()
 
+  // Tự tìm sau khi ngừng gõ 400ms, không bắt bấm nút -- khớp cách ô tìm ở Header và trang Sản phẩm.
   useEffect(() => {
-    loadUsers()
-  }, [])
+    const timer = setTimeout(() => loadUsers(tuKhoa), 400)
+    return () => clearTimeout(timer)
+  }, [tuKhoa])
 
-  async function loadUsers() {
+  async function loadUsers(keyword = tuKhoa) {
     setLoading(true)
     try {
-      const res = await getAdminUsersApi(0, 50)
+      const res = await getAdminUsersApi(0, 50, keyword)
       setUsers(res.content)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDoiVaiTro(u: AdminUserDto, vaiTroMoi: VaiTro) {
+    if (u.roles.includes(vaiTroMoi)) {
+      setDoiVaiTroChoId(null)
+      return
+    }
+    // Hỏi lại vì đổi vai trò thay đổi ngay lập tức những gì người đó làm được với hệ thống.
+    const dongY = await confirmDialog(
+      `Đổi vai trò của "${u.username}" thành ${vaiTroMoi}?
+
+`
+        + (vaiTroMoi === 'ADMIN'
+          ? 'ADMIN có toàn quyền, kể cả sửa vai trò của người khác.'
+          : vaiTroMoi === 'STAFF'
+            ? 'STAFF vào được khu quản trị, quyền cụ thể theo ma trận ở trang Phân quyền nhân viên.'
+            : 'CUSTOMER không vào được khu quản trị.'),
+    )
+    if (!dongY) return
+
+    setBusyId(u.userId)
+    try {
+      await updateAdminUserRoleApi(u.userId, vaiTroMoi)
+      setDoiVaiTroChoId(null)
+      await loadUsers()
+    } catch (err: any) {
+      await alertDialog(err.response?.data?.message ?? 'Không thể đổi vai trò')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -41,7 +92,15 @@ export default function AdminUsersPage() {
   return (
     <div>
       {dialog}
-      <h1 className="text-2xl font-semibold text-stone-900 mb-6">Quản lý người dùng</h1>
+      {confirmDialogEl}
+      <h1 className="text-2xl font-semibold text-stone-900 mb-4">Quản lý người dùng</h1>
+
+      <input
+        value={tuKhoa}
+        onChange={(e) => setTuKhoa(e.target.value)}
+        placeholder="Tìm theo email hoặc tên đăng nhập..."
+        className="w-full sm:w-96 border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900 mb-4"
+      />
 
       {loading ? (
         <p className="text-stone-500">Đang tải...</p>
@@ -64,7 +123,42 @@ export default function AdminUsersPage() {
                   <td className="px-4 py-3 font-medium">{u.username}</td>
                   <td className="px-4 py-3">{u.email}</td>
                   <td className="px-4 py-3">{u.fullName || '—'}</td>
-                  <td className="px-4 py-3">{u.roles.join(', ')}</td>
+                  <td className="px-4 py-3">
+                    {doiVaiTroChoId === u.userId ? (
+                      <div className="flex flex-col gap-1">
+                        {VAI_TRO.map((vt) => (
+                          <button
+                            key={vt.value}
+                            disabled={busyId === u.userId}
+                            onClick={() => handleDoiVaiTro(u, vt.value)}
+                            className={`text-xs border px-2 py-1 text-left disabled:opacity-50 ${
+                              u.roles.includes(vt.value)
+                                ? 'border-stone-900 bg-stone-900 text-white'
+                                : 'border-stone-300 hover:border-stone-900'
+                            }`}
+                          >
+                            {vt.label}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => setDoiVaiTroChoId(null)}
+                          className="text-xs text-stone-500 underline text-left mt-0.5"
+                        >
+                          Huỷ
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span>{u.roles.join(', ') || '—'}</span>
+                        <button
+                          onClick={() => setDoiVaiTroChoId(u.userId)}
+                          className="text-xs border border-stone-300 px-2 py-0.5 hover:border-stone-900"
+                        >
+                          Sửa
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     {u.isActive ? (
                       <span className="text-green-700">Đang hoạt động</span>
@@ -88,7 +182,7 @@ export default function AdminUsersPage() {
               {users.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
-                    Không có người dùng nào
+                    {tuKhoa ? `Không tìm thấy người dùng nào khớp "${tuKhoa}"` : 'Không có người dùng nào'}
                   </td>
                 </tr>
               )}

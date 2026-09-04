@@ -13,7 +13,13 @@ export interface AddressDto {
   isDefault: boolean
 }
 
-export type AddressPayload = Omit<AddressDto, 'addressId'>
+/**
+ * Body gửi lên KHÔNG có receiverName/phone.
+ *
+ * Backend lấy hai thông tin đó từ hồ sơ tài khoản (xem AddressRequest.java) -- gửi lên cũng bị bỏ qua.
+ * Vẫn ĐỌC được chúng trong AddressDto trả về để hiển thị "giao cho ai, số nào".
+ */
+export type AddressPayload = Omit<AddressDto, 'addressId' | 'receiverName' | 'phone'>
 
 export async function getMyAddressesApi(): Promise<AddressDto[]> {
   const { data } = await apiClient.get<AddressDto[]>('/addresses')

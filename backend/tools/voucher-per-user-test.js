@@ -78,10 +78,20 @@ async function main() {
       `SELECT TOP 1 v.variant_id FROM product_variants v JOIN products p ON p.product_id=v.product_id `
       + `WHERE v.stock_quantity >= 5 AND p.status='ACTIVE' ORDER BY v.variant_id;`).trim().split('\n')[0].trim());
 
+    // Điền hồ sơ TRƯỚC khi thêm địa chỉ: tên người nhận và số điện thoại của địa chỉ nay lấy từ hồ sơ
+    // tài khoản, nên hồ sơ trống thì backend từ chối tạo địa chỉ (xem AddressService.applyRequest).
+    const hoSo = await goi('/users/me', {
+      method: 'PUT', token, body: { fullName: 'Khach kiem thu', phone: '0912345678' },
+    });
+    if (hoSo.http !== 200) {
+      console.error(`  ⊘ BỎ QUA: không điền được hồ sơ (HTTP ${hoSo.http}): ${JSON.stringify(hoSo.body)}`);
+      process.exit(0);
+    }
+
     const dc = await goi('/addresses', {
       method: 'POST', token,
       body: {
-        receiverName: 'Khach kiem thu', phone: '0912345678', province: 'Thành phố Hà Nội',
+        province: 'Thành phố Hà Nội',
         district: null, ward: 'Phường Hoàn Kiếm', detailAddress: '1 Tràng Tiền', isDefault: true,
       },
     });

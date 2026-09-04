@@ -1,21 +1,25 @@
 package com.datn.dto.address;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * Body của POST/PUT /api/addresses.
+ *
+ * KHÔNG còn nhận tên người nhận và số điện thoại. Hai thông tin đó lấy thẳng từ hồ sơ tài khoản (họ
+ * tên + số điện thoại, cả hai đều bắt buộc ở màn Tài khoản) -- xem AddressService.applyRequest.
+ *
+ * Bắt khách gõ lại chính tên và số của mình ở MỖI địa chỉ là hỏi hai lần cùng một thứ, và mở đường cho
+ * hai nơi lệch nhau: sửa số điện thoại ở hồ sơ mà các địa chỉ cũ vẫn giữ số cũ thì đơn hàng tiếp theo
+ * lại giao theo số đã bỏ.
+ *
+ * ĐÁNH ĐỔI đã biết: không còn đặt hàng gửi cho người khác (mua hộ, gửi người nhà) với tên/số riêng cho
+ * từng địa chỉ. Mọi đơn ghi người nhận là chủ tài khoản.
+ */
 @Getter
 @Setter
 public class AddressRequest {
-
-    @NotBlank(message = "Tên người nhận không được để trống")
-    private String receiverName;
-
-    @NotBlank(message = "Số điện thoại không được để trống")
-    @Pattern(regexp = "^(0|\\+84)(3|5|7|8|9)[0-9]{8}$",
-            message = "Số điện thoại không đúng định dạng (10 số, bắt đầu bằng 03/05/07/08/09, vd 0912345678)")
-    private String phone;
 
     @NotBlank(message = "Vui lòng chọn Tỉnh/Thành phố")
     private String province;
@@ -29,17 +33,4 @@ public class AddressRequest {
     private Double latitude;
     private Double longitude;
     private Boolean isDefault;
-
-    /*
-     * Cắt khoảng trắng hai đầu trước khi @Pattern chấm điểm -- cùng lý do đã ghi kỹ trong
-     * UpdateProfileRequest.setPhone(): Jackson gọi setter TRƯỚC khi @Valid chạy, nên đây là chỗ duy
-     * nhất cắt kịp. Số dán từ tin nhắn thường dính dấu cách và trước đây bị đánh trượt oan.
-     */
-    public void setPhone(String phone) {
-        this.phone = phone == null ? null : phone.trim();
-    }
-
-    public void setReceiverName(String receiverName) {
-        this.receiverName = receiverName == null ? null : receiverName.trim();
-    }
 }

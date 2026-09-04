@@ -36,25 +36,29 @@
 |---|---|---|
 | `admin` / `admin@123` | Toàn bộ phần Admin/POS/Thống kê/Phân quyền | Đã seed sẵn, xem `menswear_db_mssql.sql` |
 | 1 tài khoản khách hàng thường | Phần mua sắm của Tân, checkout của Cường, chatbot của Long | Đăng ký mới ngay đầu demo (Huy), hoặc tạo sẵn trước để đỡ tốn thời gian nếu lo lỗi |
-| 1 tài khoản **STAFF** bị giới hạn quyền | Phần QA của Tùng (demo chặn 403) | **Chưa có UI tự tạo — phải làm tay, xem mục 1.3** |
+| 1 tài khoản **STAFF** bị giới hạn quyền | Phần QA của Tùng (demo chặn 403) | **[MỚI]** Tạo ngay trên giao diện, xem mục 1.3 |
 
-### 1.3. Tạo tài khoản STAFF để demo phân quyền (bắt buộc chuẩn bị trước, không làm được live)
+### 1.3. **[MỚI]** Tạo tài khoản STAFF để demo phân quyền — nay làm được ngay trên giao diện
 
-Hiện tại trang "Quản lý người dùng" chỉ khoá/mở khoá tài khoản, **không có nút gán vai trò**. Muốn có 1 tài khoản STAFF để Tùng demo case bị chặn quyền, làm theo các bước sau ít nhất 1 ngày trước:
+**Không còn phải chạy SQL tay nữa.** Trang "Quản lý người dùng" đã có ô tìm và nút đổi vai trò.
 
 1. Đăng ký 1 tài khoản mới bình thường qua `/register` (vd username `nhanvien1`).
-2. Mở SQL Server Management Studio (hoặc `sqlcmd`), chạy:
-   ```sql
-   -- Tìm user_id vừa đăng ký
-   SELECT user_id, username FROM dbo.users WHERE username = N'nhanvien1';
-
-   -- Gán role STAFF (role_id = 3) cho user đó -- thay 999 bằng user_id thật ở trên
-   INSERT INTO dbo.user_roles (user_id, role_id) VALUES (999, 3);
-   ```
+2. Đăng nhập `admin` → `/admin/users` → gõ email hoặc tên đăng nhập vào **ô tìm** → ở cột **Vai trò**
+   bấm **Sửa** → chọn **STAFF** → xác nhận.
 3. Đăng nhập thử bằng `nhanvien1` — vào được `/admin` (do `allowStaff` ở route), nhưng phải thấy đúng hành vi:
    - Menu sidebar **không** có "Người dùng" và "Phân quyền nhân viên" (chỉ ADMIN thấy).
-   - Vào trang **Sản phẩm** chỉ xem được, không có nút "+ Thêm sản phẩm" / "Sửa" nếu quyền `PRODUCT_WRITE` đang tắt (mặc định STAFF chỉ có `PRODUCT_VIEW`).
-4. Đăng nhập lại bằng `admin`, vào `/admin/permissions`, xem đúng ma trận đang seed mặc định cho STAFF: **bật sẵn** POS_USE, ORDER_VIEW, ORDER_UPDATE_STATUS, PRODUCT_VIEW, CATEGORY_BRAND_VIEW, VOUCHER_VIEW — **tắt sẵn** các quyền còn lại (PRODUCT_WRITE, PRODUCT_DELETE, CATEGORY_BRAND_WRITE/DELETE, VOUCHER_WRITE/DELETE, STATISTICS_VIEW).
+   - Vào trang **Sản phẩm** chỉ xem được, không có nút "+ Thêm sản phẩm" / "Sửa" nếu quyền
+     `PRODUCT_WRITE` đang tắt (mặc định STAFF chỉ có `PRODUCT_VIEW`).
+4. Đăng nhập lại bằng `admin`, vào `/admin/permissions`, xem đúng ma trận đang seed mặc định cho STAFF:
+   **bật sẵn** POS_USE, ORDER_VIEW, ORDER_UPDATE_STATUS, PRODUCT_VIEW, CATEGORY_BRAND_VIEW,
+   VOUCHER_VIEW — **tắt sẵn** các quyền còn lại.
+
+**Có thể demo luôn hai chốt chặn** (đáng nói vì hội đồng hay hỏi "lỡ tay thì sao"):
+- Thử hạ vai trò của **chính tài khoản đang đăng nhập** → hệ thống chặn: *"Không thể tự hạ vai trò của
+  tài khoản đang đăng nhập -- bạn sẽ mất quyền quản trị ngay lập tức"*.
+- Chốt thứ hai (không hạ vai trò của ADMIN cuối cùng) **không dựng được trên giao diện** — chỉ ADMIN mới
+  vào được trang này, nên muốn hạ admin cuối cùng thì người bấm cũng phải là admin, tức là đã có 2 admin.
+  Nói thẳng như vậy nếu bị hỏi; nó được kiểm bằng test đơn vị (`AdminUserServiceRoleTest`).
 
 ### 1.4. **[MỚI]** Cấu hình gửi email — bắt buộc nếu muốn demo "Quên mật khẩu"
 
@@ -221,18 +225,26 @@ Mã QR VietQR khi chọn "Chuyển khoản ngân hàng" trỏ tới **tài kho�
 8. **[MỚI]** Bấm tiếp **"→ Giao cho vận chuyển"** rồi chỉ ra đơn ở trạng thái **"Chờ nhận hàng"** có **hai** lựa chọn: *"→ Đã giao hàng"* và **"Huỷ đơn (giao thất bại)"**. Nói: *"Nút huỷ ở đây dành cho ca giao thất bại — khách từ chối nhận, hàng quay về shop. Thiếu nó thì nhân viên muốn đóng đơn buộc phải bấm 'Đã giao hàng', tức là ghi nhận sai sự thật — mà với đơn COD, 'đã giao' lại là căn cứ để hệ thống tin khách đã trả tiền."*
 9. **[MỚI]** Trên 1 đơn COD đã giao, chỉ nút **"Xác nhận đã thu tiền COD"**. Nói: *"Trước đây chỉ đơn chuyển khoản mới có bước xác nhận, còn đơn COD giữ trạng thái 'chưa thanh toán' vĩnh viễn dù khách đã đưa tiền cho shipper — nên mọi chỗ cần biết khách đã trả tiền chưa đều phải suy đoán. Nay không còn chỗ nào phải đoán."*
 
+**[MỚI] Các bước thao tác — Quản lý người dùng (`/admin/users`, chỉ ADMIN thấy):**
+
+10. Gõ email vào **ô tìm** → danh sách lọc ngay (khớp cả email lẫn tên đăng nhập, lọc ở backend trên
+    toàn bộ người dùng chứ không lọc lại trên trang hiện tại).
+11. Ở cột **Vai trò** bấm **Sửa** → chọn vai trò mới → xác nhận. Nói: *"Trước đây muốn tạo một nhân
+    viên phải chạy INSERT tay vào bảng user_roles — việc chỉ người viết mã làm được."*
+12. Thử hạ vai trò của **chính tài khoản đang đăng nhập** → hệ thống chặn, giải thích lý do.
+
 **Các bước thao tác — Phân quyền nhân viên (`/admin/permissions`, chỉ ADMIN thấy):**
 
-10. Chỉ ma trận quyền theo nhóm (Sản phẩm, Danh mục & Thương hiệu, Đơn hàng, Mã giảm giá, Thống kê, Bán hàng tại quầy).
-11. Bật thử quyền **PRODUCT_WRITE** cho STAFF → bấm **Lưu thay đổi** → nói: "Thay đổi có hiệu lực ngay lập tức, nhân viên đang đăng nhập không cần đăng xuất vào lại."
+13. Chỉ ma trận quyền theo nhóm (Sản phẩm, Danh mục & Thương hiệu, Đơn hàng, Mã giảm giá, Thống kê, Bán hàng tại quầy).
+14. Bật thử quyền **PRODUCT_WRITE** cho STAFF → bấm **Lưu thay đổi** → nói: "Thay đổi có hiệu lực ngay lập tức, nhân viên đang đăng nhập không cần đăng xuất vào lại."
 
 **Các bước thao tác — Bán hàng tại quầy (`/admin/pos`):**
 
-12. Bấm **+ Hoá đơn mới**.
-13. Ở cột giữa, gõ tên sản phẩm vào ô tìm, bấm **Tìm** → bấm chọn 1 phân loại size/màu để thêm vào hoá đơn (số trong ngoặc là tồn kho còn lại, hết hàng thì nút tự mờ đi không bấm được).
-14. Sửa số lượng trực tiếp trên dòng sản phẩm trong hoá đơn.
-15. Chọn phương thức **Tiền mặt**, bấm **Thanh toán** → hoá đơn chuyển trạng thái **"Đã thanh toán"**.
-16. Bấm **In hoá đơn** → mở tab in riêng (`/admin/pos/invoices/:id/print`), không có sidebar quản trị — thiết kế để in nhiệt/in khổ nhỏ tại quầy.
+15. Bấm **+ Hoá đơn mới**.
+16. Ở cột giữa, gõ tên sản phẩm vào ô tìm, bấm **Tìm** → bấm chọn 1 phân loại size/màu để thêm vào hoá đơn (số trong ngoặc là tồn kho còn lại, hết hàng thì nút tự mờ đi không bấm được).
+17. Sửa số lượng trực tiếp trên dòng sản phẩm trong hoá đơn.
+18. Chọn phương thức **Tiền mặt**, bấm **Thanh toán** → hoá đơn chuyển trạng thái **"Đã thanh toán"**.
+19. Bấm **In hoá đơn** → mở tab in riêng (`/admin/pos/invoices/:id/print`), không có sidebar quản trị — thiết kế để in nhiệt/in khổ nhỏ tại quầy.
 
 **Lời dẫn mẫu (mở đầu):**
 > "Khác với nhiều đồ án chỉ có 1 kênh bán online, NovaCart có thêm hẳn 1 module bán tại quầy độc lập — vì luồng nghiệp vụ khác hẳn: đơn tại quầy trừ kho ngay lúc thêm sản phẩm vào hoá đơn, không đợi bước xác nhận như đơn online."
@@ -410,7 +422,7 @@ Mã QR VietQR khi chọn "Chuyển khoản ngân hàng" trỏ tới **tài kho�
 2. Hai ca phụ ở cuối Phần 3b (huỷ đơn đã thanh toán)
 3. Case thứ 4 ở Phần 5 (STAFF thiếu quyền `PRODUCT_WRITE`)
 4. Bước quên mật khẩu ở Phần 0 (bước 5) — **giữ lại nếu còn được**, vì đây là chức năng hội đồng hay hỏi
-5. Phần POS in hoá đơn (Phần 3, bước 16)
+5. Phần POS in hoá đơn (Phần 3, bước 19)
 
 **Nếu thừa thời gian:** demo sửa/xoá sản phẩm, demo hoàn/huỷ hoá đơn POS, demo responsive trên điện thoại thật, chỉ thêm ca "admin huỷ đơn đã thanh toán rồi nhập tài khoản nhận hộ khách".
 

@@ -26,8 +26,6 @@ import ProfileForm from '../components/ProfileForm'
 import ChangePasswordForm from '../components/ChangePasswordForm'
 
 const EMPTY_FORM = {
-  receiverName: '',
-  phone: '',
   province: '',
   ward: '',
   detailAddress: '',
@@ -139,8 +137,6 @@ export default function AccountPage() {
   async function startEdit(addr: AddressDto) {
     setEditingId(addr.addressId)
     setForm({
-      receiverName: addr.receiverName,
-      phone: addr.phone,
       province: addr.province ?? '',
       ward: addr.ward ?? '',
       detailAddress: addr.detailAddress ?? '',
@@ -164,14 +160,6 @@ export default function AccountPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!form.receiverName.trim()) {
-      setFormError('Vui lòng nhập tên người nhận')
-      return
-    }
-    if (!form.phone.trim()) {
-      setFormError('Vui lòng nhập số điện thoại')
-      return
-    }
     if (!form.province) {
       setFormError('Vui lòng chọn Tỉnh/Thành phố')
       return
@@ -187,8 +175,7 @@ export default function AccountPage() {
     setSubmitting(true)
     try {
       const payload = {
-        receiverName: form.receiverName,
-        phone: form.phone,
+        // Người nhận KHÔNG gửi lên nữa -- backend lấy từ hồ sơ tài khoản, xem AddressRequest.java.
         province: form.province || null,
         // Cấp huyện đã bỏ từ 01/07/2025 -- không thu thập nữa, luôn gửi null.
         district: null,
@@ -333,18 +320,13 @@ export default function AccountPage() {
           {formError && (
             <p className="text-sm text-red-600">{formError}</p>
           )}
-          <input
-            placeholder="Tên người nhận"
-            value={form.receiverName}
-            onChange={(e) => setForm((p) => ({ ...p, receiverName: e.target.value }))}
-            className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
-          />
-          <input
-            placeholder="Số điện thoại"
-            value={form.phone}
-            onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-            className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
-          />
+          {/* Không hỏi lại tên người nhận và số điện thoại ở đây nữa -- lấy thẳng từ Thông tin cá
+              nhân bên trên. Hỏi hai lần cùng một thứ thì sớm muộn hai nơi lệch nhau: sửa số ở hồ sơ
+              mà địa chỉ cũ vẫn giữ số cũ, đơn tiếp theo lại giao theo số đã bỏ. */}
+          <p className="text-xs text-stone-500">
+            Giao cho <span className="font-medium text-stone-700">{user?.fullName || user?.username}</span>
+            {' '}theo số điện thoại trong Thông tin cá nhân ở trên. Cần đổi thì sửa ở mục đó.
+          </p>
 
           <AddressMapPicker lat={form.latitude} lng={form.longitude} onPick={handleMapPick} />
           {form.latitude != null && (

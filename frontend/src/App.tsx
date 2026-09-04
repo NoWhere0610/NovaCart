@@ -24,10 +24,9 @@ import AdminPosPage from "./pages/AdminPosPage";
 import PosInvoicePrintPage from "./pages/PosInvoicePrintPage";
 import AdminStatisticsPage from "./pages/AdminStatisticsPage";
 import VNPayResultPage from "./pages/VNPayResultPage";
+import WidgetsKhachHang from "./components/WidgetsKhachHang";
 import RequireAuth from "./components/RequireAuth";
 import RequireAdminRoute from "./components/RequireAdminRoute";
-import FloatingSocialButtons from "./components/FloatingSocialButtons";
-import ChatWidget from "./components/chat/ChatWidget";
 import Layout from "./components/Layout.tsx";
 import ReturnPolicyPage from "./pages/ReturnPolicyPage.tsx";
 import ShippingPolicyPage from "./pages/ShippingPolicyPage.tsx";
@@ -47,8 +46,8 @@ function App() {
       <CartProvider>
       <WishlistProvider>
       <BrowserRouter>
-        <FloatingSocialButtons />
-        <ChatWidget />
+        {/* Ba nút nổi góc màn hình chỉ hiện ở khu khách hàng -- xem WidgetsKhachHang. */}
+        <WidgetsKhachHang />
         <Routes>
           {/* Các route xác thực -- KHÔNG cần đăng nhập (hiển nhiên: người quên mật khẩu thì không
               đăng nhập được để mà vào lấy lại mật khẩu) */}
