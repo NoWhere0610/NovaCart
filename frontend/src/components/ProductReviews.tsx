@@ -4,6 +4,7 @@ import {
   createReviewApi,
   getProductReviewsApi,
   getProductRatingSummaryApi,
+  getReviewEligibilityApi,
   type ReviewDto,
   type ProductRatingSummaryDto,
 } from '../api/productApi'
@@ -47,10 +48,32 @@ export default function ProductReviews({ productId }: { productId: number }) {
   const [comment, setComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [formMessage, setFormMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  /**
+   * Được phép viết đánh giá hay không -- BACKEND trả lời, frontend không tự suy.
+   * null = chưa hỏi xong (chưa vẽ gì cả, tránh nháy form rồi lại giấu đi).
+   */
+  const [quyenDanhGia, setQuyenDanhGia] = useState<{ coTheDanhGia: boolean; lyDo: string | null } | null>(null)
 
   useEffect(() => {
     loadReviews()
   }, [productId])
+
+  // Chỉ hỏi khi đã đăng nhập -- endpoint này bắt buộc có token, gọi lúc chưa đăng nhập chỉ tổ nhận 401.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setQuyenDanhGia(null)
+      return
+    }
+    let huy = false
+    getReviewEligibilityApi(productId)
+      .then((q) => { if (!huy) setQuyenDanhGia(q) })
+      .catch(() => {
+        // Không hỏi được thì CỨ HIỆN form: thà để khách gõ rồi backend từ chối, còn hơn giấu mất
+        // quyền đánh giá của người thật sự đã mua chỉ vì một lời gọi phụ bị lỗi mạng.
+        if (!huy) setQuyenDanhGia({ coTheDanhGia: true, lyDo: null })
+      })
+    return () => { huy = true }
+  }, [productId, isAuthenticated])
 
   async function loadReviews() {
     setLoading(true)
@@ -78,6 +101,9 @@ export default function ProductReviews({ productId }: { productId: number }) {
       setReviews((prev) => [created, ...prev])
       // Riêng summary (điểm TB/phân bố sao) vẫn cần cập nhật cho đúng số -- gọi ngầm, không ảnh hưởng layout danh sách.
       getProductRatingSummaryApi(productId).then(setSummary).catch(() => {})
+      // Gửi xong thì mất quyền đánh giá tiếp (mỗi người một lần / sản phẩm). Không hỏi lại thì form
+      // vẫn nằm đó mời gõ tiếp, bấm phát nữa mới nhận lỗi "Bạn đã đánh giá sản phẩm này rồi".
+      setQuyenDanhGia({ coTheDanhGia: false, lyDo: 'Bạn đã đánh giá sản phẩm này rồi' })
     } catch (err: any) {
       // Lỗi phổ biến: chưa mua hàng / đơn chưa COMPLETED / đã đánh giá rồi (xem ReviewService.create() backend)
       setFormMessage({ type: 'error', text: err.response?.data?.message ?? 'Không thể gửi đánh giá' })
@@ -90,8 +116,19 @@ export default function ProductReviews({ productId }: { productId: number }) {
     <div className="max-w-6xl mx-auto mt-12 px-0">
       <h2 className="font-display text-lg font-semibold text-stone-900 mb-4">Đánh giá sản phẩm</h2>
 
-      {/* Chỉ hiện form nếu đã đăng nhập; điều kiện "đã mua & nhận hàng" backend tự kiểm tra */}
-      {isAuthenticated ? (
+      {/* Chưa đăng nhập -> mời đăng nhập. Đã đăng nhập nhưng KHÔNG đủ điều kiện -> nói thẳng lý do,
+          không vẽ form. Bản trước vẽ form cho mọi người đã đăng nhập rồi để backend từ chối lúc bấm
+          Gửi: khách chưa từng mua vẫn chọn sao, gõ hết cảm nhận, bấm xong mới biết công gõ vứt đi. */}
+      {isAuthenticated && quyenDanhGia && !quyenDanhGia.coTheDanhGia && (
+        <div className="bg-stone-50 border border-stone-200 p-4 mb-6">
+          <p className="text-sm font-medium text-stone-700 mb-1">Viết đánh giá của bạn</p>
+          {/* Hiển thị NGUYÊN VĂN câu backend trả về -- phải khớp từng chữ với thông báo lỗi lúc thật
+              sự gửi, nếu không cùng một tình huống lại có hai cách nói khác nhau. */}
+          <p className="text-sm text-stone-500">{quyenDanhGia.lyDo}</p>
+        </div>
+      )}
+
+      {isAuthenticated && quyenDanhGia?.coTheDanhGia ? (
         <div className="bg-white border border-stone-200 p-4 mb-6">
           <p className="text-sm font-medium text-stone-700 mb-2">Viết đánh giá của bạn</p>
           <div className="mb-3">
@@ -116,13 +153,10 @@ export default function ProductReviews({ productId }: { productId: number }) {
           >
             {submitting ? 'Đang gửi...' : 'Gửi đánh giá'}
           </button>
-          <p className="text-xs text-stone-400 mt-2">
-            * Chỉ áp dụng với sản phẩm bạn đã mua và nhận hàng thành công.
-          </p>
         </div>
-      ) : (
+      ) : !isAuthenticated ? (
         <p className="text-sm text-stone-500 mb-6">Đăng nhập để viết đánh giá cho sản phẩm này.</p>
-      )}
+      ) : null}
 
       {!loading && summary && summary.totalReviews > 0 && (
         <div className="bg-white border border-stone-200 p-4 mb-4 flex flex-col sm:flex-row gap-6">

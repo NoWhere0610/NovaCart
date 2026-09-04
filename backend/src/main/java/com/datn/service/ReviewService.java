@@ -3,6 +3,7 @@ package com.datn.service;
 import com.datn.dto.PageResponse;
 import com.datn.dto.review.CreateReviewRequest;
 import com.datn.dto.review.ProductRatingSummary;
+import com.datn.dto.review.ReviewEligibility;
 import com.datn.dto.review.ReviewResponse;
 import com.datn.entity.Order;
 import com.datn.entity.Product;
@@ -56,19 +57,43 @@ public class ReviewService {
     private static final java.util.List<Order.Status> REVIEWABLE_STATUSES =
             java.util.List.of(Order.Status.DELIVERED, Order.Status.COMPLETED);
 
-    @Transactional
-    public ReviewResponse create(Long userId, Long productId, CreateReviewRequest request) {
+    /**
+     * Lý do người này KHÔNG được đánh giá sản phẩm, hoặc null nếu được.
+     *
+     * Dùng chung cho CẢ HAI đường: API hỏi trước (để giao diện quyết định có hiện form không) và lúc
+     * thật sự tạo đánh giá. Tách riêng hai bộ điều kiện thì sớm muộn chúng lệch nhau -- giao diện cho
+     * gõ nhưng máy chủ từ chối, hoặc ngược lại là giấu form của người đủ điều kiện.
+     */
+    private String lyDoKhongDuocDanhGia(Long userId, Long productId) {
         boolean hasPurchased = orderItemRepository
                 .existsByOrder_User_UserIdAndOrder_StatusInAndVariant_Product_ProductId(
                         userId, REVIEWABLE_STATUSES, productId);
         if (!hasPurchased) {
-            throw ApiException.badRequest(
-                    "Bạn cần mua và nhận hàng thành công sản phẩm này trước khi đánh giá");
+            return "Bạn cần mua và nhận hàng thành công sản phẩm này trước khi đánh giá";
         }
+        if (reviewRepository.findByProduct_ProductIdAndUser_UserId(productId, userId).isPresent()) {
+            return "Bạn đã đánh giá sản phẩm này rồi";
+        }
+        return null;
+    }
 
-        reviewRepository.findByProduct_ProductIdAndUser_UserId(productId, userId).ifPresent(r -> {
-            throw ApiException.badRequest("Bạn đã đánh giá sản phẩm này rồi");
-        });
+    /** Giao diện hỏi trước khi vẽ form -- xem ReviewEligibility. */
+    @Transactional(readOnly = true)
+    public ReviewEligibility kiemTraQuyenDanhGia(Long userId, Long productId) {
+        String lyDo = lyDoKhongDuocDanhGia(userId, productId);
+        return ReviewEligibility.builder()
+                .coTheDanhGia(lyDo == null)
+                .lyDo(lyDo)
+                .build();
+    }
+
+    @Transactional
+    public ReviewResponse create(Long userId, Long productId, CreateReviewRequest request) {
+        // Vẫn kiểm lại ở đây dù giao diện đã hỏi trước: ai gọi thẳng API bỏ qua giao diện vẫn bị chặn.
+        String lyDo = lyDoKhongDuocDanhGia(userId, productId);
+        if (lyDo != null) {
+            throw ApiException.badRequest(lyDo);
+        }
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> ApiException.notFound("Sản phẩm không tồn tại"));

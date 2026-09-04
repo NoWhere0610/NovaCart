@@ -70,6 +70,24 @@ export async function getProductRatingSummaryApi(productId: number) {
   return data
 }
 
+export interface ReviewEligibilityDto {
+  coTheDanhGia: boolean
+  /** Lý do không được đánh giá, do BACKEND soạn sẵn -- hiển thị nguyên văn, đừng tự chế câu khác. */
+  lyDo: string | null
+}
+
+/**
+ * Hỏi trước khi vẽ form viết đánh giá.
+ *
+ * Đừng tự suy quy tắc ở frontend: nó gồm cả "đã mua và nhận hàng" lẫn "chưa đánh giá lần nào", và cả
+ * hai đều cần dữ liệu chỉ backend có. Bản trước đoán là "cứ đăng nhập là hiện form" nên khách chưa
+ * từng mua vẫn gõ hết cảm nhận rồi bấm gửi mới biết không được.
+ */
+export async function getReviewEligibilityApi(productId: number) {
+  const { data } = await apiClient.get<ReviewEligibilityDto>(`/reviews/products/${productId}/eligibility`)
+  return data
+}
+
 // POST nằm ở path RIÊNG /api/reviews/** (không phải /home/**) — bắt buộc đăng nhập,
 // xem chú thích trong ReviewController.java ở backend để hiểu lý do tách path
 export async function createReviewApi(productId: number, rating: number, comment: string) {
