@@ -42,6 +42,7 @@ public class LegacyDataFixer {
         return args -> {
             backfillOrderVersion();
             backfillRefundStatus();
+            backfillCodPaymentStatus();
         };
     }
 
@@ -83,6 +84,42 @@ public class LegacyDataFixer {
             }
         } catch (Exception e) {
             log.error("[va-du-lieu] không vá được cột refund_status của orders: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Đánh dấu đã thu tiền cho đơn COD ĐÃ GIAO từ trước khi có nút "Xác nhận đã thu tiền COD".
+     *
+     * VÌ SAO BẮT BUỘC: trước đây hệ thống không có bước nào ghi nhận shipper đã thu được tiền, nên MỌI
+     * đơn COD giữ payment_status = 'UNPAID' vĩnh viễn, và AdminStatisticsService phải mở ngoại lệ "COD
+     * thì luôn tính là có doanh thu". Nay ngoại lệ đó bị bỏ (một quy tắc chung: khác UNPAID mới tính),
+     * nên KHÔNG lấp dữ liệu cũ là toàn bộ doanh thu COD lịch sử biến mất khỏi báo cáo.
+     *
+     * Chỉ lấp đúng những đơn mà tiền CHẮC CHẮN đã đổi tay:
+     *   - DELIVERED / COMPLETED / RETURN_REQUESTED -> PAID (đã giao thì shipper đã thu)
+     *   - RETURNED -> REFUNDED (đã thu rồi mới hoàn -- đúng đường mà updateStatus sẽ đi nếu nút đã có)
+     * Đơn PENDING/CONFIRMED/SHIPPING/CANCELLED giữ nguyên UNPAID: chưa giao thì chưa thu.
+     */
+    void backfillCodPaymentStatus() {
+        try {
+            TransactionTemplate tx = new TransactionTemplate(transactionManager);
+            int daThu = tx.execute(status -> entityManager.createNativeQuery(
+                    "UPDATE orders SET payment_status = 'PAID' "
+                            + "WHERE payment_method = 'COD' AND payment_status = 'UNPAID' "
+                            + "AND status IN ('DELIVERED', 'COMPLETED', 'RETURN_REQUESTED')")
+                    .executeUpdate());
+            int daHoan = tx.execute(status -> entityManager.createNativeQuery(
+                    "UPDATE orders SET payment_status = 'REFUNDED' "
+                            + "WHERE payment_method = 'COD' AND payment_status = 'UNPAID' "
+                            + "AND status = 'RETURNED'")
+                    .executeUpdate());
+            if (daThu > 0 || daHoan > 0) {
+                log.warn("[va-du-lieu] đơn COD cũ: đánh dấu {} đơn đã thu tiền (PAID) và {} đơn đã hoàn "
+                        + "(REFUNDED). Không làm bước này thì doanh thu COD lịch sử biến mất khỏi báo cáo.",
+                        daThu, daHoan);
+            }
+        } catch (Exception e) {
+            log.error("[va-du-lieu] không vá được payment_status của đơn COD: {}", e.getMessage());
         }
     }
 }

@@ -29,13 +29,14 @@ import static org.mockito.Mockito.when;
 /**
  * Thông tin tài khoản nhận tiền hoàn, khai lúc khách gửi yêu cầu trả hàng.
  *
- * CA QUAN TRỌNG NHẤT nằm ở đơn COD. Hệ thống KHÔNG có bước "xác nhận đã thu tiền mặt" riêng cho COD,
- * nên đơn COD giữ paymentStatus = UNPAID VĨNH VIỄN kể cả sau khi khách đã đưa tiền tận tay shipper
- * (xem chú thích trong AdminStatisticsService.laDonThuTienThat). Viết điều kiện thành
- * `paymentStatus == PAID` cho gọn thì toàn bộ khách COD -- nhóm đông nhất -- sẽ không bao giờ được hỏi
- * số tài khoản, tức là không bao giờ nhận lại được tiền. Lỗi đó chạy tay gần như không lộ ra: màn hình
- * vẫn gửi yêu cầu thành công, chỉ là thiếu mất phần thông tin, và mãi tới lúc admin định chuyển khoản
- * mới phát hiện không biết chuyển cho ai.
+ * Quy tắc: CHỈ đòi số tài khoản khi khách thật sự đã đưa tiền cho shop (paymentStatus khác UNPAID),
+ * áp dụng như nhau cho mọi phương thức thanh toán.
+ *
+ * LỊCH SỬ ĐÁNG NHỚ: trước đây COD phải có nhánh suy đoán riêng ("đã giao thì coi như đã thu tiền") vì
+ * hệ thống không có bước ghi nhận shipper đã thu được tiền hay chưa, nên đơn COD giữ UNPAID vĩnh viễn.
+ * Suy đoán ấy gãy khi đơn giao HỎNG bị đóng nhầm thành "đã giao": khách chưa trả đồng nào vẫn đòi hoàn
+ * tiền được. Nay admin xác nhận thu tiền COD tay như đơn chuyển khoản, không còn chỗ nào phải đoán --
+ * các test dưới đây khoá đúng ranh giới mới đó.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -77,13 +78,11 @@ class OrderServiceRefundInfoTest {
     // ===================== COD: đã giao là đã thu tiền =====================
 
     @Test
-    @DisplayName("COD đã giao: BẮT BUỘC khai tài khoản, dù paymentStatus vẫn là UNPAID")
+    @DisplayName("COD đã giao VÀ đã xác nhận thu tiền: BẮT BUỘC khai tài khoản")
     void codDaGiao_batBuocKhaiTaiKhoan() {
         don.setPaymentMethod(Order.PaymentMethod.COD);
-        don.setPaymentStatus(Order.PaymentStatus.UNPAID); // đúng trạng thái thật của mọi đơn COD
+        don.setPaymentStatus(Order.PaymentStatus.PAID); // admin đã bấm "Xác nhận đã thu tiền COD"
 
-        // Nếu ai đó "đơn giản hoá" điều kiện thành paymentStatus == PAID thì ca này lặng lẽ đi qua,
-        // đơn chuyển sang RETURN_REQUESTED mà không có thông tin nhận tiền nào.
         assertThatThrownBy(() -> service.requestReturn(1L, 5L, yeuCau(null, null, null)))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("ngân hàng");
@@ -94,10 +93,10 @@ class OrderServiceRefundInfoTest {
     }
 
     @Test
-    @DisplayName("COD đã giao + khai đủ: lưu thông tin và chuyển sang chờ hoàn tiền")
+    @DisplayName("COD đã thu tiền + khai đủ: lưu thông tin và chuyển sang chờ hoàn tiền")
     void codDaGiao_khaiDu() {
         don.setPaymentMethod(Order.PaymentMethod.COD);
-        don.setPaymentStatus(Order.PaymentStatus.UNPAID);
+        don.setPaymentStatus(Order.PaymentStatus.PAID);
 
         service.requestReturn(1L, 5L, yeuCauDayDu());
 
@@ -109,6 +108,22 @@ class OrderServiceRefundInfoTest {
         assertThat(don.getRefundCompletedAt())
                 .as("Chưa ai chuyển tiền thì chưa được có mốc hoàn tiền")
                 .isNull();
+    }
+
+    @Test
+    @DisplayName("COD đã giao nhưng CHƯA xác nhận thu tiền: không đòi tài khoản, không sinh khoản hoàn")
+    void codDaGiaoNhungChuaThuTien_khongDoiTaiKhoan() {
+        don.setPaymentMethod(Order.PaymentMethod.COD);
+        don.setPaymentStatus(Order.PaymentStatus.UNPAID);
+
+        // Đây chính là ca mà lỗ hổng cũ để lọt: đơn giao HỎNG buộc phải đóng thành "đã giao", rồi khách
+        // chưa trả đồng nào vẫn đòi hoàn tiền được. Nay chưa ai xác nhận thu được tiền thì không có gì
+        // để hoàn, và admin cũng không thấy đơn này trong hàng chờ chuyển tiền.
+        assertThatCode(() -> service.requestReturn(1L, 5L, yeuCau(null, null, null)))
+                .doesNotThrowAnyException();
+
+        assertThat(don.getStatus()).isEqualTo(Order.Status.RETURN_REQUESTED);
+        assertThat(don.getRefundStatus()).isEqualTo(Order.RefundStatus.NONE);
     }
 
     // ===================== Đơn chưa từng trả tiền =====================
@@ -157,6 +172,7 @@ class OrderServiceRefundInfoTest {
     @DisplayName("Số tài khoản có chữ hoặc quá ngắn: từ chối")
     void soTaiKhoanSaiDinhDang() {
         don.setPaymentMethod(Order.PaymentMethod.COD);
+        don.setPaymentStatus(Order.PaymentStatus.PAID);
 
         assertThatThrownBy(() -> service.requestReturn(1L, 5L, yeuCau("ACB", "12AB567890", "A")))
                 .isInstanceOf(ApiException.class)
@@ -171,6 +187,7 @@ class OrderServiceRefundInfoTest {
     @DisplayName("Số tài khoản dán kèm dấu cách theo nhóm: tự dọn, không báo lỗi")
     void soTaiKhoanCoDauCach_tuDon() {
         don.setPaymentMethod(Order.PaymentMethod.COD);
+        don.setPaymentStatus(Order.PaymentStatus.PAID);
 
         // Ngân hàng hay hiển thị số tài khoản tách nhóm ("1234 5678 9012"). Khách dán nguyên vào mà bị
         // báo sai định dạng thì rất khó hiểu -- họ nhìn vào ô thấy đúng y số của mình.
@@ -184,6 +201,7 @@ class OrderServiceRefundInfoTest {
     @DisplayName("Chỉ toàn khoảng trắng cũng là bỏ trống")
     void toanKhoangTrangLaBoTrong() {
         don.setPaymentMethod(Order.PaymentMethod.COD);
+        don.setPaymentStatus(Order.PaymentStatus.PAID);
 
         assertThatThrownBy(() -> service.requestReturn(1L, 5L, yeuCau("   ", "1234567890", "A")))
                 .isInstanceOf(ApiException.class)

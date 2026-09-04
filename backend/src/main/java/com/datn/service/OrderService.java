@@ -305,19 +305,13 @@ public class OrderService {
      * trong requestReturn, nơi đơn chắc chắn đã DELIVERED/COMPLETED.
      */
     private boolean khachDaTraTien(Order order) {
-        if (order.getPaymentMethod() == Order.PaymentMethod.COD) {
-            // COD: tiền chỉ đổi tay đúng lúc giao hàng. Đơn COD bị huỷ khi còn PENDING/CONFIRMED thì
-            // chưa ai trả đồng nào -- KHÔNG được trả về true vô điều kiện, nếu không luồng huỷ đơn sẽ
-            // đòi số tài khoản của người chẳng có gì để nhận lại.
-            //
-            // Xét cả deliveredAt LẪN trạng thái: đơn cũ tạo trước khi có cột deliveredAt để null dù đã
-            // giao thật, chỉ nhìn mốc đó thì khách của những đơn ấy mất quyền được hoàn tiền.
-            return order.getDeliveredAt() != null
-                    || order.getStatus() == Order.Status.DELIVERED
-                    || order.getStatus() == Order.Status.COMPLETED
-                    || order.getStatus() == Order.Status.RETURN_REQUESTED
-                    || order.getStatus() == Order.Status.RETURNED;
-        }
+        // MỘT quy tắc cho MỌI phương thức, không suy đoán riêng cho COD nữa.
+        //
+        // Bản trước phải suy đoán "COD + đã giao = đã thu tiền" vì hệ thống không có bước nào ghi nhận
+        // shipper đã thu được tiền hay chưa. Suy đoán ấy gãy ngay khi đơn giao HỎNG bị đóng nhầm thành
+        // "đã giao": khách chưa trả đồng nào vẫn đòi hoàn tiền được. Nay admin xác nhận tay đúng như
+        // đơn chuyển khoản (AdminOrderService.confirmPayment), nên paymentStatus nói được sự thật cho
+        // cả COD và không còn chỗ nào phải đoán.
         return order.getPaymentStatus() != null
                 && order.getPaymentStatus() != Order.PaymentStatus.UNPAID;
     }

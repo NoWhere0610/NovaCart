@@ -95,14 +95,16 @@ async function main() {
   }
   const tokenAdmin = dnAdmin.body.accessToken;
 
-  // Đơn COD ĐÃ GIAO -- ca quan trọng nhất: đơn COD giữ payment_status='UNPAID' vĩnh viễn dù khách đã
-  // đưa tiền mặt, nên đây đúng là ca mà một điều kiện viết ẩu (paymentStatus == PAID) sẽ bỏ sót.
+  // Đơn COD ĐÃ GIAO và ĐÃ XÁC NHẬN THU TIỀN (admin bấm "Xác nhận đã thu tiền COD" -- payment_status
+  // chuyển sang PAID). Trước đây đơn COD giữ 'UNPAID' vĩnh viễn vì không có bước xác nhận nào, và điều
+  // đó buộc luồng hoàn tiền phải suy đoán "đã giao thì coi như đã thu tiền" -- suy đoán gãy ngay khi
+  // đơn giao HỎNG bị đóng nhầm thành "đã giao". Nay không còn chỗ nào phải đoán.
   const maDon = `KT${dau}`;
   chaySql(
     `INSERT INTO orders (user_id, order_code, total_amount, subtotal_amount, discount_amount, `
     + `status, payment_method, payment_status, order_type, shipping_fee, version, refund_status, `
     + `delivered_at, created_at, phone, receiver_name, shipping_address) VALUES (`
-    + `${userId}, '${maDon}', 500000, 500000, 0, 'DELIVERED', 'COD', 'UNPAID', 'ONLINE', 0, 0, 'NONE', `
+    + `${userId}, '${maDon}', 500000, 500000, 0, 'DELIVERED', 'COD', 'PAID', 'ONLINE', 0, 0, 'NONE', `
     + `DATEADD(DAY,-2,SYSDATETIME()), SYSDATETIME(), '0912345678', N'Khách kiểm thử', N'Hà Nội');`,
   );
   const orderId = Number(chaySql(`SELECT order_id FROM orders WHERE order_code='${maDon}';`).trim().split('\n')[0].trim());
@@ -115,16 +117,37 @@ async function main() {
     const thieuTk = await goi(`/orders/${orderId}/request-return`, {
       method: 'POST', token: tokenKhach, body: { reason: 'Sản phẩm bị lỗi đường may' },
     });
-    kiem('Đơn COD đã giao, KHÔNG khai tài khoản -> bị từ chối',
+    kiem('Đơn COD đã thu tiền, KHÔNG khai tài khoản -> bị từ chối',
       thieuTk.http === 400,
       `HTTP ${thieuTk.http}: ${JSON.stringify(thieuTk.body)}\n`
-      + '      COD luôn có payment_status=UNPAID; nếu ca này lọt nghĩa là điều kiện đang dựa vào paymentStatus.');
+      + '      Ca này lọt nghĩa là hệ thống quên đòi tài khoản cho đơn đã thu được tiền thật.');
 
     const trangThaiSauKhiTruot = chaySql(
       `SELECT status FROM orders WHERE order_id=${orderId};`).trim().split('\n')[0].trim();
     kiem('Yêu cầu bị từ chối thì đơn KHÔNG bị sửa dở dang',
       trangThaiSauKhiTruot === 'DELIVERED',
       `đơn đang ở trạng thái ${trangThaiSauKhiTruot}, đáng lẽ vẫn phải là DELIVERED`);
+
+    // Ca NGƯỢC LẠI, quan trọng ngang ca trên: đơn COD đã giao nhưng CHƯA ai xác nhận thu được tiền
+    // (vd giao hỏng, hàng quay về). Không được đòi tài khoản, và tuyệt đối không được sinh khoản phải
+    // hoàn -- nếu không admin sẽ chuyển tiền cho người chưa trả đồng nào.
+    const maDonChuaThu = `KT2${dau}`;
+    chaySql(
+      `INSERT INTO orders (user_id, order_code, total_amount, subtotal_amount, discount_amount, `
+      + `status, payment_method, payment_status, order_type, shipping_fee, version, refund_status, `
+      + `delivered_at, created_at, phone, receiver_name, shipping_address) VALUES (`
+      + `${userId}, '${maDonChuaThu}', 500000, 500000, 0, 'DELIVERED', 'COD', 'UNPAID', 'ONLINE', 0, 0, 'NONE', `
+      + `DATEADD(DAY,-2,SYSDATETIME()), SYSDATETIME(), '0912345678', N'Khách kiểm thử', N'Hà Nội');`,
+    );
+    const idChuaThu = Number(
+      chaySql(`SELECT order_id FROM orders WHERE order_code='${maDonChuaThu}';`).trim().split('\n')[0].trim());
+    const chuaThu = await goi(`/orders/${idChuaThu}/request-return`, {
+      method: 'POST', token: tokenKhach, body: { reason: 'Giao hỏng, hàng quay về' },
+    });
+    kiem('Đơn COD CHƯA xác nhận thu tiền: trả hàng được mà KHÔNG đòi tài khoản',
+      chuaThu.http === 200, `HTTP ${chuaThu.http}: ${JSON.stringify(chuaThu.body)}`);
+    kiem('...và KHÔNG sinh khoản phải hoàn (chưa ai trả đồng nào)',
+      chuaThu.body?.refundStatus === 'NONE', `refundStatus = ${chuaThu.body?.refundStatus}`);
 
     const stkXau = await goi(`/orders/${orderId}/request-return`, {
       method: 'POST', token: tokenKhach,

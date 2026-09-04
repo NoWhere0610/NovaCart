@@ -208,8 +208,20 @@ public class AdminOrderService {
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
         requireOnlineOrder(order);
 
-        if (order.getPaymentMethod() != Order.PaymentMethod.BANK_TRANSFER) {
-            throw ApiException.badRequest("Chỉ đơn chuyển khoản ngân hàng mới cần xác nhận thủ công");
+        // VNPay có cổng thanh toán tự báo về (IPN) nên KHÔNG được xác nhận tay -- làm thế là mở đường
+        // đánh dấu đã thu tiền cho đơn chưa hề qua cổng.
+        if (order.getPaymentMethod() == Order.PaymentMethod.VNPAY) {
+            throw ApiException.badRequest(
+                    "Đơn VNPay được cổng thanh toán tự xác nhận, không xác nhận thủ công được");
+        }
+        // COD: tiền chỉ đổi tay lúc shipper giao hàng, nên chưa giao thì chưa có gì để xác nhận. Cho bấm
+        // sớm là đánh dấu đã thu tiền cho đơn còn nằm trong kho.
+        if (order.getPaymentMethod() == Order.PaymentMethod.COD
+                && order.getStatus() != Order.Status.DELIVERED
+                && order.getStatus() != Order.Status.COMPLETED) {
+            throw ApiException.badRequest(
+                    "Đơn COD chỉ xác nhận đã thu tiền sau khi đã giao hàng (đơn đang ở trạng thái "
+                            + order.getStatus() + ")");
         }
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             throw ApiException.badRequest("Đơn hàng đã được xác nhận thanh toán trước đó");

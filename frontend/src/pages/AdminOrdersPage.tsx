@@ -315,15 +315,9 @@ export default function AdminOrdersPage() {
                             </button>
                           </>
                         )}
-                        {/* Đơn COD: hệ thống KHÔNG có bước xác nhận đã thu tiền mặt, nên nó không thể
-                            biết khách đã thực sự trả tiền hay chưa (vd đơn giao thất bại bị đóng nhầm
-                            thành "đã giao"). Người chuyển khoản phải tự kiểm biên lai. */}
-                        {o.paymentMethod === 'COD' && (
-                          <p className="mt-1.5 pt-1.5 border-t border-amber-300 text-amber-800">
-                            Đơn COD — hệ thống không xác minh được đã thu tiền hay chưa. Kiểm biên lai
-                            giao hàng trước khi chuyển.
-                          </p>
-                        )}
+                        {/* Cảnh báo cũ ("hệ thống không xác minh được đã thu tiền hay chưa") đã BỎ:
+                            nay đơn COD có bước xác nhận thu tiền riêng, nên paymentStatus nói được sự
+                            thật cho cả COD. Khoản hoàn chỉ phát sinh khi đơn thật sự đã thu được tiền. */}
                       </div>
                     )}
                     {o.refundStatus === 'COMPLETED' && (
@@ -340,6 +334,19 @@ export default function AdminOrdersPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
+                      {/* COD: tiền chỉ đổi tay lúc shipper giao, nên nút chỉ hiện SAU KHI đã giao.
+                          Hiện sớm là mở đường đánh dấu đã thu tiền cho đơn còn nằm trong kho. */}
+                      {o.paymentMethod === 'COD'
+                        && o.paymentStatus === 'UNPAID'
+                        && (o.status === 'DELIVERED' || o.status === 'COMPLETED') && (
+                        <button
+                          disabled={busyId === o.orderId}
+                          onClick={() => handleConfirmPayment(o.orderId)}
+                          className="text-xs border border-green-300 text-green-700 hover:bg-green-50 px-2 py-1 disabled:opacity-50"
+                        >
+                          Xác nhận đã thu tiền COD
+                        </button>
+                      )}
                       {o.paymentMethod === 'BANK_TRANSFER' && o.paymentStatus === 'UNPAID' && (
                         <button
                           disabled={busyId === o.orderId}

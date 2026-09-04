@@ -236,6 +236,65 @@ class AdminOrderServiceRefundTest {
 
     // ===================== Giao thất bại + điền tài khoản hộ khách =====================
 
+    // ===================== Xác nhận đã thu tiền COD =====================
+
+    @Test
+    @DisplayName("COD đã giao: xác nhận thu tiền được, đơn sang PAID")
+    void codDaGiao_xacNhanThuTienDuoc() {
+        Order o = don(Order.Status.DELIVERED, Order.RefundStatus.NONE);
+        o.setPaymentMethod(Order.PaymentMethod.COD);
+        o.setPaymentStatus(Order.PaymentStatus.UNPAID);
+
+        service.confirmPayment(1L);
+
+        assertThat(o.getPaymentStatus()).isEqualTo(Order.PaymentStatus.PAID);
+    }
+
+    @Test
+    @DisplayName("COD CHƯA giao: không cho xác nhận thu tiền")
+    void codChuaGiao_khongChoXacNhan() {
+        Order o = don(Order.Status.CONFIRMED, Order.RefundStatus.NONE);
+        o.setPaymentMethod(Order.PaymentMethod.COD);
+        o.setPaymentStatus(Order.PaymentStatus.UNPAID);
+
+        // Cho bấm sớm là đánh dấu đã thu tiền cho đơn còn nằm trong kho -- tiền COD chỉ đổi tay đúng
+        // lúc shipper giao hàng.
+        assertThatThrownBy(() -> service.confirmPayment(1L))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("sau khi đã giao hàng");
+
+        assertThat(o.getPaymentStatus()).isEqualTo(Order.PaymentStatus.UNPAID);
+    }
+
+    @Test
+    @DisplayName("VNPay: KHÔNG cho xác nhận thủ công, phải qua cổng thanh toán")
+    void vnpay_khongChoXacNhanThuCong() {
+        Order o = don(Order.Status.DELIVERED, Order.RefundStatus.NONE);
+        o.setPaymentMethod(Order.PaymentMethod.VNPAY);
+        o.setPaymentStatus(Order.PaymentStatus.UNPAID);
+
+        assertThatThrownBy(() -> service.confirmPayment(1L))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("không xác nhận thủ công được");
+
+        assertThat(o.getPaymentStatus()).isEqualTo(Order.PaymentStatus.UNPAID);
+    }
+
+    @Test
+    @DisplayName("Đơn COD giao HỎNG (huỷ từ SHIPPING): không thu được tiền, không đòi hoàn tiền được")
+    void codGiaoHong_khongDoiHoanTienDuoc() {
+        Order o = don(Order.Status.SHIPPING, Order.RefundStatus.NONE);
+        o.setPaymentMethod(Order.PaymentMethod.COD);
+        o.setPaymentStatus(Order.PaymentStatus.UNPAID);
+
+        service.updateStatus(1L, Order.Status.CANCELLED);
+
+        // Đây là lỗ hổng gốc đã bịt: trước kia "COD + đã giao" là suy đoán duy nhất để tin khách đã trả
+        // tiền, mà đơn giao hỏng lại buộc phải đóng thành "đã giao". Nay không còn suy đoán nào.
+        assertThat(o.getPaymentStatus()).isEqualTo(Order.PaymentStatus.UNPAID);
+        assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.NONE);
+    }
+
     @Test
     @DisplayName("Giao thất bại: huỷ được từ SHIPPING, hoàn kho, KHÔNG ghi mốc đã giao")
     void giaoThatBai_huyDuocVaHoanKho() {

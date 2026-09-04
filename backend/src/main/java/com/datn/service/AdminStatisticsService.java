@@ -371,16 +371,20 @@ public class AdminStatisticsService {
     }
 
     /**
-     * true nếu đơn thật sự có dòng tiền đứng sau nó -- COD luôn coi là đã thu (tiền mặt/thu hộ khi giao;
-     * đơn ONLINE COD cũng không có bước "xác nhận đã thu" riêng nên paymentStatus giữ UNPAID mãi mãi, KHÔNG
-     * được lọc theo paymentStatus==PAID cho COD kẻo xoá nhầm gần hết doanh thu COD hợp lệ). BANK_TRANSFER/
-     * VNPAY thì tính là thật khi paymentStatus khác UNPAID -- PAID (đã xác nhận) hoặc REFUNDED (đơn từng
-     * PAID thật, sau đó mới bị hoàn -- vẫn phải tính, chỉ loại đúng trường hợp CHƯA từng ai xác nhận có
-     * tiền về).
+     * true nếu đơn thật sự có dòng tiền đứng sau nó.
+     *
+     * MỘT quy tắc cho mọi phương thức: paymentStatus khác UNPAID -- PAID (đã xác nhận thu được tiền)
+     * hoặc REFUNDED (đơn TỪNG thu được tiền thật, sau đó mới hoàn -- vẫn phải tính, chỉ loại đúng
+     * trường hợp CHƯA từng ai xác nhận có tiền về).
+     *
+     * Trước đây phải mở ngoại lệ "COD thì luôn tính" vì hệ thống không có bước xác nhận đã thu tiền mặt
+     * nên đơn COD giữ UNPAID vĩnh viễn -- lọc theo paymentStatus sẽ xoá nhầm gần hết doanh thu COD hợp
+     * lệ. Nay admin xác nhận tay được (AdminOrderService.confirmPayment) và LegacyDataFixer đã lấp cho
+     * đơn COD cũ, nên ngoại lệ đó không còn cần -- và bỏ nó đi thì đơn COD giao hỏng, chưa thu được
+     * đồng nào, không còn bị tính vào doanh thu nữa.
      */
     private boolean isRealizedRevenue(Order order) {
-        return order.getPaymentMethod() == Order.PaymentMethod.COD
-                || order.getPaymentStatus() != Order.PaymentStatus.UNPAID;
+        return order.getPaymentStatus() != Order.PaymentStatus.UNPAID;
     }
 
     /**

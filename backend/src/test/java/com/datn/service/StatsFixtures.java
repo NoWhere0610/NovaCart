@@ -72,8 +72,14 @@ final class StatsFixtures {
     }
 
     /**
-     * Đơn ONLINE đã COMPLETED, thanh toán COD -- mặc định này luôn được tính là doanh thu đã thực nhận
-     * (isRealizedRevenue), để test nào không quan tâm phương thức thanh toán thì khỏi phải khai.
+     * Đơn ONLINE đã COMPLETED, COD và ĐÃ THU ĐƯỢC TIỀN -- mặc định này được tính là doanh thu đã thực
+     * nhận (isRealizedRevenue), để test nào không quan tâm phương thức thanh toán thì khỏi phải khai.
+     *
+     * paymentStatus phải là PAID: trước đây để UNPAID vẫn qua được vì isRealizedRevenue có ngoại lệ
+     * "COD thì luôn tính" -- ngoại lệ đó tồn tại chỉ vì hệ thống chưa có bước xác nhận đã thu tiền mặt.
+     * Nay COD có bước xác nhận riêng nên quy tắc chung là "khác UNPAID mới tính", và một đơn COD đã bán
+     * xong trong đời thật thì phải là PAID. Test nào cần ca "chưa thu được tiền" thì tự đặt lại UNPAID
+     * (xem khongTinhDoanhThuHoaDonChuyenKhoanChuaThuTien).
      */
     static Order order(LocalDateTime createdAt, long totalAmount, OrderItem... items) {
         Order o = new Order();
@@ -81,7 +87,7 @@ final class StatsFixtures {
         o.setStatus(Order.Status.COMPLETED);
         o.setOrderType(Order.OrderType.ONLINE);
         o.setPaymentMethod(Order.PaymentMethod.COD);
-        o.setPaymentStatus(Order.PaymentStatus.UNPAID);
+        o.setPaymentStatus(Order.PaymentStatus.PAID);
         o.setTotalAmount(BigDecimal.valueOf(totalAmount));
         o.setItems(new ArrayList<>(List.of(items)));
         for (OrderItem i : o.getItems()) {
