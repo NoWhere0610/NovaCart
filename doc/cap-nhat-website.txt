@@ -1,0 +1,23 @@
+CẬP NHẬT WEBSITE NOVACART
+
+Giao diện: đổi theme cam -> đen/trắng/vàng gold, thêm font chữ riêng cho tiêu đề
+Icon: đổi toàn bộ icon sang bộ Tabler, thêm hiệu ứng hover rõ ràng cho các nút
+Trang chủ: làm lại banner, dải danh mục, sản phẩm mới, banner sale
+Danh mục sản phẩm: tổ chức lại theo nhóm cha-con (Áo/Quần/Đồ mặc trong/Suit & Blazer), thêm ảnh thật, thêm danh mục mới
+Bố cục: mở rộng chiều ngang trang
+Sản phẩm: thêm 130 sản phẩm mẫu
+Trang Shop: thêm phân trang
+Chatbot tư vấn: thêm chatbot AI tư vấn chọn sản phẩm dựa trên kho dữ liệu sản phẩm + tài liệu (FAQ, chính sách). Chatbot chỉ tư vấn
+Bảo mật: chuyển mật khẩu/khoá bí mật ra biến môi trường, khoá tài khoản thu hồi đăng nhập ngay, validate giá khuyến mãi
+Hiệu năng: sửa lỗi truy vấn chậm khi tải danh sách sản phẩm (N+1), thêm index cho vài truy vấn hay dùng
+Trang Shop: thêm bộ lọc giá, size, màu, đổi danh mục sang dropdown, sidebar dính lại khi cuộn, thêm breadcrumb
+Tìm kiếm: thêm ô tìm trên điện thoại, tự tìm sau khi gõ xong
+Yêu thích: tính năng mới — lưu sản phẩm bằng icon trái tim, có trang riêng xem lại
+Trang chủ: thêm mục "Đã xem gần đây", thêm nền be xen kẽ + banner ảnh giữa các mục
+Giỏ hàng: icon giỏ hàng hiện số lượng sản phẩm
+Sửa các lỗi giao diện: tab trang Đơn hàng bị tràn màn hình, gộp nút Đăng xuất vào menu Tài khoản, bỏ mã Plus Code ở địa chỉ footer, đồng bộ tên thương hiệu NOVACART
+Sửa lỗi giật/chớp khi gửi đánh giá và khi đổi bộ lọc sản phẩm
+Thêm hoạ tiết mờ + nền động cho các trang, header dính lại khi cuộn
+Thêm file restart.bat để khởi động lại backend/frontend nhanh hơn
+
+Còn thiếu/cần làm tiếp: giỏ hàng chưa có phí ship/mã giảm giá/thời gian giao dự kiến ngay ở bước giỏ hàng; mã số đăng ký kinh doanh ở footer đang để chung chung.

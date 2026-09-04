@@ -106,12 +106,110 @@ const FILTER_SCHEMA = {
   required: ['hasFilter'],
 };
 
+/**
+ * Danh sách danh mục CÓ THẬT trong kho, nạp một lần rồi giữ trong RAM.
+ *
+ * Vì sao cần: khách gọi sản phẩm bằng lời của họ ("áo phông", "quần bò", "áo bỏ trong quần"), còn cột
+ * danh_muc lưu tên của cửa hàng ("Áo thun", "Quần jean", "Áo sơ mi"). Bản đầu của prompt bảo model
+ * "trích CHÍNH XÁC điều kiện khách nêu", nên nó chép lại đúng chữ của khách -- và câu SQL
+ * `danh_muc ILIKE '%áo bỏ trong quần%'` không khớp gì cả.
+ *
+ * Đo được bằng bộ đo (scripts/do-loc-san-pham.js) trên bộ câu hỏi dùng khẩu ngữ: trích đúng danh mục
+ * chỉ 15%, kéo theo precision/recall 32%. Đưa danh sách thật vào prompt và bắt model CHỌN TỪ DANH SÁCH
+ * chính là cách chữa -- model làm việc ánh xạ ngôn ngữ, không phải việc đoán tên cột.
+ */
+let danhMucCache = null;
+let danhMucCacheAt = 0;
+const DANH_MUC_CACHE_MS = 10 * 60 * 1000;
+
+async function danhMucCoThat(namespace) {
+  if (danhMucCache && Date.now() - danhMucCacheAt < DANH_MUC_CACHE_MS) return danhMucCache;
+  try {
+    const r = await vectorStore.query(
+      `SELECT DISTINCT danh_muc FROM kb_chunk
+        WHERE namespace = $1 AND folder_id = $2 AND danh_muc IS NOT NULL ORDER BY 1`,
+      [namespace, PRODUCT_FOLDER_ID],
+    );
+    danhMucCache = r.rows.map((x) => x.danh_muc);
+    danhMucCacheAt = Date.now();
+  } catch (e) {
+    console.error('  [rag] không đọc được danh sách danh mục:', e.message);
+    danhMucCache = danhMucCache || [];
+  }
+  return danhMucCache;
+}
+
+/** Danh sách MÀU có thật trong kho — dùng cho bước bổ khuyết tất định (xem boSungTatDinh). */
+let mauCache = null;
+let mauCacheAt = 0;
+
+async function mauCoThat(namespace) {
+  if (mauCache && Date.now() - mauCacheAt < DANH_MUC_CACHE_MS) return mauCache;
+  try {
+    const r = await vectorStore.query(
+      `SELECT DISTINCT LOWER(c) AS mau FROM kb_chunk, unnest(colors) AS c
+        WHERE namespace = $1 AND folder_id = $2 ORDER BY 1`,
+      [namespace, PRODUCT_FOLDER_ID],
+    );
+    mauCache = r.rows.map((x) => x.mau);
+    mauCacheAt = Date.now();
+  } catch (e) {
+    console.error('  [rag] không đọc được danh sách màu:', e.message);
+    mauCache = mauCache || [];
+  }
+  return mauCache;
+}
+
+// Đúng danh sách size mà form quản trị cho chọn (FULL_SIZES ở AdminProductsPage) -- tập đóng, dò được
+// bằng mã chứ không cần model.
+const SIZE_CHUAN = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL'];
+
+/**
+ * BỔ KHUYẾT TẤT ĐỊNH cho kết quả trích của model.
+ *
+ * Vì sao cần: bước trích do LLM làm nên KHÔNG tất định. Đã đo được: cùng một câu hỏi "size M màu
+ * Trắng", có lần model trả đủ cả 2 trường, có lần bỏ mất màu -- tỉ lệ dao động 1/3 tới 3/3 giữa các
+ * lần chạy. Mà bộ lọc theo CẶP size/màu (thứ chặn bot khẳng định tổ hợp không tồn tại) chỉ bật khi có
+ * ĐỦ cả hai. Siết prompt không giải quyết được tận gốc vì bản chất là xác suất.
+ *
+ * Size và màu đều là TẬP ĐÓNG, biết trước, nên dò bằng mã được -- không cần đoán. Chỉ bổ khuyết khi
+ * model BỎ TRỐNG trường đó, không bao giờ ghi đè giá trị model đã trích.
+ */
+function boSungTatDinh(filters, searchText, danhSachMau) {
+  const text = String(searchText || '');
+  const thuong = text.toLowerCase();
+
+  if (!filters.size) {
+    // Đòi có chữ "size"/"sz"/"cỡ" ngay trước để không bắt nhầm chữ M/L nằm lẻ trong câu.
+    const m = text.match(new RegExp(`(?:size|sz|cỡ)\\s*[:\\-]?\\s*(${SIZE_CHUAN.join('|')})\\b`, 'i'));
+    if (m) filters.size = m[1].toUpperCase();
+  }
+
+  if (!filters.color) {
+    // Ưu tiên tên màu DÀI nhất khớp được ("xanh navy" phải thắng "xanh").
+    const khop = (danhSachMau || [])
+      .filter((mau) => thuong.includes(mau))
+      .sort((a, b) => b.length - a.length);
+    if (khop.length) filters.color = khop[0];
+  }
+
+  return filters;
+}
+
 /** Trích điều kiện lọc sản phẩm (giá/size/màu/danh mục) từ câu hỏi khách, nếu khách có nêu RÕ.
  * Không suy đoán thêm — khách hỏi chung chung thì trả hasFilter=false, đi tiếp nhánh semantic-thuần. */
-async function extractProductFilters(searchText) {
+async function extractProductFilters(searchText, danhMuc = []) {
   const prompt = `Bạn nhận 1 câu hỏi/tin nhắn của khách mua sắm thời trang nam. Nếu khách nêu RÕ ít nhất 1 điều kiện lọc sản phẩm (khoảng giá, size, màu sắc, loại/danh mục sản phẩm như áo sơ mi/quần jean/áo khoác...), hãy trích CHÍNH XÁC điều kiện đó — kể cả cách nói khẩu ngữ về giá (vd "3 xị" = 300000đ, "1 củ" = 1000000đ, "dưới nửa triệu" = maxPrice 500000, "tầm 2-3 trăm" = minPrice 200000 maxPrice 300000).
 
 QUAN TRỌNG — trường "size" CHỈ là size QUẦN ÁO chuẩn: S, M, L, XL, XXL, 3XL... (hoặc số đo cụ thể nếu khách nói). KHÔNG được điền các từ mô tả FORM/KIỂU DÁNG như "slim", "regular", "rộng", "ôm", "suông", "form rộng"... vào trường size — những từ đó KHÔNG phải size, bỏ qua không lọc theo chúng (vẫn có thể giữ lại trong "category" nếu là 1 phần tên loại sản phẩm, vd "quần tây ống suông").
+
+QUAN TRỌNG — trường "category": cửa hàng chỉ có ĐÚNG các danh mục sau đây:
+${danhMuc.length ? danhMuc.map((x) => `- ${x}`).join('\n') : '(chưa nạp được danh sách danh mục)'}
+
+Khách hàng gọi sản phẩm bằng lời của họ, không dùng tên danh mục của cửa hàng. Nhiệm vụ của bạn là ÁNH XẠ về đúng một tên trong danh sách trên rồi CHÉP LẠI CHÍNH XÁC tên đó (giữ nguyên chữ hoa/thường và dấu). Ví dụ: "áo phông"/"áo cộc tay" -> "Áo thun"; "quần bò"/"quần denim" -> "Quần jean"; "áo bỏ trong quần"/"áo có cổ đi làm" -> "Áo sơ mi"; "bộ vest" -> "Bộ suit"; "quần âu" -> "Quần tây"; "quần đùi"/"quần cộc" -> "Quần short".
+TUYỆT ĐỐI KHÔNG tự đặt tên danh mục mới và KHÔNG chép lại nguyên văn chữ của khách nếu chữ đó không có trong danh sách. Không ánh xạ được về danh mục nào thì để trống trường category (các điều kiện khác vẫn trích bình thường).
+
+TRÍCH ĐỦ MỌI ĐIỀU KIỆN KHÁCH ĐÃ NÊU, không bỏ sót trường nào. Đặc biệt: khách nêu CẢ size LẪN màu thì PHẢI điền cả hai trường "size" và "color" -- điền thiếu một trong hai sẽ khiến hệ thống trả về sản phẩm không đúng thứ khách hỏi.
 
 TUYỆT ĐỐI không suy đoán hay tự thêm điều kiện khách không nói. Nếu khách chỉ hỏi chung chung, chào hỏi, hoặc hỏi về chính sách/FAQ (không phải điều kiện lọc sản phẩm cụ thể), trả hasFilter=false và bỏ trống các trường còn lại.
 
@@ -218,7 +316,11 @@ async function retrieveChunks({ namespace, question, history = [], allowedFolder
   const lietKe = LIST_INTENT.test(question);
 
   if (!allowedFolders || allowedFolders.includes(PRODUCT_FOLDER_ID)) {
-    const filters = await extractProductFilters(searchText);
+    let filters = await extractProductFilters(searchText, await danhMucCoThat(namespace));
+    // Bổ khuyết size/màu bằng mã khi model bỏ sót -- xem chú thích ở boSungTatDinh.
+    if (filters.hasFilter) {
+      filters = boSungTatDinh(filters, question, await mauCoThat(namespace));
+    }
     if (filters.hasFilter) {
       // Phần SẢN PHẨM vẫn lọc cứng và KHÔNG rơi về semantic-thuần khi rỗng (trả sản phẩm không đúng
       // điều kiện khách nêu còn gây hiểu lầm hơn là nói "chưa có phù hợp").
@@ -235,7 +337,9 @@ async function retrieveChunks({ namespace, question, history = [], allowedFolder
       const gioiHanGop = lietKe ? LIST_LIMIT : TOP_K;
       const soFaq = Math.min(faq.length, filtered.length ? 3 : TOP_K);
       const merged = [...filtered.slice(0, Math.max(gioiHanGop - soFaq, 0)), ...faq.slice(0, soFaq)];
-      return { chunks: merged, nearestFolder: null };
+      // Trả kèm `filters` để bộ đo chất lượng (scripts/do-loc-san-pham.js) chấm được bước trích điều
+      // kiện mà không phải gọi Gemini thêm một lượt nữa. askQuestion không dùng tới trường này.
+      return { chunks: merged, nearestFolder: null, filters };
     }
   }
 
