@@ -183,6 +183,12 @@ export interface AdminOrderDto {
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED'
   note: string | null
   returnReason: string | null
+  /** Xem chú thích cùng tên trong orderApi.ts -- KHÁC paymentStatus ở trên. */
+  refundStatus: 'NONE' | 'PENDING' | 'COMPLETED'
+  refundBankName: string | null
+  refundAccountNumber: string | null
+  refundAccountHolder: string | null
+  refundCompletedAt: string | null
   createdAt: string
   items: { productId: number | null; productName: string; size: string; color: string; unitPrice: number; quantity: number; subtotal: number }[] | null
 }
@@ -206,6 +212,13 @@ export async function updateAdminOrderStatusApi(orderId: number, status: string)
 
 export async function confirmAdminOrderPaymentApi(orderId: number) {
   const { data } = await apiClient.patch<AdminOrderDto>(`/admin/orders/${orderId}/confirm-payment`)
+  return data
+}
+
+/** Admin xác nhận ĐÃ chuyển tiền hoàn lại cho khách. Backend chỉ cho gọi khi đơn đã ở trạng thái
+ *  RETURNED (đã duyệt trả hàng) và refundStatus đang là PENDING. */
+export async function confirmAdminOrderRefundApi(orderId: number) {
+  const { data } = await apiClient.patch<AdminOrderDto>(`/admin/orders/${orderId}/confirm-refund`)
   return data
 }
 

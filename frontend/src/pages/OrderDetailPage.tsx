@@ -12,6 +12,11 @@ import {
 } from "../api/orderApi";
 import { createReviewApi } from "../api/productApi";
 import BackButton from "../components/BackButton";
+import RefundAccountFields, {
+  REFUND_ACCOUNT_RONG,
+  kiemTaiKhoanHoanTien,
+  type RefundAccount,
+} from "../components/RefundAccountFields";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useAlertDialog } from "../hooks/useAlertDialog";
 
@@ -179,6 +184,18 @@ export default function OrderDetailPage() {
   const [returnReason, setReturnReason] = useState("");
   const [returnSubmitting, setReturnSubmitting] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
+  const [refundAccount, setRefundAccount] = useState<RefundAccount>(REFUND_ACCOUNT_RONG);
+
+  /**
+   * Đơn này có tiền để hoàn lại hay không -- quyết định có hỏi tài khoản ngân hàng không.
+   *
+   * Bản sao của OrderService.khachDaTraTien. Chú ý nhánh COD: đơn COD giữ paymentStatus = 'UNPAID'
+   * VĨNH VIỄN vì hệ thống không có bước xác nhận đã thu tiền mặt, nên viết gọn thành
+   * `paymentStatus !== 'UNPAID'` là toàn bộ khách COD -- nhóm đông nhất -- không bao giờ được hỏi số
+   * tài khoản. Yêu cầu trả hàng chỉ mở ở đơn đã giao, mà COD giao xong nghĩa là đã thu tiền.
+   */
+  const canHoanTien =
+    order != null && (order.paymentMethod === "COD" || order.paymentStatus !== "UNPAID");
   const { confirm, dialog } = useConfirmDialog();
   const { alertDialog, dialog: alertDialogEl } = useAlertDialog();
 
@@ -226,11 +243,32 @@ export default function OrderDetailPage() {
       setReturnError("Vui lòng nhập lý do trả hàng/hoàn tiền");
       return;
     }
+    if (canHoanTien) {
+      const loi = kiemTaiKhoanHoanTien(refundAccount);
+      if (loi) {
+        setReturnError(loi);
+        return;
+      }
+    }
     setReturnSubmitting(true);
     setReturnError(null);
     try {
-      setOrder(await requestReturnApi(order.orderId, returnReason.trim()));
+      setOrder(
+        await requestReturnApi(order.orderId, {
+          reason: returnReason.trim(),
+          // Chỉ gửi khi đơn thật sự có tiền để hoàn -- gửi thừa thì lưu vào cơ sở dữ liệu một tài
+          // khoản mà chẳng bao giờ dùng tới.
+          ...(canHoanTien
+            ? {
+                refundBankName: refundAccount.bankName,
+                refundAccountNumber: refundAccount.accountNumber,
+                refundAccountHolder: refundAccount.accountHolder,
+              }
+            : {}),
+        }),
+      );
       setReturnOpen(false);
+      setRefundAccount(REFUND_ACCOUNT_RONG);
     } catch (err: any) {
       setReturnError(err.response?.data?.message ?? "Không thể gửi yêu cầu trả hàng");
     } finally {
@@ -315,6 +353,29 @@ export default function OrderDetailPage() {
                   : "Đơn hàng đã được trả hàng/hoàn tiền."}
               </p>
               {order.returnReason && <p>Lý do: {order.returnReason}</p>}
+
+              {/* Tiến độ hoàn tiền dựa trên refundStatus, KHÔNG dựa vào paymentStatus: paymentStatus
+                  chuyển sang 'REFUNDED' ngay lúc admin duyệt trả hàng, tức là lúc chưa ai chuyển đồng
+                  nào. Hiển thị theo nó là nói với khách rằng đã nhận được tiền trong khi chưa. */}
+              {order.refundStatus === "PENDING" && (
+                <p className="mt-2 pt-2 border-t border-red-200">
+                  Đang chờ hoàn tiền về{" "}
+                  <span className="font-medium">
+                    {order.refundBankName} — {order.refundAccountNumber}
+                  </span>
+                  {order.refundAccountHolder ? ` (${order.refundAccountHolder})` : ""}.
+                </p>
+              )}
+              {order.refundStatus === "COMPLETED" && (
+                <p className="mt-2 pt-2 border-t border-red-200">
+                  Đã hoàn tiền
+                  {order.refundCompletedAt
+                    ? ` ngày ${new Date(order.refundCompletedAt).toLocaleDateString("vi-VN")}`
+                    : ""}{" "}
+                  về {order.refundBankName} — {order.refundAccountNumber}. Nếu chưa nhận được, vui lòng
+                  liên hệ chúng tôi.
+                </p>
+              )}
             </div>
           )}
 
@@ -464,7 +525,23 @@ export default function OrderDetailPage() {
                 placeholder="Ví dụ: sản phẩm không đúng mô tả, bị lỗi/hư hỏng..."
                 className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
               />
-              {returnError && <p className="text-xs text-red-600 mt-1">{returnError}</p>}
+
+              {canHoanTien && (
+                <div className="mt-4 pt-4 border-t border-stone-200">
+                  <p className="text-sm font-medium text-stone-700 mb-1">
+                    Tài khoản nhận tiền hoàn
+                  </p>
+                  {/* Nói rõ VÌ SAO phải khai, nếu không khách nghi ngờ tại sao trang bán hàng lại hỏi
+                      số tài khoản ngân hàng của mình. */}
+                  <p className="text-xs text-stone-500 mb-3">
+                    Chúng tôi chuyển khoản lại sau khi nhận và kiểm tra hàng trả về. Vui lòng kiểm tra
+                    kỹ, tiền chuyển nhầm tài khoản rất khó lấy lại.
+                  </p>
+                  <RefundAccountFields giaTri={refundAccount} onChange={setRefundAccount} />
+                </div>
+              )}
+
+              {returnError && <p className="text-xs text-red-600 mt-3">{returnError}</p>}
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={handleSubmitReturn}

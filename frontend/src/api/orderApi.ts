@@ -41,6 +41,16 @@ export interface OrderDto {
   qrCodeUrl: string | null
   note: string | null
   returnReason: string | null
+  /**
+   * Tiến độ hoàn tiền THẬT, khác hẳn paymentStatus ở trên.
+   * paymentStatus='REFUNDED' chỉ là bút toán đảo khoản, được đặt ngay lúc admin duyệt trả hàng.
+   * refundStatus='COMPLETED' mới nghĩa là tiền đã thực sự chuyển đi. Xem Order.RefundStatus bên backend.
+   */
+  refundStatus: 'NONE' | 'PENDING' | 'COMPLETED'
+  refundBankName: string | null
+  refundAccountNumber: string | null
+  refundAccountHolder: string | null
+  refundCompletedAt: string | null
   createdAt: string
   items: OrderItemDto[] | null
 }
@@ -87,8 +97,23 @@ export async function completeOrderApi(orderId: number): Promise<OrderDto> {
   return data
 }
 
-export async function requestReturnApi(orderId: number, reason: string): Promise<OrderDto> {
-  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/request-return`, { reason })
+export interface RequestReturnPayload {
+  reason: string
+  /**
+   * Tài khoản nhận tiền hoàn. Backend BẮT BUỘC khi đơn đã thu được tiền -- gồm cả đơn COD đã giao, dù
+   * đơn COD luôn hiển thị paymentStatus là UNPAID (hệ thống không có bước xác nhận đã thu tiền mặt).
+   * Đừng dựa vào paymentStatus ở frontend để quyết định có hỏi hay không, xem OrderService.khachDaTraTien.
+   */
+  refundBankName?: string
+  refundAccountNumber?: string
+  refundAccountHolder?: string
+}
+
+export async function requestReturnApi(
+  orderId: number,
+  payload: RequestReturnPayload,
+): Promise<OrderDto> {
+  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/request-return`, payload)
   return data
 }
 

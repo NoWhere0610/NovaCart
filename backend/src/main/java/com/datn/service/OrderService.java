@@ -236,9 +236,74 @@ public class OrderService {
             }
         }
 
+        // Khách đã trả tiền thì phải khai tài khoản nhận lại. Shop chuyển khoản TAY (chưa tích hợp API
+        // hoàn tiền của VNPay), nên không có thông tin này thì admin duyệt xong cũng không biết chuyển
+        // cho ai -- yêu cầu treo đó vô thời hạn mà chẳng ai biết đang thiếu gì.
+        //
+        // KIỂM HẾT TRƯỚC KHI SỬA bất cứ trường nào của đơn. Bản đầu đặt status/returnReason rồi mới
+        // kiểm tài khoản: yêu cầu bị từ chối nhưng đối tượng đơn đã bị sửa dở dang, chỉ nhờ transaction
+        // cuộn lại mới không hỏng dữ liệu thật. Dựa vào rollback để giữ đúng đắn là dựa vào thứ nằm
+        // ngoài phương thức này -- gọi từ chỗ không có transaction là hỏng ngay. (Test bắt được.)
+        boolean canHoanTien = khachDaTraTien(order);
+        if (canHoanTien) {
+            requireThongTinHoanTien(request);
+        }
+
         order.setStatus(Order.Status.RETURN_REQUESTED);
         order.setReturnReason(request.getReason());
+
+        if (canHoanTien) {
+            order.setRefundBankName(request.getRefundBankName());
+            order.setRefundAccountNumber(request.getRefundAccountNumber());
+            order.setRefundAccountHolder(request.getRefundAccountHolder());
+            order.setRefundStatus(Order.RefundStatus.PENDING);
+        } else {
+            // Chưa ai trả đồng nào (vd đơn chuyển khoản/VNPay bị bỏ dở) -> trả hàng thì trả, không có
+            // gì để hoàn. Vẫn cho gửi yêu cầu, chỉ là không đòi số tài khoản.
+            order.setRefundStatus(Order.RefundStatus.NONE);
+        }
+
         return toResponse(orderRepository.save(order), true);
+    }
+
+    /**
+     * Khách đã thực sự đưa tiền cho shop chưa.
+     *
+     * KHÔNG được viết đơn giản thành `paymentStatus == PAID`. Đơn COD giữ paymentStatus = UNPAID VĨNH
+     * VIỄN vì hệ thống không có bước "xác nhận đã thu tiền mặt" riêng cho COD (xem chú thích trong
+     * AdminStatisticsService.laDonThuTienThat). Dựa vào paymentStatus thì mọi khách COD -- nhóm đã cầm
+     * hàng và đưa tiền mặt tận tay shipper -- đều bị coi là chưa trả tiền và không được hỏi số tài
+     * khoản, tức là không bao giờ nhận lại được tiền.
+     *
+     * Với COD thì mốc đúng là ĐÃ GIAO: giao xong nghĩa là đã thu tiền. Phương thức này chỉ được gọi
+     * trong requestReturn, nơi đơn chắc chắn đã DELIVERED/COMPLETED.
+     */
+    private boolean khachDaTraTien(Order order) {
+        if (order.getPaymentMethod() == Order.PaymentMethod.COD) {
+            return true;
+        }
+        return order.getPaymentStatus() != null
+                && order.getPaymentStatus() != Order.PaymentStatus.UNPAID;
+    }
+
+    /** Báo lỗi cụ thể từng ô thiếu, không gộp thành một câu chung chung "thiếu thông tin". */
+    private void requireThongTinHoanTien(RequestReturnRequest request) {
+        if (isBlank(request.getRefundBankName())) {
+            throw ApiException.badRequest("Vui lòng chọn ngân hàng nhận tiền hoàn");
+        }
+        if (isBlank(request.getRefundAccountNumber())) {
+            throw ApiException.badRequest("Vui lòng nhập số tài khoản nhận tiền hoàn");
+        }
+        if (!request.getRefundAccountNumber().matches("\\d{6,20}")) {
+            throw ApiException.badRequest("Số tài khoản chỉ gồm chữ số, độ dài 6-20 ký tự");
+        }
+        if (isBlank(request.getRefundAccountHolder())) {
+            throw ApiException.badRequest("Vui lòng nhập tên chủ tài khoản");
+        }
+    }
+
+    private boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     // ----- helper nội bộ -----
@@ -301,6 +366,12 @@ public class OrderService {
                 .qrCodeUrl(needsQrCode(order) ? vietQrService.buildQrUrl(order.getOrderCode(), order.getTotalAmount()) : null)
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
+                // Quy null về NONE -- xem chú thích cùng chỗ trong AdminOrderService.toResponse.
+                .refundStatus(order.getRefundStatus() == null ? Order.RefundStatus.NONE : order.getRefundStatus())
+                .refundBankName(order.getRefundBankName())
+                .refundAccountNumber(order.getRefundAccountNumber())
+                .refundAccountHolder(order.getRefundAccountHolder())
+                .refundCompletedAt(order.getRefundCompletedAt())
                 .createdAt(order.getCreatedAt())
                 .items(items)
                 .build();

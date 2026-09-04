@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
   confirmAdminOrderPaymentApi,
+  confirmAdminOrderRefundApi,
   getAdminOrdersApi,
   updateAdminOrderStatusApi,
   type AdminOrderDto,
 } from '../api/adminApi'
 import { useAlertDialog } from '../hooks/useAlertDialog'
+import { useConfirmDialog } from '../hooks/useConfirmDialog'
 
 const formatVnd = (n: number) => n.toLocaleString('vi-VN') + '₫'
 
@@ -59,6 +61,8 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
   const { alertDialog, dialog } = useAlertDialog()
+  // Đặt tên khác `dialog` ở trên -- hai hook đều trả về một phần tử phải render, trùng tên là mất một cái.
+  const { confirm: confirmDialog, dialog: confirmDialogEl } = useConfirmDialog()
 
   useEffect(() => {
     loadOrders()
@@ -98,9 +102,33 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function handleConfirmRefund(orderId: number) {
+    // Hỏi lại vì thao tác này KHÔNG hoàn tác được và nó khẳng định một việc đã xảy ra ngoài hệ thống
+    // (đã ra ngân hàng chuyển tiền). Bấm nhầm thì đơn biến mất khỏi danh sách chờ chuyển và khách
+    // không bao giờ nhận được tiền, cũng chẳng ai còn thấy là đang thiếu.
+    const dongY = await confirmDialog(
+      'Xác nhận ĐÃ chuyển tiền hoàn lại cho khách?\n\n'
+        + 'Chỉ bấm sau khi đã thực sự chuyển khoản thành công. Thao tác này không hoàn tác được.',
+    )
+    if (!dongY) return
+
+    setBusyId(orderId)
+    try {
+      await confirmAdminOrderRefundApi(orderId)
+      await loadOrders()
+    } catch (err: any) {
+      await alertDialog(err.response?.data?.message ?? 'Không thể xác nhận hoàn tiền')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div>
       {dialog}
+      {/* Thiếu dòng này thì confirmDialog() không bao giờ hiện gì cả -- Promise treo vĩnh viễn và nút
+          "Xác nhận đã hoàn tiền" trông như bấm không ăn. */}
+      {confirmDialogEl}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-stone-900">Quản lý đơn hàng</h1>
         <select
@@ -150,6 +178,26 @@ export default function AdminOrdersPage() {
                         Lý do: {o.returnReason}
                       </div>
                     )}
+                    {/* Thông tin để nhân viên chuyển khoản đọc và gõ vào app ngân hàng. Hiện ngay tại
+                        dòng đơn, không giấu sau nút "xem chi tiết" -- đây là việc cần làm, không phải
+                        thông tin tham khảo. */}
+                    {o.refundStatus === 'PENDING' && (
+                      <div className="text-xs mt-2 max-w-[240px] border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+                        <p className="font-semibold">Chờ chuyển tiền hoàn</p>
+                        <p>{o.refundBankName}</p>
+                        {/* tabular-nums: các chữ số rộng bằng nhau, đọc/dò số tài khoản đỡ nhầm hàng. */}
+                        <p className="font-mono tabular-nums">{o.refundAccountNumber}</p>
+                        <p>{o.refundAccountHolder}</p>
+                      </div>
+                    )}
+                    {o.refundStatus === 'COMPLETED' && (
+                      <div className="text-xs mt-2 max-w-[240px] text-green-700">
+                        Đã hoàn tiền
+                        {o.refundCompletedAt
+                          ? ` ${new Date(o.refundCompletedAt).toLocaleDateString('vi-VN')}`
+                          : ''}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-stone-500">
                     {new Date(o.createdAt).toLocaleDateString('vi-VN')}
@@ -163,6 +211,18 @@ export default function AdminOrdersPage() {
                           className="text-xs border border-green-300 text-green-700 hover:bg-green-50 px-2 py-1 disabled:opacity-50"
                         >
                           Xác nhận đã nhận CK
+                        </button>
+                      )}
+                      {/* Chỉ hiện khi đã duyệt trả hàng VÀ còn khoản chờ hoàn -- khớp đúng điều kiện
+                          backend kiểm trong AdminOrderService.confirmRefund, để nút không bao giờ
+                          hiện ra rồi bấm vào lại báo lỗi. */}
+                      {o.status === 'RETURNED' && o.refundStatus === 'PENDING' && (
+                        <button
+                          disabled={busyId === o.orderId}
+                          onClick={() => handleConfirmRefund(o.orderId)}
+                          className="text-xs border border-green-300 text-green-700 hover:bg-green-50 px-2 py-1 disabled:opacity-50"
+                        >
+                          Xác nhận đã hoàn tiền
                         </button>
                       )}
                       {NEXT_STATUS[o.status]?.map((next) => (

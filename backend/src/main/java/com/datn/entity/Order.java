@@ -51,6 +51,24 @@ public class Order {
         UNPAID, PAID, REFUNDED
     }
 
+    /**
+     * Tiến độ hoàn tiền THẬT -- tiền đã thực sự rời tài khoản shop hay chưa.
+     *
+     * VÌ SAO KHÔNG DÙNG paymentStatus.REFUNDED: cờ đó được đặt NGAY lúc admin duyệt trả hàng
+     * (AdminOrderService.updateStatus), tức là lúc chưa ai chuyển đồng nào. Nó mang nghĩa kế toán --
+     * "khoản thu của đơn này đã bị đảo" -- và AdminStatisticsService đang dựa vào nó để phân biệt đơn
+     * TỪNG thu được tiền với đơn chưa ai trả. Nhồi thêm nghĩa "đã chuyển khoản cho khách" vào đó thì
+     * hoặc phải sửa cách tính doanh thu, hoặc hệ thống tiếp tục báo "đã hoàn tiền" khi tiền còn nguyên
+     * trong tài khoản shop.
+     *
+     * Nên tách hẳn: paymentStatus trả lời "sổ sách ghi gì", refundStatus trả lời "tiền đã đi chưa".
+     */
+    public enum RefundStatus {
+        NONE,       // đơn này không phát sinh hoàn tiền
+        PENDING,    // khách đã gửi thông tin tài khoản, chờ shop chuyển khoản
+        COMPLETED   // shop đã chuyển và xác nhận
+    }
+
     /** Nguồn tạo đơn: khách đặt qua web (ONLINE) hay nhân viên bán tại quầy (POS). */
     public enum OrderType {
         ONLINE, POS
@@ -140,6 +158,35 @@ public class Order {
     // "sửa ngược" thành có khoản hoàn trong khi tháng thực sự phát sinh hoàn lại không thấy gì.
     @Column(name = "returned_at")
     private LocalDateTime returnedAt;
+
+    // ----- Hoàn tiền (xem RefundStatus) -----
+    // Đơn CŨ tạo trước khi có cột này sẽ để NULL trong cơ sở dữ liệu -- giá trị mặc định bên dưới chỉ
+    // áp dụng cho đối tượng mới tạo trong Java, KHÔNG vá được dòng đã có. LegacyDataFixer lấp NULL
+    // thành NONE lúc khởi động; mọi chỗ đọc vẫn phải coi null tương đương NONE cho chắc.
+    // columnDefinition = "nvarchar(...)" là BẮT BUỘC, không phải trang trí: Hibernate mặc định tạo cột
+    // String thành VARCHAR trên SQL Server, và cột varchar cắt sạch dấu tiếng Việt khi ghi mà không hề
+    // báo lỗi. Đã gặp thật với refund_bank_name: "Vietcombank (Ngoại thương)" lưu xuống thành
+    // "Vietcombank (Ngo?i thuong)" -- công cụ tools/refund-flow-test.js phát hiện, mắt thường thì không.
+    // Mọi bảng dựng từ menswear_db_mssql.sql đều đã là nvarchar nên chỉ cột Hibernate tự thêm mới dính.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_status", length = 20, columnDefinition = "nvarchar(20)")
+    private RefundStatus refundStatus = RefundStatus.NONE;
+
+    // Thông tin nhận tiền do KHÁCH tự khai lúc gửi yêu cầu trả hàng. Cố ý lưu tên ngân hàng dạng chữ
+    // chứ không phải mã: shop chuyển khoản bằng tay, người thao tác cần đọc hiểu ngay.
+    @Column(name = "refund_bank_name", length = 100, columnDefinition = "nvarchar(100)")
+    private String refundBankName;
+
+    @Column(name = "refund_account_number", length = 30, columnDefinition = "nvarchar(30)")
+    private String refundAccountNumber;
+
+    @Column(name = "refund_account_holder", length = 100, columnDefinition = "nvarchar(100)")
+    private String refundAccountHolder;
+
+    // Thời điểm admin xác nhận ĐÃ chuyển tiền. Khác returnedAt (lúc duyệt trả hàng) -- hai việc này
+    // thường cách nhau vài ngày, gộp làm một là mất dấu khoảng chờ mà khách phải chịu.
+    @Column(name = "refund_completed_at")
+    private LocalDateTime refundCompletedAt;
 
     // Optimistic lock -- 2 request cùng load rồi cùng sửa 1 đơn (vd double-click checkout, admin xác
     // nhận trùng lúc khách huỷ, POS checkout/huỷ cùng lúc) thì request save() SAU sẽ bị JPA ném

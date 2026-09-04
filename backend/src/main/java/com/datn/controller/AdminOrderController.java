@@ -40,6 +40,13 @@ public class AdminOrderController {
         return ResponseEntity.ok(adminOrderService.updateStatus(orderId, request.getStatus()));
     }
 
+    /** Admin xác nhận ĐÃ chuyển tiền hoàn lại cho khách (chuyển khoản tay, không qua cổng tự động). */
+    @PatchMapping("/{orderId}/confirm-refund")
+    @PreAuthorize("@perm.has('ORDER_UPDATE_STATUS')")
+    public ResponseEntity<AdminOrderResponse> confirmRefund(@PathVariable Long orderId) {
+        return ResponseEntity.ok(adminOrderService.confirmRefund(orderId));
+    }
+
     @PatchMapping("/{orderId}/confirm-payment")
     @PreAuthorize("@perm.has('ORDER_UPDATE_STATUS')")
     public ResponseEntity<AdminOrderResponse> confirmPayment(@PathVariable Long orderId) {

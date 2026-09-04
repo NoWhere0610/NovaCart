@@ -152,7 +152,20 @@ CREATE TABLE [dbo].[orders](
 	[phone] [nvarchar](20) NULL,
 	[receiver_name] [nvarchar](100) NULL,
 	[shipping_address] [nvarchar](500) NULL,
-PRIMARY KEY CLUSTERED 
+	/* Các cột dưới đây thêm SAU khi kết xuất bản gốc này. Trên máy đang chạy thì
+	   spring.jpa.hibernate.ddl-auto=update đã tự thêm nên không ai để ý là file còn thiếu; nhưng ai
+	   dựng cơ sở dữ liệu mới TỪ file này rồi chạy ứng dụng lần đầu sẽ nhận một schema khác hẳn. */
+	[version] [bigint] NULL,              /* @Version -- khoá lạc quan, xem LegacyDataFixer */
+	[delivered_at] [datetime2](7) NULL,   /* mốc giao hàng, gốc để đếm hạn đổi trả 7 ngày */
+	[returned_at] [datetime2](7) NULL,    /* mốc duyệt trả hàng -- thống kê hoàn trả nhóm theo cột này */
+	/* Hoàn tiền: refund_status trả lời "tiền đã đi chưa", KHÁC payment_status ở trên (chỉ là bút toán
+	   đảo khoản, được đặt ngay lúc duyệt trả hàng). Xem Order.RefundStatus. */
+	[refund_status] [nvarchar](20) NULL,
+	[refund_bank_name] [nvarchar](100) NULL,
+	[refund_account_number] [nvarchar](30) NULL,
+	[refund_account_holder] [nvarchar](100) NULL,
+	[refund_completed_at] [datetime2](7) NULL,
+PRIMARY KEY CLUSTERED
 (
 	[order_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]

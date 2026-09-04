@@ -27,6 +27,16 @@ public class AdminOrderResponse {
     private Order.PaymentStatus paymentStatus;
     private String note;
     private String returnReason;
+
+    // ----- Hoàn tiền -----
+    // refundStatus là thứ nói tiền ĐÃ ĐI hay chưa; paymentStatus.REFUNDED ở trên chỉ là bút toán đảo
+    // khoản, được đặt ngay lúc duyệt trả hàng. Xem Order.RefundStatus.
+    private Order.RefundStatus refundStatus;
+    private String refundBankName;
+    private String refundAccountNumber;
+    private String refundAccountHolder;
+    private LocalDateTime refundCompletedAt;
+
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
 }

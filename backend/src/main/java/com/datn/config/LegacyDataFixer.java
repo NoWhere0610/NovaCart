@@ -39,7 +39,10 @@ public class LegacyDataFixer {
 
     @Bean
     ApplicationRunner vaDuLieuCu() {
-        return args -> backfillOrderVersion();
+        return args -> {
+            backfillOrderVersion();
+            backfillRefundStatus();
+        };
     }
 
     /**
@@ -60,6 +63,26 @@ public class LegacyDataFixer {
         } catch (Exception e) {
             // Không được làm hỏng việc khởi động ứng dụng vì một bước vá dữ liệu.
             log.error("[va-du-lieu] không vá được cột version của orders: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Lấp refund_status NULL thành 'NONE' cho đơn tạo trước khi có luồng hoàn tiền.
+     *
+     * Cùng một cái bẫy như cột version: giá trị mặc định khai trong entity Java chỉ áp cho đối tượng
+     * MỚI tạo, không vá được dòng đã nằm sẵn trong bảng. Để NULL thì mọi chỗ so sánh refundStatus đều
+     * phải nhớ kiểm null trước, và chỉ cần một chỗ quên là ném NullPointerException.
+     */
+    void backfillRefundStatus() {
+        try {
+            int soDong = new TransactionTemplate(transactionManager).execute(status -> entityManager
+                    .createNativeQuery("UPDATE orders SET refund_status = 'NONE' WHERE refund_status IS NULL")
+                    .executeUpdate());
+            if (soDong > 0) {
+                log.warn("[va-du-lieu] đã điền refund_status = 'NONE' cho {} đơn hàng cũ.", soDong);
+            }
+        } catch (Exception e) {
+            log.error("[va-du-lieu] không vá được cột refund_status của orders: {}", e.getMessage());
         }
     }
 }

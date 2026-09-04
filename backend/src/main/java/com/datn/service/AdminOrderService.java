@@ -146,6 +146,15 @@ public class AdminOrderService {
         if (newStatus == Order.Status.RETURNED) {
             order.setReturnedAt(java.time.LocalDateTime.now());
         }
+
+        // Admin TỪ CHỐI yêu cầu trả hàng (RETURN_REQUESTED -> COMPLETED): huỷ luôn khoản hoàn đang chờ.
+        // Không huỷ thì đơn nằm mãi trong danh sách "chờ chuyển tiền" của admin dù yêu cầu đã bị bác --
+        // sớm muộn cũng có người chuyển nhầm. Giữ lại thông tin tài khoản để còn truy vết.
+        if (oldStatus == Order.Status.RETURN_REQUESTED && newStatus == Order.Status.COMPLETED
+                && order.getRefundStatus() == Order.RefundStatus.PENDING) {
+            order.setRefundStatus(Order.RefundStatus.NONE);
+        }
+
         order.setStatus(newStatus);
         return toResponse(orderRepository.save(order), true);
     }
@@ -174,6 +183,39 @@ public class AdminOrderService {
         return toResponse(orderRepository.save(order), true);
     }
 
+    /**
+     * Admin xác nhận ĐÃ chuyển tiền hoàn lại cho khách.
+     *
+     * Bước riêng chứ không gộp vào lúc duyệt trả hàng, vì hai việc đó cách nhau thật: duyệt xong còn
+     * phải nhận hàng về, kiểm hàng, rồi mới ra ngân hàng chuyển. Gộp làm một là hệ thống báo "đã hoàn
+     * tiền" trong khi tiền còn nguyên trong tài khoản shop -- khách gọi lên hỏi thì không ai tra được
+     * đã chuyển hay chưa.
+     */
+    @Transactional
+    public AdminOrderResponse confirmRefund(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
+        requireOnlineOrder(order);
+
+        if (order.getRefundStatus() == Order.RefundStatus.COMPLETED) {
+            throw ApiException.badRequest("Đơn hàng này đã được xác nhận hoàn tiền trước đó");
+        }
+        if (order.getRefundStatus() != Order.RefundStatus.PENDING) {
+            throw ApiException.badRequest("Đơn hàng này không có yêu cầu hoàn tiền nào đang chờ xử lý");
+        }
+        // Chỉ hoàn tiền SAU KHI đã duyệt trả hàng. Cho phép bấm khi yêu cầu còn đang chờ duyệt thì admin
+        // rất dễ chuyển tiền cho một yêu cầu mà sau đó chính mình lại từ chối.
+        if (order.getStatus() != Order.Status.RETURNED) {
+            throw ApiException.badRequest(
+                    "Phải duyệt trả hàng trước khi xác nhận hoàn tiền (đơn đang ở trạng thái "
+                            + order.getStatus() + ")");
+        }
+
+        order.setRefundStatus(Order.RefundStatus.COMPLETED);
+        order.setRefundCompletedAt(java.time.LocalDateTime.now());
+        return toResponse(orderRepository.save(order), true);
+    }
+
     /** Chặn thao tác trạng thái/thanh toán của trang "Quản lý đơn hàng" lên đơn POS -- xem chú thích ở list(). */
     private void requireOnlineOrder(Order order) {
         if (order.getOrderType() == Order.OrderType.POS) {
@@ -199,6 +241,13 @@ public class AdminOrderService {
                 .paymentStatus(order.getPaymentStatus())
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
+                // Đơn cũ có refund_status NULL trong cơ sở dữ liệu (LegacyDataFixer lấp lúc khởi động,
+                // nhưng vẫn quy null về NONE ở đây để frontend không phải xử lý thêm một trạng thái nữa).
+                .refundStatus(order.getRefundStatus() == null ? Order.RefundStatus.NONE : order.getRefundStatus())
+                .refundBankName(order.getRefundBankName())
+                .refundAccountNumber(order.getRefundAccountNumber())
+                .refundAccountHolder(order.getRefundAccountHolder())
+                .refundCompletedAt(order.getRefundCompletedAt())
                 .createdAt(order.getCreatedAt())
                 .items(includeItems ? order.getItems().stream().map(i -> OrderItemResponse.builder()
                         .productId(i.getVariant() != null && i.getVariant().getProduct() != null
