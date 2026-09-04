@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { IconShieldCog, IconPackage, IconUserCircle, IconShoppingBag, IconSearch, IconX, IconHeart } from '@tabler/icons-react'
+import { IconShieldCog, IconPackage, IconUserCircle, IconShoppingBag, IconSearch, IconX, IconHeart, IconLogin, IconLogout, IconUserPlus } from '@tabler/icons-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { apiClient } from '../api/apiClient'
@@ -145,32 +145,70 @@ export default function Header() {
               </button>
               {accountMenuOpen && (
                 <div className="absolute right-0 top-full pt-2 z-50">
-                  <div className="w-44 bg-white border border-stone-200 shadow-xl py-1">
-                    <Link
-                      to="/account"
-                      onClick={() => setAccountMenuOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
-                    >
-                      <IconUserCircle size={16} stroke={1.7} />
-                      Tài khoản
-                    </Link>
-                    <Link
-                      to="/orders"
-                      onClick={() => setAccountMenuOpen(false)}
-                      className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
-                    >
-                      <IconPackage size={16} stroke={1.7} />
-                      Đơn hàng của tôi
-                    </Link>
-                    <button
-                      onClick={() => {
-                        setAccountMenuOpen(false)
-                        logout()
-                      }}
-                      className="block w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
-                    >
-                      Đăng xuất
-                    </button>
+                  <div className="w-52 bg-white border border-stone-200 shadow-xl py-1">
+                    {/* Menu PHẢI đổi theo trạng thái đăng nhập. Bản trước luôn hiện y hệt nhau, kể cả
+                        khi chưa đăng nhập -- không có mục "Đăng nhập" nào, và sau khi bấm "Đăng xuất"
+                        thì menu vẫn nguyên như cũ. Đăng xuất thật ra CHẠY ĐÚNG, nhưng vì giao diện
+                        không phản ánh gì nên người dùng tưởng nút hỏng. */}
+                    {user ? (
+                      <>
+                        <div className="px-4 py-2 border-b border-stone-100">
+                          <p className="text-xs text-stone-400">Đang đăng nhập</p>
+                          <p className="text-sm font-medium text-stone-900 truncate">
+                            {user.fullName || user.username}
+                          </p>
+                        </div>
+                        <Link
+                          to="/account"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                        >
+                          <IconUserCircle size={16} stroke={1.7} />
+                          Tài khoản
+                        </Link>
+                        <Link
+                          to="/orders"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                        >
+                          <IconPackage size={16} stroke={1.7} />
+                          Đơn hàng của tôi
+                        </Link>
+                        <button
+                          onClick={() => {
+                            setAccountMenuOpen(false)
+                            logout()
+                            // Về trang chủ sau khi đăng xuất. Đứng ở trang cần đăng nhập thì RequireAuth
+                            // sẽ tự đá về /login, nhưng đứng ở trang công khai thì không có gì xảy ra --
+                            // đưa về trang chủ để hành vi nhất quán ở mọi trang.
+                            navigate('/')
+                          }}
+                          className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                        >
+                          <IconLogout size={16} stroke={1.7} />
+                          Đăng xuất
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Link
+                          to="/login"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                        >
+                          <IconLogin size={16} stroke={1.7} />
+                          Đăng nhập
+                        </Link>
+                        <Link
+                          to="/register"
+                          onClick={() => setAccountMenuOpen(false)}
+                          className="flex items-center gap-2 px-4 py-2 text-sm text-stone-700 hover:bg-stone-50 hover:text-gold-dark transition-colors"
+                        >
+                          <IconUserPlus size={16} stroke={1.7} />
+                          Đăng ký
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
