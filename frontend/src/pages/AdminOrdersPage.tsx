@@ -62,7 +62,13 @@ const NEXT_STATUS: Record<string, { status: string; label: string; danger?: bool
     { status: 'SHIPPING', label: '→ Giao cho vận chuyển' },
     { status: 'CANCELLED', label: 'Huỷ đơn', danger: true },
   ],
-  SHIPPING: [{ status: 'DELIVERED', label: '→ Đã giao hàng' }],
+  SHIPPING: [
+    { status: 'DELIVERED', label: '→ Đã giao hàng' },
+    // Lối ra cho GIAO THẤT BẠI (khách từ chối nhận, không có nhà). Thiếu nút này thì nhân viên muốn
+    // đóng đơn chỉ còn cách bấm "Đã giao hàng" -- ghi nhận sai sự thật, mà với đơn COD thì "đã giao"
+    // lại là căn cứ để hệ thống tin khách đã trả tiền.
+    { status: 'CANCELLED', label: 'Huỷ đơn (giao thất bại)', danger: true },
+  ],
   DELIVERED: [{ status: 'COMPLETED', label: '→ Hoàn thành hộ khách' }],
   COMPLETED: [],
   CANCELLED: [],
