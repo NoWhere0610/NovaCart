@@ -87,10 +87,56 @@ class AdminOrderServiceRefundTest {
         // Cho bấm ở đây thì admin rất dễ chuyển tiền cho một yêu cầu mà sau đó chính mình lại từ chối.
         assertThatThrownBy(() -> service.confirmRefund(1L))
                 .isInstanceOf(ApiException.class)
-                .hasMessageContaining("duyệt trả hàng trước");
+                .hasMessageContaining("trước khi xác nhận hoàn tiền");
 
         assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.PENDING);
         assertThat(o.getRefundCompletedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("ADMIN huỷ đơn đã thanh toán: sinh khoản phải hoàn, không để tiền biến mất khỏi mọi danh sách")
+    void adminHuyDonDaTra_sinhKhoanPhaiHoan() {
+        Order o = don(Order.Status.PENDING, Order.RefundStatus.NONE);
+        o.setPaymentMethod(Order.PaymentMethod.VNPAY);
+        o.setPaymentStatus(Order.PaymentStatus.PAID);
+        // Admin không biết số tài khoản của khách -- khác luồng khách tự huỷ (khai ngay lúc bấm).
+        o.setRefundBankName(null);
+        o.setRefundAccountNumber(null);
+        o.setRefundAccountHolder(null);
+
+        service.updateStatus(1L, Order.Status.CANCELLED);
+
+        // Để NONE thì đơn biến mất khỏi mọi danh sách và số tiền đó không còn ai theo dõi.
+        assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.PENDING);
+        assertThat(o.getPaymentStatus()).isEqualTo(Order.PaymentStatus.REFUNDED);
+    }
+
+    @Test
+    @DisplayName("Chưa có tài khoản nhận: KHÔNG cho xác nhận đã hoàn tiền")
+    void chuaCoTaiKhoanNhan_khongChoXacNhan() {
+        Order o = don(Order.Status.CANCELLED, Order.RefundStatus.PENDING);
+        o.setRefundBankName(null);
+        o.setRefundAccountNumber(null);
+        o.setRefundAccountHolder(null);
+
+        // Không có tài khoản thì không thể đã chuyển được. Cho bấm ở đây là mở đường để một khoản nợ
+        // khách bị đánh dấu xong mà thật ra chưa chuyển đi đâu cả.
+        assertThatThrownBy(() -> service.confirmRefund(1L))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("chưa có tài khoản nhận");
+
+        assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("Đơn ĐÃ HUỶ có đủ tài khoản: xác nhận hoàn tiền được")
+    void donDaHuy_xacNhanDuoc() {
+        Order o = don(Order.Status.CANCELLED, Order.RefundStatus.PENDING);
+
+        service.confirmRefund(1L);
+
+        assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.COMPLETED);
+        assertThat(o.getRefundCompletedAt()).isNotNull();
     }
 
     @Test

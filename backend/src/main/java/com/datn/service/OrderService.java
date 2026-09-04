@@ -1,6 +1,7 @@
 package com.datn.service;
 
 import com.datn.dto.PageResponse;
+import com.datn.dto.order.CancelOrderRequest;
 import com.datn.dto.order.CheckoutRequest;
 import com.datn.dto.order.OrderItemResponse;
 import com.datn.dto.order.OrderResponse;
@@ -154,14 +155,28 @@ public class OrderService {
         return toResponse(order, true);
     }
 
-    /** Khách chỉ được tự huỷ đơn khi đơn CÒN CHƯA được xác nhận/giao (PENDING/CONFIRMED). */
+    /**
+     * Khách chỉ được tự huỷ đơn khi đơn CÒN CHƯA được xác nhận/giao (PENDING/CONFIRMED).
+     *
+     * Huỷ một đơn ĐÃ THANH TOÁN thì phải khai tài khoản nhận lại tiền, y như khi trả hàng. Đây là
+     * đường sinh ra khoản phải hoàn dễ xảy ra nhất trong thực tế: khách thanh toán VNPay xong rồi đổi
+     * ý ngay, đơn còn chưa ai xác nhận.
+     */
     @Transactional
-    public OrderResponse cancelMyOrder(Long userId, Long orderId) {
+    public OrderResponse cancelMyOrder(Long userId, Long orderId, CancelOrderRequest request) {
         Order order = orderRepository.findByOrderIdAndUser_UserId(orderId, userId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng"));
 
         if (order.getStatus() != Order.Status.PENDING && order.getStatus() != Order.Status.CONFIRMED) {
             throw ApiException.badRequest("Đơn hàng đang giao hoặc đã hoàn tất, không thể huỷ");
+        }
+
+        // Kiểm + ghi thông tin nhận tiền TRƯỚC khi đụng vào kho/voucher/trạng thái, để yêu cầu thiếu
+        // thông tin không để lại thay đổi dở dang nào.
+        if (khachDaTraTien(order)) {
+            CancelOrderRequest r = request == null ? new CancelOrderRequest() : request;
+            ghiThongTinHoanTien(order, r.getRefundBankName(),
+                    r.getRefundAccountNumber(), r.getRefundAccountHolder());
         }
 
         // Chỉ hoàn kho nếu đơn đã CONFIRMED (lúc đó kho mới thực sự bị trừ) -- PENDING chưa đụng kho.
@@ -184,8 +199,10 @@ public class OrderService {
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
             voucherService.revertVoucherUsage(order.getVoucherCode());
         }
-        // Đơn đã trả tiền thật (chuyển khoản/VNPay) rồi mới huỷ -- đánh dấu REFUNDED để không lẫn với
-        // đơn thật sự chưa ai trả tiền (UNPAID); COD ở PENDING/CONFIRMED luôn đang UNPAID nên vô hại.
+        // Bút toán đảo khoản, KHÔNG có nghĩa là tiền đã về tay khách -- việc đó do refundStatus theo dõi
+        // (đặt PENDING ở trên, admin xác nhận sau khi thật sự chuyển khoản). Trước đây chỉ có dòng này:
+        // khách huỷ đơn đã trả 900.000đ thì hệ thống ghi "REFUNDED" mà không hỏi số tài khoản, không đưa
+        // đơn vào hàng chờ nào cả -- tiền nằm im ở shop và không ai còn biết là đang nợ khách.
         if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
             order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
         }
@@ -245,19 +262,16 @@ public class OrderService {
         // cuộn lại mới không hỏng dữ liệu thật. Dựa vào rollback để giữ đúng đắn là dựa vào thứ nằm
         // ngoài phương thức này -- gọi từ chỗ không có transaction là hỏng ngay. (Test bắt được.)
         boolean canHoanTien = khachDaTraTien(order);
+        // Kiểm định dạng TRƯỚC khi đụng vào đơn -- ghiThongTinHoanTien ném lỗi trước khi ghi bất cứ gì.
         if (canHoanTien) {
-            requireThongTinHoanTien(request);
+            ghiThongTinHoanTien(order, request.getRefundBankName(),
+                    request.getRefundAccountNumber(), request.getRefundAccountHolder());
         }
 
         order.setStatus(Order.Status.RETURN_REQUESTED);
         order.setReturnReason(request.getReason());
 
-        if (canHoanTien) {
-            order.setRefundBankName(request.getRefundBankName());
-            order.setRefundAccountNumber(request.getRefundAccountNumber());
-            order.setRefundAccountHolder(request.getRefundAccountHolder());
-            order.setRefundStatus(Order.RefundStatus.PENDING);
-        } else {
+        if (!canHoanTien) {
             // Chưa ai trả đồng nào (vd đơn chuyển khoản/VNPay bị bỏ dở) -> trả hàng thì trả, không có
             // gì để hoàn. Vẫn cho gửi yêu cầu, chỉ là không đòi số tài khoản.
             order.setRefundStatus(Order.RefundStatus.NONE);
@@ -280,26 +294,48 @@ public class OrderService {
      */
     private boolean khachDaTraTien(Order order) {
         if (order.getPaymentMethod() == Order.PaymentMethod.COD) {
-            return true;
+            // COD: tiền chỉ đổi tay đúng lúc giao hàng. Đơn COD bị huỷ khi còn PENDING/CONFIRMED thì
+            // chưa ai trả đồng nào -- KHÔNG được trả về true vô điều kiện, nếu không luồng huỷ đơn sẽ
+            // đòi số tài khoản của người chẳng có gì để nhận lại.
+            //
+            // Xét cả deliveredAt LẪN trạng thái: đơn cũ tạo trước khi có cột deliveredAt để null dù đã
+            // giao thật, chỉ nhìn mốc đó thì khách của những đơn ấy mất quyền được hoàn tiền.
+            return order.getDeliveredAt() != null
+                    || order.getStatus() == Order.Status.DELIVERED
+                    || order.getStatus() == Order.Status.COMPLETED
+                    || order.getStatus() == Order.Status.RETURN_REQUESTED
+                    || order.getStatus() == Order.Status.RETURNED;
         }
         return order.getPaymentStatus() != null
                 && order.getPaymentStatus() != Order.PaymentStatus.UNPAID;
     }
 
-    /** Báo lỗi cụ thể từng ô thiếu, không gộp thành một câu chung chung "thiếu thông tin". */
-    private void requireThongTinHoanTien(RequestReturnRequest request) {
-        if (isBlank(request.getRefundBankName())) {
+    /**
+     * Kiểm rồi ghi thông tin nhận tiền hoàn vào đơn, đặt đơn vào hàng chờ chuyển khoản.
+     *
+     * Dùng chung cho CẢ HAI đường sinh ra khoản phải hoàn: khách trả hàng, và khách huỷ đơn đã thanh
+     * toán. Tách ra để hai đường không thể lệch nhau về quy tắc -- lệch một chút là có đường vòng lưu
+     * được số tài khoản rác.
+     *
+     * Báo lỗi cụ thể từng ô thiếu, không gộp thành một câu chung chung "thiếu thông tin".
+     */
+    private void ghiThongTinHoanTien(Order order, String bankName, String accountNumber, String accountHolder) {
+        if (isBlank(bankName)) {
             throw ApiException.badRequest("Vui lòng chọn ngân hàng nhận tiền hoàn");
         }
-        if (isBlank(request.getRefundAccountNumber())) {
+        if (isBlank(accountNumber)) {
             throw ApiException.badRequest("Vui lòng nhập số tài khoản nhận tiền hoàn");
         }
-        if (!request.getRefundAccountNumber().matches("\\d{6,20}")) {
+        if (!accountNumber.matches("\\d{6,20}")) {
             throw ApiException.badRequest("Số tài khoản chỉ gồm chữ số, độ dài 6-20 ký tự");
         }
-        if (isBlank(request.getRefundAccountHolder())) {
+        if (isBlank(accountHolder)) {
             throw ApiException.badRequest("Vui lòng nhập tên chủ tài khoản");
         }
+        order.setRefundBankName(bankName);
+        order.setRefundAccountNumber(accountNumber);
+        order.setRefundAccountHolder(accountHolder);
+        order.setRefundStatus(Order.RefundStatus.PENDING);
     }
 
     private boolean isBlank(String s) {

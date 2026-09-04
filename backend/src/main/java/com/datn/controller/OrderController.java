@@ -50,11 +50,17 @@ public class OrderController {
         return ResponseEntity.ok(java.util.Map.of("paymentUrl", url));
     }
 
+    /**
+     * Huỷ đơn. Body TUỲ CHỌN (@RequestBody(required = false)): phần lớn đơn bị huỷ là COD chưa thanh
+     * toán, chẳng có gì để hoàn. Chỉ đơn ĐÃ thanh toán mới bắt buộc kèm tài khoản nhận tiền hoàn --
+     * OrderService.cancelMyOrder quyết định, xem ở đó.
+     */
     @PostMapping("/{orderId}/cancel")
     public ResponseEntity<OrderResponse> cancelOrder(
             @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable Long orderId) {
-        return ResponseEntity.ok(orderService.cancelMyOrder(principal.getUserId(), orderId));
+            @PathVariable Long orderId,
+            @Valid @RequestBody(required = false) com.datn.dto.order.CancelOrderRequest request) {
+        return ResponseEntity.ok(orderService.cancelMyOrder(principal.getUserId(), orderId, request));
     }
 
     /** Khách bấm "Hoàn thành" ở tab Cần đánh giá: DELIVERED -> COMPLETED. */

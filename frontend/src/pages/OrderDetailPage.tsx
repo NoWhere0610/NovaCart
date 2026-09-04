@@ -185,6 +185,10 @@ export default function OrderDetailPage() {
   const [returnSubmitting, setReturnSubmitting] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
   const [refundAccount, setRefundAccount] = useState<RefundAccount>(REFUND_ACCOUNT_RONG);
+  // Huỷ một đơn ĐÃ THANH TOÁN cần khai tài khoản nhận lại tiền -> mở form riêng thay vì huỷ thẳng.
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelAccount, setCancelAccount] = useState<RefundAccount>(REFUND_ACCOUNT_RONG);
 
   /**
    * Đơn này có tiền để hoàn lại hay không -- quyết định có hỏi tài khoản ngân hàng không.
@@ -213,16 +217,58 @@ export default function OrderDetailPage() {
       .finally(() => setLoading(false));
   }
 
+  /**
+   * Đơn CHƯA thanh toán: hỏi lại một câu rồi huỷ luôn (đa số đơn COD rơi vào đây).
+   * Đơn ĐÃ thanh toán: mở form khai tài khoản nhận tiền -- backend bắt buộc, và nếu không hỏi thì
+   * tiền của khách nằm lại ở shop mà không có gì theo dõi.
+   */
   async function handleCancel() {
-    if (!order || !(await confirm("Bạn chắc chắn muốn huỷ đơn hàng này?"))) return;
+    if (!order) return;
+    if (canHoanTien) {
+      setCancelError(null);
+      setCancelOpen(true);
+      return;
+    }
+    if (!(await confirm("Bạn chắc chắn muốn huỷ đơn hàng này?"))) return;
+    await guiHuyDon();
+  }
+
+  async function guiHuyDon(tk?: RefundAccount) {
+    if (!order) return;
     setCancelling(true);
     try {
-      setOrder(await cancelOrderApi(order.orderId));
+      setOrder(
+        await cancelOrderApi(
+          order.orderId,
+          tk
+            ? {
+                refundBankName: tk.bankName,
+                refundAccountNumber: tk.accountNumber,
+                refundAccountHolder: tk.accountHolder,
+              }
+            : undefined,
+        ),
+      );
+      setCancelOpen(false);
+      setCancelAccount(REFUND_ACCOUNT_RONG);
     } catch (err: any) {
-      await alertDialog(err.response?.data?.message ?? "Không thể huỷ đơn hàng");
+      const thongBao = err.response?.data?.message ?? "Không thể huỷ đơn hàng";
+      // Lỗi khi đang mở form thì hiện ngay trong form, đừng đẩy sang modal -- người dùng cần thấy nó
+      // cạnh đúng ô phải sửa.
+      if (tk) setCancelError(thongBao);
+      else await alertDialog(thongBao);
     } finally {
       setCancelling(false);
     }
+  }
+
+  async function handleSubmitCancelWithRefund() {
+    const loi = kiemTaiKhoanHoanTien(cancelAccount);
+    if (loi) {
+      setCancelError(loi);
+      return;
+    }
+    await guiHuyDon(cancelAccount);
   }
 
   async function handleComplete() {
@@ -484,7 +530,7 @@ export default function OrderDetailPage() {
             </button>
           )}
 
-          {canCancel && (
+          {canCancel && !cancelOpen && (
             <button
               onClick={handleCancel}
               disabled={cancelling}
@@ -492,6 +538,41 @@ export default function OrderDetailPage() {
             >
               {cancelling ? "Đang huỷ..." : "Huỷ đơn hàng"}
             </button>
+          )}
+
+          {/* Chỉ mở ra với đơn ĐÃ thanh toán. Không hỏi tài khoản ở đây thì tiền khách đã trả nằm lại
+              ở shop mà không có gì theo dõi -- bản trước hệ thống còn ghi thẳng là "đã hoàn tiền". */}
+          {canCancel && cancelOpen && (
+            <div className="mt-6 border border-red-300 p-4">
+              <p className="text-sm font-medium text-stone-900 mb-1">Huỷ đơn và nhận lại tiền</p>
+              <p className="text-xs text-stone-500 mb-3">
+                Đơn này đã thanh toán {formatVnd(order.totalAmount)}. Vui lòng cho biết tài khoản nhận
+                lại tiền — chúng tôi chuyển khoản sau khi huỷ đơn.
+              </p>
+
+              <RefundAccountFields giaTri={cancelAccount} onChange={setCancelAccount} />
+
+              {cancelError && <p className="text-xs text-red-600 mt-3">{cancelError}</p>}
+
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={handleSubmitCancelWithRefund}
+                  disabled={cancelling}
+                  className="text-sm bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 font-medium"
+                >
+                  {cancelling ? "Đang huỷ..." : "Xác nhận huỷ đơn"}
+                </button>
+                <button
+                  onClick={() => {
+                    setCancelOpen(false);
+                    setCancelError(null);
+                  }}
+                  className="text-sm border border-stone-300 text-stone-600 hover:bg-stone-50 px-4 py-2"
+                >
+                  Không huỷ nữa
+                </button>
+              </div>
+            </div>
           )}
 
           {needsReview && (

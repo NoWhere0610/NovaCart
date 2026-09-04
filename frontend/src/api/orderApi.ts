@@ -87,8 +87,23 @@ export async function getMyOrderDetailApi(orderId: number): Promise<OrderDto> {
   return data
 }
 
-export async function cancelOrderApi(orderId: number): Promise<OrderDto> {
-  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/cancel`)
+export interface CancelOrderPayload {
+  refundBankName?: string
+  refundAccountNumber?: string
+  refundAccountHolder?: string
+}
+
+/**
+ * Huỷ đơn.
+ *
+ * `payload` chỉ cần khi đơn ĐÃ thanh toán -- backend bắt buộc tài khoản nhận tiền hoàn trong trường
+ * hợp đó (xem OrderService.cancelMyOrder). Đơn COD/chưa thanh toán thì gọi không kèm gì.
+ */
+export async function cancelOrderApi(
+  orderId: number,
+  payload?: CancelOrderPayload,
+): Promise<OrderDto> {
+  const { data } = await apiClient.post<OrderDto>(`/orders/${orderId}/cancel`, payload ?? {})
   return data
 }
 

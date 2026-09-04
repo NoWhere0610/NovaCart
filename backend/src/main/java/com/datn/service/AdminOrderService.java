@@ -132,10 +132,21 @@ public class AdminOrderService {
             voucherService.revertVoucherUsage(order.getVoucherCode());
         }
         // Đơn đã trả tiền thật rồi mới bị huỷ/duyệt trả hàng -- đánh dấu REFUNDED, không để lẫn với
-        // UNPAID (chưa ai trả tiền).
-        if ((newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED)
-                && order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+        // UNPAID (chưa ai trả tiền). Đây chỉ là BÚT TOÁN ĐẢO KHOẢN, không có nghĩa tiền đã về tay khách;
+        // việc đó do refundStatus theo dõi.
+        boolean daTraTien = order.getPaymentStatus() == Order.PaymentStatus.PAID;
+        if ((newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED) && daTraTien) {
             order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
+        }
+
+        // ADMIN huỷ một đơn đã thanh toán: vẫn phải sinh khoản phải hoàn, dù chưa có tài khoản nhận.
+        // Admin không thể tự biết số tài khoản của khách (khác luồng khách tự huỷ -- khách khai ngay
+        // lúc bấm huỷ). Để refundStatus = NONE thì đơn biến mất khỏi mọi danh sách và số tiền đó không
+        // còn ai theo dõi; đưa vào PENDING với thông tin trống thì ít nhất nó nằm trong hàng chờ và
+        // giao diện quản trị hiện rõ "chưa có tài khoản nhận -- cần liên hệ khách".
+        if (newStatus == Order.Status.CANCELLED && daTraTien
+                && order.getRefundStatus() != Order.RefundStatus.COMPLETED) {
+            order.setRefundStatus(Order.RefundStatus.PENDING);
         }
 
         // Mốc giao hàng -- hạn đổi trả 7 ngày đếm từ đây (OrderService.requestReturn). Chỉ ghi lần đầu
@@ -203,12 +214,20 @@ public class AdminOrderService {
         if (order.getRefundStatus() != Order.RefundStatus.PENDING) {
             throw ApiException.badRequest("Đơn hàng này không có yêu cầu hoàn tiền nào đang chờ xử lý");
         }
-        // Chỉ hoàn tiền SAU KHI đã duyệt trả hàng. Cho phép bấm khi yêu cầu còn đang chờ duyệt thì admin
-        // rất dễ chuyển tiền cho một yêu cầu mà sau đó chính mình lại từ chối.
-        if (order.getStatus() != Order.Status.RETURNED) {
+        // Hai đường hợp lệ dẫn tới khoản phải hoàn: đơn đã DUYỆT TRẢ HÀNG, hoặc đơn ĐÃ HUỶ sau khi
+        // khách thanh toán. Trạng thái khác nghĩa là hàng chưa về hoặc yêu cầu chưa được duyệt --
+        // cho bấm ở đó thì admin rất dễ chuyển tiền cho một yêu cầu mà sau đó chính mình lại từ chối.
+        if (order.getStatus() != Order.Status.RETURNED && order.getStatus() != Order.Status.CANCELLED) {
             throw ApiException.badRequest(
-                    "Phải duyệt trả hàng trước khi xác nhận hoàn tiền (đơn đang ở trạng thái "
-                            + order.getStatus() + ")");
+                    "Phải duyệt trả hàng (hoặc huỷ đơn) trước khi xác nhận hoàn tiền -- đơn đang ở trạng thái "
+                            + order.getStatus());
+        }
+        // Không có tài khoản nhận thì không thể đã chuyển được. Ca này xảy ra khi ADMIN huỷ đơn đã
+        // thanh toán: khoản phải hoàn được ghi nhận nhưng thông tin nhận tiền còn trống, phải liên hệ
+        // khách lấy trước đã.
+        if (order.getRefundAccountNumber() == null || order.getRefundAccountNumber().isBlank()) {
+            throw ApiException.badRequest(
+                    "Đơn này chưa có tài khoản nhận tiền hoàn. Liên hệ khách để lấy thông tin rồi cập nhật trước khi xác nhận.");
         }
 
         order.setRefundStatus(Order.RefundStatus.COMPLETED);

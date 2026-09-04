@@ -184,10 +184,21 @@ export default function AdminOrdersPage() {
                     {o.refundStatus === 'PENDING' && (
                       <div className="text-xs mt-2 max-w-[240px] border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
                         <p className="font-semibold">Chờ chuyển tiền hoàn</p>
-                        <p>{o.refundBankName}</p>
-                        {/* tabular-nums: các chữ số rộng bằng nhau, đọc/dò số tài khoản đỡ nhầm hàng. */}
-                        <p className="font-mono tabular-nums">{o.refundAccountNumber}</p>
-                        <p>{o.refundAccountHolder}</p>
+                        {/* Thiếu số tài khoản xảy ra khi CHÍNH ADMIN huỷ đơn đã thanh toán -- lúc đó
+                            không ai hỏi khách được. Vẫn phải hiện ra, vì đây là tiền đang nợ khách;
+                            giấu đi thì không còn ai biết. */}
+                        {o.refundAccountNumber ? (
+                          <>
+                            <p>{o.refundBankName}</p>
+                            {/* tabular-nums: các chữ số rộng bằng nhau, đọc/dò số tài khoản đỡ nhầm hàng. */}
+                            <p className="font-mono tabular-nums">{o.refundAccountNumber}</p>
+                            <p>{o.refundAccountHolder}</p>
+                          </>
+                        ) : (
+                          <p className="text-red-700">
+                            Chưa có tài khoản nhận — liên hệ khách để lấy thông tin.
+                          </p>
+                        )}
                       </div>
                     )}
                     {o.refundStatus === 'COMPLETED' && (
@@ -216,7 +227,12 @@ export default function AdminOrdersPage() {
                       {/* Chỉ hiện khi đã duyệt trả hàng VÀ còn khoản chờ hoàn -- khớp đúng điều kiện
                           backend kiểm trong AdminOrderService.confirmRefund, để nút không bao giờ
                           hiện ra rồi bấm vào lại báo lỗi. */}
-                      {o.status === 'RETURNED' && o.refundStatus === 'PENDING' && (
+                      {/* Đơn ĐÃ HUỶ cũng có thể đang nợ khách tiền (khách thanh toán rồi mới huỷ),
+                          không chỉ đơn trả hàng. Không có số tài khoản thì backend từ chối, nên ẩn nút
+                          luôn thay vì để bấm vào rồi báo lỗi. */}
+                      {(o.status === 'RETURNED' || o.status === 'CANCELLED')
+                        && o.refundStatus === 'PENDING'
+                        && Boolean(o.refundAccountNumber) && (
                         <button
                           disabled={busyId === o.orderId}
                           onClick={() => handleConfirmRefund(o.orderId)}
