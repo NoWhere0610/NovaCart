@@ -25,8 +25,15 @@ const ToastContext = createContext<ToastContextValue | undefined>(undefined)
 /** Số toast hiện cùng lúc tối đa. Nhiều hơn thì che mất trang và chẳng ai đọc kịp. */
 const TOI_DA = 3
 
-/** Tự đóng sau bao lâu (ms). Đủ đọc xong một câu ngắn mà không cản trở thao tác tiếp theo. */
-const THOI_GIAN_SONG = 4000
+/**
+ * Tự đóng sau bao lâu (ms).
+ *
+ * Hết thời gian là gỡ khỏi cây React NGAY, cố ý không có hiệu ứng mờ dần lúc biến mất -- toast tắt dứt
+ * khoát chứ không nhùng nhằng thêm vài trăm mili giây nữa. Chỉ giữ hiệu ứng lúc XUẤT HIỆN (.toast-vao
+ * trong index.css), vì lúc đó chuyển động giúp mắt bắt được thứ vừa hiện ra; lúc biến mất thì không
+ * còn gì để bắt nữa.
+ */
+const THOI_GIAN_SONG = 2000
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
