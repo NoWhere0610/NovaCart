@@ -44,7 +44,7 @@ const FALLBACK_COLOR = '#a8a29e'
 // Định dạng ngày theo GIỜ ĐỊA PHƯƠNG. KHÔNG dùng toISOString() -- hàm đó đổi sang UTC, mà Việt Nam là
 // UTC+7 nên new Date(2026, 8, 1) (0h ngày 1/9 giờ VN) sẽ thành "2026-08-31". Toàn bộ nút chọn nhanh
 // (Tháng này/Tháng trước/Quý/Năm) vì thế từng bị lệch đúng 1 ngày về trước.
-function toIsoDate(d: Date) {
+export function toIsoDate(d: Date) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -76,7 +76,7 @@ type QuickRangeKey =
   | 'thisYear'
   | 'lastYear'
 
-function computeQuickRange(key: QuickRangeKey): { from: string; to: string } {
+export function computeQuickRange(key: QuickRangeKey): { from: string; to: string } {
   const today = new Date()
   const quarterOf = (m: number) => Math.floor(m / 3)
   switch (key) {
@@ -135,13 +135,13 @@ const QUICK_RANGES: { key: QuickRangeKey; label: string }[] = [
   { key: 'lastYear', label: 'Năm trước' },
 ]
 
-type ChartPoint = { label: string; revenue: number; returnedRevenue: number; orderCount: number }
+export type ChartPoint = { label: string; revenue: number; returnedRevenue: number; orderCount: number }
 
 /**
  * Gộp dữ liệu ngày thành tuần/tháng khi khoảng xem quá dài. Chọn "Năm nay" sinh ~365 cặp cột trong ~1000px
  * (mỗi cột dưới 1,5px) -- thành một vệt màu đặc, không đọc được gì. Ngưỡng chọn theo số cột còn đọc được.
  */
-function buildChartData(points: RevenuePoint[]): { data: ChartPoint[]; granularity: 'day' | 'week' | 'month' } {
+export function buildChartData(points: RevenuePoint[]): { data: ChartPoint[]; granularity: 'day' | 'week' | 'month' } {
   if (points.length <= 62) {
     return {
       granularity: 'day',

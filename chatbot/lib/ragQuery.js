@@ -347,4 +347,6 @@ async function askQuestion({ namespace, userId, question, sessionId, allowedFold
   return { ok: true, answer: r.answer, sources: r.answered === false ? [] : sources, answered: r.answered };
 }
 
-module.exports = { askQuestion, retrieveChunks };
+// containsVnPhone xuất ra để kiểm thử được mà không cần Gemini -- đây là guard CỨNG duy nhất chặn bot
+// giả vờ chốt đơn khi khách gửi tên + số điện thoại + địa chỉ. Xem chatbot/test/phoneGuard.test.js.
+module.exports = { askQuestion, retrieveChunks, containsVnPhone };

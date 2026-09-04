@@ -204,4 +204,7 @@ if (require.main === module) {
     });
 }
 
-module.exports = { syncProducts, countProductChunks };
+// productToText/sizeColorKeys xuất ra để kiểm thử được mà không cần Postgres lẫn Gemini -- đây là chỗ
+// từng sinh ra lỗi nặng nhất của chatbot (ghép size với màu rời nhau khiến bot khẳng định còn hàng cho
+// tổ hợp không tồn tại). Xem chatbot/test/productText.test.js.
+module.exports = { syncProducts, countProductChunks, productToText, sizeColorKeys };
