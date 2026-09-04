@@ -100,6 +100,28 @@ button:not(:disabled),
   }
 }
 
+/* Biến mất: ngược lại lúc vào -- mờ dần và trượt ngược lên trên, đi về đúng phía nó đã đến.
+   THỜI LƯỢNG ở đây chỉ là giá trị dự phòng: ToastStack gán animation-duration inline theo hằng số
+   THOI_GIAN_THOAT, vì React phải giữ phần tử lại đúng bấy nhiêu lâu rồi mới gỡ. Để con số sống ở một
+   chỗ duy nhất bên TypeScript thì không thể lệch được. */
+@keyframes toast-ra {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+.toast-ra {
+  /* forwards: giữ nguyên khung hình cuối (đã trong suốt) cho tới lúc bị gỡ. Thiếu nó thì phần tử nháy
+     hiện lại đầy đủ ở khung hình cuối cùng -- nhìn như bị giật. */
+  animation: toast-ra 0.2s ease-in forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-ra {
+    /* Không chuyển động, nhưng vẫn phải ẩn ngay -- nếu không toast sẽ đứng nguyên thêm 200ms rồi mới
+       biến mất, trông như bị treo. */
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /* Hoạ tiết herringbone (public/pattern.svg), stroke màu gold, opacity 0.18. Tĩnh hoàn toàn, không
    animation. */
 .bg-herringbone {

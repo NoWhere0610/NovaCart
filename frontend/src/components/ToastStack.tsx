@@ -2,10 +2,27 @@ import { IconAlertTriangle, IconCircleCheck, IconInfoCircle, IconX } from '@tabl
 
 export type LoaiToast = 'thanhCong' | 'loi' | 'thongTin'
 
+/**
+ * Hiệu ứng biến mất chạy bao lâu (ms).
+ *
+ * Khai báo ĐÚNG MỘT LẦN ở đây rồi gán thẳng vào style của phần tử, chứ không viết cứng trong CSS. Lý
+ * do: ToastContext phải giữ phần tử lại đúng bằng khoảng này trước khi gỡ khỏi cây React. Nếu để hai
+ * bản (một trong CSS, một trong TypeScript) thì sửa một bên quên bên kia là hiệu ứng cụt ngang, hoặc
+ * toast nằm trơ trong suốt một lúc -- kiểu lỗi "trông hơi kỳ" rất khó chỉ ra sai ở đâu.
+ */
+export const THOI_GIAN_THOAT = 200
+
 export interface Toast {
   id: number
   noiDung: string
   loai: LoaiToast
+  /**
+   * Đang chạy hiệu ứng biến mất, sắp bị gỡ khỏi cây React.
+   *
+   * Cần một trạng thái trung gian như thế này vì gỡ thẳng phần tử khỏi React là nó biến mất tức thì,
+   * không còn gì trên trang để mà chạy hiệu ứng. Phải giữ nó lại thêm đúng bằng thời lượng hiệu ứng.
+   */
+  dangThoat?: boolean
 }
 
 /**
@@ -38,7 +55,12 @@ export default function ToastStack({
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`toast-vao pointer-events-auto w-full flex items-start gap-2.5 border shadow-lg px-4 py-3 ${mauNen(t.loai)}`}
+          // Đổi HẲN lớp chứ không chồng thêm: hai animation cùng chạy trên một phần tử sẽ tranh nhau
+          // opacity/transform, kết quả phụ thuộc thứ tự khai báo trong CSS -- rất khó lần ra khi sai.
+          className={`${t.dangThoat ? 'toast-ra' : 'toast-vao'} pointer-events-auto w-full flex items-start gap-2.5 border shadow-lg px-4 py-3 ${mauNen(t.loai)}`}
+          // Thời lượng đặt inline (đè lên giá trị trong CSS) để nó chỉ tồn tại ở MỘT chỗ duy nhất --
+          // xem THOI_GIAN_THOAT ở đầu file.
+          style={t.dangThoat ? { animationDuration: `${THOI_GIAN_THOAT}ms` } : undefined}
         >
           {bieuTuong(t.loai)}
           <p className="flex-1 text-sm leading-snug">{t.noiDung}</p>
