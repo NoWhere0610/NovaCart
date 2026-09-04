@@ -5,6 +5,7 @@ import com.datn.dto.order.CheckoutRequest;
 import com.datn.dto.order.OrderItemResponse;
 import com.datn.dto.order.OrderResponse;
 import com.datn.dto.order.RequestReturnRequest;
+import com.datn.dto.order.VnpayIpnResult;
 import com.datn.entity.*;
 import com.datn.exception.ApiException;
 import com.datn.repository.AddressRepository;
@@ -20,11 +21,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(OrderService.class);
+
+    /** Hạn đổi trả, tính từ ngày nhận hàng. Phải khớp Chính sách đổi trả công bố trên website
+     *  (frontend ReturnPolicyPage) và tài liệu chính sách nạp cho chatbot (chatbot/kb-files/seed). */
+    private static final int RETURN_WINDOW_DAYS = 7;
 
     private final CartRepository cartRepository;
     private final AddressRepository addressRepository;
@@ -200,7 +208,10 @@ public class OrderService {
         return toResponse(orderRepository.save(order), true);
     }
 
-    /** Yêu cầu trả hàng -- áp dụng khi đơn DELIVERED hoặc COMPLETED, chuyển sang RETURN_REQUESTED chờ admin duyệt. */
+    /**
+     * Yêu cầu trả hàng -- áp dụng khi đơn DELIVERED hoặc COMPLETED, chuyển sang RETURN_REQUESTED chờ
+     * admin duyệt, VÀ phải còn trong hạn đổi trả.
+     */
     @Transactional
     public OrderResponse requestReturn(Long userId, Long orderId, RequestReturnRequest request) {
         Order order = orderRepository.findByOrderIdAndUser_UserId(orderId, userId)
@@ -208,6 +219,21 @@ public class OrderService {
 
         if (order.getStatus() != Order.Status.DELIVERED && order.getStatus() != Order.Status.COMPLETED) {
             throw ApiException.badRequest("Chỉ có thể yêu cầu trả hàng với đơn đã được giao");
+        }
+
+        // Hạn đổi trả theo đúng Chính sách đổi trả đang công bố trên website (ReturnPolicyPage): "trong
+        // vòng 7 ngày kể từ ngày nhận hàng". Trước đây hệ thống KHÔNG thực thi hạn này -- khách yêu cầu
+        // trả hàng sau vài tháng vẫn qua, tức hệ thống không tuân thủ chính sách của chính nó.
+        //
+        // Đơn cũ chưa có deliveredAt (tạo trước khi thêm cột này) thì CỐ Ý không chặn: không có mốc để
+        // đếm, chặn đại sẽ từ chối oan khách đang trong hạn thật. Admin vẫn duyệt/từ chối thủ công được.
+        if (order.getDeliveredAt() != null) {
+            LocalDateTime hanCuoi = order.getDeliveredAt().plusDays(RETURN_WINDOW_DAYS);
+            if (LocalDateTime.now().isAfter(hanCuoi)) {
+                throw ApiException.badRequest("Đã quá hạn đổi trả " + RETURN_WINDOW_DAYS
+                        + " ngày kể từ ngày nhận hàng (nhận hàng ngày "
+                        + order.getDeliveredAt().toLocalDate() + "), không thể yêu cầu trả hàng.");
+            }
         }
 
         order.setStatus(Order.Status.RETURN_REQUESTED);
@@ -308,52 +334,98 @@ public class OrderService {
     }
 
     /**
-     * Xử lý VNPay redirect sau thanh toán -- chỉ cập nhật paymentStatus khi chữ ký hợp lệ, mã trả về là
-     * "00", SỐ TIỀN khớp đúng đơn hàng, và đơn đang ở trạng thái còn hợp lệ để nhận thanh toán. Idempotent:
-     * gọi lại nhiều lần (VNPay có thể gửi trùng) không xử lý lại/không lỗi nếu đơn đã PAID rồi.
+     * Xử lý VNPay redirect về TRÌNH DUYỆT của khách -- chỉ để biết nên hiện trang "thành công" hay
+     * "thất bại". Việc cập nhật trạng thái thật do handleVnpayCallback() làm, và đường xác nhận CHÍNH
+     * THỨC là IPN (xem VNPayIpnController), không phải đường này.
      */
     @Transactional
     public boolean handleVnpayReturn(java.util.Map<String, String> params) {
+        return handleVnpayCallback(params, "ReturnUrl").laThanhToanThanhCong();
+    }
+
+    /**
+     * LÕI xử lý mọi thông báo thanh toán từ VNPay -- dùng chung cho cả IPN (server-to-server) lẫn
+     * ReturnUrl (redirect trình duyệt).
+     *
+     * VÌ SAO PHẢI CÓ IPN, KHÔNG THỂ CHỈ DỰA VÀO ReturnUrl: VNPay quy định rõ việc cập nhật trạng thái
+     * đơn hàng phải thực hiện ở IPN URL; ReturnUrl chỉ để hiển thị kết quả cho khách xem. Lý do là
+     * ReturnUrl chạy ở phía trình duyệt nên KHÔNG ĐẢM BẢO xảy ra: khách thanh toán xong rồi đóng trình
+     * duyệt, rớt mạng, hoặc điện thoại hết pin thì tiền đã trừ mà đơn vẫn nằm ở UNPAID vĩnh viễn -- và
+     * hệ thống này không có đường thủ công nào cứu được (confirmPayment chỉ nhận BANK_TRANSFER, còn
+     * updateStatus lại đòi đơn VNPay phải PAID mới cho xác nhận). IPN là kênh server-to-server, VNPay
+     * tự thử lại tối đa 10 lần mỗi 5 phút cho tới khi mình xác nhận đã nhận.
+     *
+     * Thứ tự kiểm tra bám đúng bảng RspCode của VNPay: chữ ký -> đơn tồn tại -> số tiền -> trạng thái.
+     * Idempotent: gọi lại nhiều lần không xử lý lại và không báo lỗi.
+     *
+     * LƯU Ý TRIỂN KHAI: URL của IPN phải được khai trong cổng quản trị VNPay (sandbox:
+     * Terminal configuration), KHÔNG gửi kèm theo tham số request -- nên buildPaymentUrl() không đụng gì.
+     */
+    @Transactional
+    public VnpayIpnResult handleVnpayCallback(java.util.Map<String, String> params, String nguon) {
         if (!vnPayService.verifyReturn(params)) {
-            return false;
+            log.warn("[vnpay/{}] chữ ký không hợp lệ, bỏ qua toàn bộ tham số", nguon);
+            return VnpayIpnResult.INVALID_SIGNATURE;
         }
 
-        String responseCode = params.get("vnp_ResponseCode");
         String txnRef = params.get("vnp_TxnRef");
-        if (txnRef == null) return false;
-
-        Long orderId;
-        try {
-            orderId = Long.valueOf(txnRef);
-        } catch (NumberFormatException e) {
-            return false;
+        Long orderId = null;
+        if (txnRef != null) {
+            try {
+                orderId = Long.valueOf(txnRef);
+            } catch (NumberFormatException ignored) {
+                // rơi xuống nhánh ORDER_NOT_FOUND bên dưới
+            }
         }
+        if (orderId == null) return VnpayIpnResult.ORDER_NOT_FOUND;
 
         Order order = orderRepository.findById(orderId).orElse(null);
-        if (order == null || order.getPaymentMethod() != Order.PaymentMethod.VNPAY) return false;
+        if (order == null || order.getPaymentMethod() != Order.PaymentMethod.VNPAY) {
+            log.warn("[vnpay/{}] không tìm thấy đơn VNPay cho vnp_TxnRef={}", nguon, txnRef);
+            return VnpayIpnResult.ORDER_NOT_FOUND;
+        }
 
-        // Đã xử lý PAID trước đó rồi -- coi là thành công, không xử lý lại (VNPay có thể gửi callback trùng).
-        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) return true;
-        // Đơn đã bị huỷ/trả hàng (vd khách huỷ trong lúc đang thanh toán) -- KHÔNG được set PAID đè lên,
-        // tiền thật đã về tài khoản shop nhưng cần admin xử lý hoàn tiền thủ công, không tự động coi là ổn.
-        if (order.getStatus() == Order.Status.CANCELLED || order.getStatus() == Order.Status.RETURNED) return false;
-
-        if (!"00".equals(responseCode)) return false;
-
-        // Đối chiếu đúng số tiền VNPay báo về khớp với số tiền đơn hàng thật -- không chỉ tin response
-        // code, tránh callback với vnp_Amount sai/cũ (dù chữ ký hợp lệ) vẫn bị tin và set PAID.
-        String amountParam = params.get("vnp_Amount");
+        // Đối chiếu SỐ TIỀN trước khi xét trạng thái -- không chỉ tin vnp_ResponseCode. Chữ ký hợp lệ
+        // vẫn có thể đi kèm vnp_Amount của một giao dịch khác/cũ.
         BigDecimal expectedAmount = order.getTotalAmount().multiply(BigDecimal.valueOf(100));
+        String amountParam = params.get("vnp_Amount");
         try {
             if (amountParam == null || new BigDecimal(amountParam).compareTo(expectedAmount) != 0) {
-                return false;
+                log.warn("[vnpay/{}] số tiền không khớp: nhận {} nhưng đơn {} cần {}",
+                        nguon, amountParam, orderId, expectedAmount);
+                return VnpayIpnResult.INVALID_AMOUNT;
             }
         } catch (NumberFormatException e) {
-            return false;
+            return VnpayIpnResult.INVALID_AMOUNT;
+        }
+
+        // Đã ghi nhận thanh toán trước đó -- VNPay gửi trùng là chuyện bình thường (IPN có cơ chế thử
+        // lại). Trả 02 để VNPay DỪNG gửi lại, không phải lỗi.
+        if (order.getPaymentStatus() == Order.PaymentStatus.PAID) {
+            return VnpayIpnResult.ALREADY_CONFIRMED;
+        }
+
+        // Đơn đã bị huỷ/trả hàng (vd khách tự huỷ trong lúc đang ở cổng thanh toán) -- KHÔNG set PAID đè
+        // lên. Tiền thật đã về tài khoản shop nên phải ghi log ở mức ERROR để còn đối soát và hoàn tiền
+        // thủ công; trả 02 để VNPay dừng thử lại (thử lại cũng không đổi được gì).
+        if (order.getStatus() == Order.Status.CANCELLED || order.getStatus() == Order.Status.RETURNED) {
+            log.error("[vnpay/{}] CẦN ĐỐI SOÁT THỦ CÔNG: đơn {} đã ở trạng thái {} nhưng VNPay báo giao dịch "
+                            + "{} với số tiền {}. Kiểm tra cổng VNPay và hoàn tiền cho khách nếu tiền đã về.",
+                    nguon, orderId, order.getStatus(), params.get("vnp_ResponseCode"), amountParam);
+            return VnpayIpnResult.ALREADY_CONFIRMED;
+        }
+
+        // Giao dịch THẤT BẠI (khách bấm huỷ ở cổng, thẻ không đủ tiền...): vẫn là một thông báo đã được
+        // xử lý xong -- trả 00 để VNPay dừng gửi lại. Đơn giữ nguyên UNPAID, khách trả lại được.
+        if (!"00".equals(params.get("vnp_ResponseCode"))) {
+            log.info("[vnpay/{}] đơn {} thanh toán không thành công, mã {}",
+                    nguon, orderId, params.get("vnp_ResponseCode"));
+            return VnpayIpnResult.SUCCESS;
         }
 
         order.setPaymentStatus(Order.PaymentStatus.PAID);
         orderRepository.save(order);
-        return true;
+        log.info("[vnpay/{}] đơn {} đã ghi nhận THANH TOÁN THÀNH CÔNG", nguon, orderId);
+        return VnpayIpnResult.SUCCESS;
     }
 }

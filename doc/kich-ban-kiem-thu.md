@@ -160,6 +160,8 @@ WHERE role_name = 'STAFF' ORDER BY permission_code;
 | ĐH-10 | Voucher giảm 50.000đ, `min_order_value` = 500.000đ | (a) đơn 300k áp mã · (b) đơn 600k áp mã · (c) áp mã đã hết hạn | (a) từ chối, nêu rõ giá trị tối thiểu · (b) `total = subtotal + ship − 50.000` · (c) từ chối | `[Q-DON]`: `discount_amount = 50000`, `total_amount` khớp phép tính |
 | ĐH-11 | Tiếp ĐH-10(b), đơn đã dùng voucher | Admin **Huỷ** đơn đó | Lượt dùng voucher được trả lại cho khách | `SELECT used_count FROM vouchers WHERE code='...'` giảm 1 |
 | ĐH-12 | Đơn `@o` đang `DELIVERED` | Khách bấm **Đã nhận hàng** | Đơn → `COMPLETED`, doanh thu ghi nhận theo `created_at` | `[Q-DON]`: `COMPLETED`; `[Q-DOANHTHU]` tăng đúng `total_amount` |
+| ĐH-13 | Đơn VNPay `@o` đang `PENDING`/`UNPAID` | Thanh toán thành công rồi **đóng trình duyệt ngay**, không đợi quay về web | Đơn **vẫn** được ghi nhận `PAID` nhờ IPN (VNPay gọi server-to-server, tự thử lại tới 10 lần) | `[Q-DON]`: `payment_status='PAID'`. Log server có dòng `[vnpay/IPN] đơn <id> đã ghi nhận THANH TOÁN THÀNH CÔNG` |
+| ĐH-14 | Đơn cũ tạo **trước khi** thêm cột `version` | Admin bấm **Xác nhận** đơn đó | Xác nhận được bình thường (trước đây lỗi hệ thống lúc commit vì `version` NULL) | `SELECT COUNT(*) FROM orders WHERE version IS NULL` = **0** sau khi khởi động backend |
 
 ---
 
@@ -192,6 +194,9 @@ WHERE role_name = 'STAFF' ORDER BY permission_code;
 | TRA-05 | Đơn mua rồi trả **trong cùng một kỳ** | Xem Thống kê kỳ đó | Doanh thu gộp − Hoàn trả = Doanh thu thuần, và thuần **không âm** (một đơn mua-rồi-hoàn phải triệt tiêu về 0) | Đọc 3 ô trên màn hình rồi cộng trừ tay; đối chiếu `[Q-DOANHTHU]` |
 | TRA-06 | Đơn đã `RETURNED` | Thử đổi trạng thái tiếp (bất kỳ) | Bị chặn — `RETURNED` là trạng thái cuối | Không bản ghi nào đổi; cột `version` không tăng |
 | TRA-07 | Đơn `RETURNED` | Bấm **Xác nhận đã nhận CK** cho đơn đó | Bị chặn: *"Đơn hàng đã huỷ/trả hàng, không thể xác nhận thanh toán"* | `[Q-DON]`: `payment_status` không đổi |
+| TRA-08 | Đơn giao **quá 7 ngày** (`UPDATE orders SET delivered_at = DATEADD(day,-30,GETDATE()) WHERE order_id=@o`) | Khách bấm **Yêu cầu trả hàng** | Bị chặn: *"Đã quá hạn đổi trả 7 ngày kể từ ngày nhận hàng (nhận hàng ngày …)"* — đúng Chính sách đổi trả công bố trên web | `[Q-DON]`: `status` giữ nguyên, không rơi vào `RETURN_REQUESTED` |
+| TRA-09 | Đơn giao **3 ngày trước** | Khách bấm **Yêu cầu trả hàng** | Chấp nhận bình thường | `[Q-DON]`: `RETURN_REQUESTED`, `return_reason` có nội dung |
+| TRA-10 | Đơn cũ có `delivered_at` **NULL** (tạo trước khi thêm cột) | Khách bấm **Yêu cầu trả hàng** | **Không** bị chặn — không có mốc để đếm hạn, chặn đại sẽ từ chối oan; admin vẫn duyệt/từ chối thủ công được | `[Q-DON]`: `RETURN_REQUESTED` |
 
 ---
 

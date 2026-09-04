@@ -138,6 +138,11 @@ public class AdminOrderService {
             order.setPaymentStatus(Order.PaymentStatus.REFUNDED);
         }
 
+        // Mốc giao hàng -- hạn đổi trả 7 ngày đếm từ đây (OrderService.requestReturn). Chỉ ghi lần đầu
+        // để không bị đẩy lùi nếu sau này có thao tác nào đưa đơn về DELIVERED lần nữa.
+        if (newStatus == Order.Status.DELIVERED && order.getDeliveredAt() == null) {
+            order.setDeliveredAt(java.time.LocalDateTime.now());
+        }
         if (newStatus == Order.Status.RETURNED) {
             order.setReturnedAt(java.time.LocalDateTime.now());
         }

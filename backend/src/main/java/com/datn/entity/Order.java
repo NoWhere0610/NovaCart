@@ -129,6 +129,12 @@ public class Order {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    // Thời điểm CHUYỂN sang DELIVERED -- mốc bắt đầu đếm hạn đổi trả 7 ngày theo chính sách của shop
+    // (xem OrderService.requestReturn). Không dùng updatedAt được vì cột đó đổi theo MỌI lần lưu đơn.
+    // Đơn cũ tạo trước khi có cột này để null -> cố ý KHÔNG chặn, xem chú thích ở requestReturn.
+    @Column(name = "delivered_at")
+    private LocalDateTime deliveredAt;
+
     // Thời điểm CHUYỂN sang RETURNED (khác createdAt -- 1 đơn có thể tạo tháng 7 nhưng trả hàng tháng 9).
     // Thống kê hoàn trả phải nhóm theo cột này, không phải createdAt, không thì báo cáo tháng tạo đơn bị
     // "sửa ngược" thành có khoản hoàn trong khi tháng thực sự phát sinh hoàn lại không thấy gì.
