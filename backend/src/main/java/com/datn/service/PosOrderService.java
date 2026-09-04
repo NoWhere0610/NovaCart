@@ -181,13 +181,16 @@ public class PosOrderService {
         Order order = findPendingInvoice(orderId);
 
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
-            voucherService.revertVoucherUsage(order.getVoucherCode());
+            voucherService.revertVoucherUsage(order.getVoucherCode(), null);
             order.setVoucherCode(null);
             order.setDiscountAmount(BigDecimal.ZERO);
         }
 
         BigDecimal subtotal = order.getSubtotalAmount() != null ? order.getSubtotalAmount() : BigDecimal.ZERO;
-        BigDecimal discount = voucherService.applyVoucher(request.getVoucherCode(), subtotal);
+        // userId null: hoá đơn bán tại quầy không gắn tài khoản khách nào (khách vãng lai) nên
+        // không áp được giới hạn "mỗi người một lần" -- xem VoucherUsage.
+        BigDecimal discount = voucherService.applyVoucher(
+                request.getVoucherCode(), subtotal, null, order.getOrderCode());
         order.setVoucherCode(request.getVoucherCode().trim().toUpperCase());
         order.setDiscountAmount(discount);
         order.setTotalAmount(subtotal.subtract(discount));
@@ -199,7 +202,7 @@ public class PosOrderService {
     public PosDto.InvoiceResponse removeVoucher(Long orderId) {
         Order order = findPendingInvoice(orderId);
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
-            voucherService.revertVoucherUsage(order.getVoucherCode());
+            voucherService.revertVoucherUsage(order.getVoucherCode(), null);
         }
         order.setVoucherCode(null);
         order.setDiscountAmount(BigDecimal.ZERO);
@@ -252,7 +255,7 @@ public class PosOrderService {
             }
         }
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
-            voucherService.revertVoucherUsage(order.getVoucherCode());
+            voucherService.revertVoucherUsage(order.getVoucherCode(), null);
         }
 
         order.setStatus(Order.Status.CANCELLED);
@@ -303,7 +306,7 @@ public class PosOrderService {
             }
         }
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
-            voucherService.revertVoucherUsage(order.getVoucherCode());
+            voucherService.revertVoucherUsage(order.getVoucherCode(), null);
         }
         // Chỉ đánh dấu REFUNDED nếu hoá đơn thật sự đã PAID (BANK_TRANSFER chưa được thu ngân xác nhận
         // thì vẫn đang UNPAID, không có gì để "hoàn" cả).
@@ -347,7 +350,7 @@ public class PosOrderService {
             } catch (ApiException ex) {
                 // Giỏ hàng thay đổi khiến mã không còn hợp lệ nữa (vd dưới min_order_value sau khi bớt
                 // hàng) -- tự bỏ mã thay vì giữ số tiền giảm cũ (sai) hoặc throw giữa lúc sửa giỏ hàng.
-                voucherService.revertVoucherUsage(order.getVoucherCode());
+                voucherService.revertVoucherUsage(order.getVoucherCode(), null);
                 order.setVoucherCode(null);
             }
         }

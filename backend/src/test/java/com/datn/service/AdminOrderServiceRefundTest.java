@@ -178,6 +178,62 @@ class AdminOrderServiceRefundTest {
         assertThat(o.getRefundAccountNumber()).isEqualTo("1234567890");
     }
 
+    // ===================== Từ chối yêu cầu trả hàng =====================
+
+    @Test
+    @DisplayName("Từ chối đơn vốn ĐÃ GIAO: trả về DELIVERED, không đẩy lên COMPLETED")
+    void tuChoi_donDaGiao_veLaiDaGiao() {
+        Order o = don(Order.Status.RETURN_REQUESTED, Order.RefundStatus.PENDING);
+        o.setStatusBeforeReturn(Order.Status.DELIVERED);
+
+        service.updateStatus(1L, Order.Status.DELIVERED);
+
+        // Trước đây từ chối luôn đẩy sang COMPLETED: khách yêu cầu trả hàng khi đơn mới DELIVERED, bị
+        // từ chối, thế là đơn tự nhảy sang "Hoàn thành" -- mất luôn bước khách tự xác nhận nhận hàng.
+        assertThat(o.getStatus()).isEqualTo(Order.Status.DELIVERED);
+        assertThat(o.getRefundStatus()).isEqualTo(Order.RefundStatus.NONE);
+    }
+
+    @Test
+    @DisplayName("Từ chối đơn vốn HOÀN THÀNH: về lại COMPLETED")
+    void tuChoi_donHoanThanh_veLaiHoanThanh() {
+        Order o = don(Order.Status.RETURN_REQUESTED, Order.RefundStatus.PENDING);
+        o.setStatusBeforeReturn(Order.Status.COMPLETED);
+
+        service.updateStatus(1L, Order.Status.COMPLETED);
+
+        assertThat(o.getStatus()).isEqualTo(Order.Status.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("Không cho từ chối về trạng thái KHÁC với lúc trước khi yêu cầu")
+    void tuChoi_veSaiTrangThai_biChan() {
+        Order o = don(Order.Status.RETURN_REQUESTED, Order.RefundStatus.PENDING);
+        o.setStatusBeforeReturn(Order.Status.COMPLETED);
+
+        // Không chặn thì admin đẩy ngược một đơn đã xong về "chờ khách xác nhận" -- trạng thái chưa
+        // từng có thật với đơn đó.
+        assertThatThrownBy(() -> service.updateStatus(1L, Order.Status.DELIVERED))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("phải quay về trạng thái COMPLETED");
+
+        assertThat(o.getStatus()).isEqualTo(Order.Status.RETURN_REQUESTED);
+    }
+
+    @Test
+    @DisplayName("Đơn CŨ chưa có statusBeforeReturn: giữ hành vi cũ, chỉ cho về COMPLETED")
+    void tuChoi_donCu_veCompleted() {
+        Order o = don(Order.Status.RETURN_REQUESTED, Order.RefundStatus.PENDING);
+        o.setStatusBeforeReturn(null); // đơn tạo trước khi có cột này
+
+        assertThatThrownBy(() -> service.updateStatus(1L, Order.Status.DELIVERED))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("phải quay về trạng thái COMPLETED");
+
+        service.updateStatus(1L, Order.Status.COMPLETED);
+        assertThat(o.getStatus()).isEqualTo(Order.Status.COMPLETED);
+    }
+
     @Test
     @DisplayName("Duyệt trả hàng: khoản chờ hoàn VẪN chờ, không tự nhảy sang đã hoàn")
     void duyetTraHang_vanConCho() {

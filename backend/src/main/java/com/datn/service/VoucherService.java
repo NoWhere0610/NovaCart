@@ -1,9 +1,12 @@
 package com.datn.service;
 
 import com.datn.dto.admin.AdminVoucherDto;
+import com.datn.entity.User;
 import com.datn.entity.Voucher;
+import com.datn.entity.VoucherUsage;
 import com.datn.exception.ApiException;
 import com.datn.repository.VoucherRepository;
+import com.datn.repository.VoucherUsageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +21,7 @@ import java.util.List;
 public class VoucherService {
 
     private final VoucherRepository voucherRepository;
+    private final VoucherUsageRepository voucherUsageRepository;
 
     // ================== ADMIN CRUD ==================
 
@@ -89,15 +93,17 @@ public class VoucherService {
      * đảm bảo tính đúng đắn nằm trong CÙNG 1 transaction với việc tạo đơn hàng.
      */
     @Transactional
-    public BigDecimal applyVoucher(String code, BigDecimal subtotal) {
+    public BigDecimal applyVoucher(String code, BigDecimal subtotal, Long userId, String orderCode) {
         // findByCodeIgnoreCaseForUpdate -- khoá row tới hết transaction, tránh 2 đơn cùng lúc đọc trùng
         // usedCount rồi cùng qua được kiểm tra usageLimit (đẩy usedCount vượt giới hạn đã đặt).
         Voucher voucher = validateVoucherForUpdate(code, subtotal);
+        requireChuaDung(voucher, userId);
         BigDecimal discount = computeDiscount(voucher, subtotal);
 
         int currentUsedCount = voucher.getUsedCount() != null ? voucher.getUsedCount() : 0;
         voucher.setUsedCount(currentUsedCount + 1);
         voucherRepository.save(voucher);
+        ghiNhanDaDung(voucher, userId, orderCode);
 
         return discount;
     }
@@ -108,8 +114,11 @@ public class VoucherService {
      * transaction tạo đơn của OrderService).
      */
     @Transactional(readOnly = true)
-    public BigDecimal previewDiscount(String code, BigDecimal subtotal) {
+    public BigDecimal previewDiscount(String code, BigDecimal subtotal, Long userId) {
         Voucher voucher = validateVoucher(code, subtotal, true);
+        // Kiểm luôn ở bước xem trước: để tới lúc bấm "Đặt hàng" mới báo "bạn đã dùng mã này rồi" thì
+        // khách đã nhìn thấy một tổng tiền không có thật suốt cả màn thanh toán.
+        requireChuaDung(voucher, userId);
         return computeDiscount(voucher, subtotal);
     }
 
@@ -195,16 +204,52 @@ public class VoucherService {
      * bị bỏ mã giảm giá hoặc huỷ hẳn trước khi thanh toán xong.
      */
     @Transactional
-    public void revertVoucherUsage(String code) {
+    public void revertVoucherUsage(String code, Long userId) {
         if (code == null || code.isBlank()) return;
         // findByCodeIgnoreCaseForUpdate -- khoá row (giống applyVoucher()). 2 đơn dùng cùng voucher bị
         // huỷ/trả hàng gần như đồng thời mà đọc thường sẽ cùng đọc trùng usedCount rồi cùng ghi giảm 1,
         // làm mất 1 lượt hoàn (usedCount đáng lẽ về 0 thì lại dừng ở 1).
         voucherRepository.findByCodeIgnoreCaseForUpdate(code).ifPresent(v -> {
+            // Trả lại quyền dùng mã cho ĐÚNG người đã dùng. Đơn POS (userId null) không có dấu nào để xoá.
+            if (userId != null) {
+                voucherUsageRepository.xoaDauDaDung(v.getVoucherId(), userId);
+            }
             int current = v.getUsedCount() != null ? v.getUsedCount() : 0;
             v.setUsedCount(Math.max(0, current - 1));
             voucherRepository.save(v);
         });
+    }
+
+    /**
+     * Mỗi khách chỉ được dùng mỗi mã MỘT lần.
+     *
+     * userId null = đơn bán tại quầy (POS): hoá đơn POS không gắn tài khoản khách nào nên không có
+     * "người" để giới hạn. Bỏ qua ở đây là có chủ ý, không phải sót -- xem VoucherUsage.
+     */
+    private void requireChuaDung(Voucher voucher, Long userId) {
+        if (userId == null) return;
+        if (voucherUsageRepository.existsByVoucher_VoucherIdAndUser_UserId(voucher.getVoucherId(), userId)) {
+            throw ApiException.badRequest("Bạn đã sử dụng mã giảm giá này rồi, mỗi khách chỉ được dùng một lần");
+        }
+    }
+
+    /**
+     * Ghi dấu đã dùng.
+     *
+     * Ràng buộc DUY NHẤT (voucher_id, user_id) trong cơ sở dữ liệu mới là thứ thực sự chặn: hai lần
+     * đặt hàng SONG SONG của cùng một khách đều có thể vượt qua requireChuaDung() ở trên trước khi ai
+     * kịp ghi. Bản ghi thứ hai bị cơ sở dữ liệu từ chối, GlobalExceptionHandler đổi thành 409.
+     */
+    private void ghiNhanDaDung(Voucher voucher, Long userId, String orderCode) {
+        if (userId == null) return;
+        User userRef = new User();
+        userRef.setUserId(userId);
+
+        VoucherUsage usage = new VoucherUsage();
+        usage.setVoucher(voucher);
+        usage.setUser(userRef);
+        usage.setOrderCode(orderCode);
+        voucherUsageRepository.save(usage);
     }
 
     private void applyFields(Voucher voucher, AdminVoucherDto.Request request) {

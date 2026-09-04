@@ -28,6 +28,9 @@ public class AdminOrderResponse {
     private String note;
     private String returnReason;
 
+    /** Trạng thái đơn trước khi khách gửi yêu cầu trả hàng -- nút "Từ chối" phải đưa đơn về đúng đây. */
+    private Order.Status statusBeforeReturn;
+
     // ----- Hoàn tiền -----
     // refundStatus là thứ nói tiền ĐÃ ĐI hay chưa; paymentStatus.REFUNDED ở trên chỉ là bút toán đảo
     // khoản, được đặt ngay lúc duyệt trả hàng. Xem Order.RefundStatus.

@@ -126,7 +126,7 @@ public class OrderService {
         order.setSubtotalAmount(total);
         BigDecimal discount = BigDecimal.ZERO;
         if (request.getVoucherCode() != null && !request.getVoucherCode().isBlank()) {
-            discount = voucherService.applyVoucher(request.getVoucherCode(), total);
+            discount = voucherService.applyVoucher(request.getVoucherCode(), total, userId, order.getOrderCode());
             order.setVoucherCode(request.getVoucherCode().trim().toUpperCase());
         }
         order.setDiscountAmount(discount);
@@ -197,7 +197,7 @@ public class OrderService {
         // Mã giảm giá đã bị tính dùng ngay lúc checkout (VoucherService.applyVoucher) -- huỷ đơn thì
         // phải trả lại lượt, không thì khách mất 1 lượt dùng cho đơn không hề mua được gì.
         if (order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
-            voucherService.revertVoucherUsage(order.getVoucherCode());
+            voucherService.revertVoucherUsage(order.getVoucherCode(), userId);
         }
         // Bút toán đảo khoản, KHÔNG có nghĩa là tiền đã về tay khách -- việc đó do refundStatus theo dõi
         // (đặt PENDING ở trên, admin xác nhận sau khi thật sự chuyển khoản). Trước đây chỉ có dòng này:
@@ -268,6 +268,9 @@ public class OrderService {
                     request.getRefundAccountNumber(), request.getRefundAccountHolder());
         }
 
+        // Nhớ đơn đang đứng ở đâu để nếu admin từ chối thì trả về đúng chỗ đó, không đẩy tuốt lên
+        // COMPLETED (xem Order.statusBeforeReturn).
+        order.setStatusBeforeReturn(order.getStatus());
         order.setStatus(Order.Status.RETURN_REQUESTED);
         order.setReturnReason(request.getReason());
 

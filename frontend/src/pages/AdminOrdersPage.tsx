@@ -48,11 +48,28 @@ const NEXT_STATUS: Record<string, { status: string; label: string; danger?: bool
   DELIVERED: [{ status: 'COMPLETED', label: '→ Hoàn thành hộ khách' }],
   COMPLETED: [],
   CANCELLED: [],
-  RETURN_REQUESTED: [
-    { status: 'RETURNED', label: 'Duyệt trả hàng', danger: true },
-    { status: 'COMPLETED', label: 'Từ chối (giữ Hoàn thành)' },
-  ],
+  // RETURN_REQUESTED cố ý ĐỂ TRỐNG ở bảng tĩnh này -- nút "Từ chối" phải đưa đơn về đúng trạng thái
+  // trước khi khách gửi yêu cầu (DELIVERED hay COMPLETED tuỳ đơn), nên phải tính theo từng đơn.
+  // Xem thaoTacCho() bên dưới.
+  RETURN_REQUESTED: [],
   RETURNED: [],
+}
+
+/**
+ * Các nút chuyển trạng thái cho MỘT đơn cụ thể.
+ *
+ * Phải tính theo từng đơn chứ không tra bảng tĩnh được: từ chối yêu cầu trả hàng thì đơn quay về
+ * statusBeforeReturn. Trước đây luôn đẩy sang COMPLETED, nên đơn mới DELIVERED bị từ chối là tự nhảy
+ * lên "Hoàn thành", khách mất luôn bước tự xác nhận đã nhận hàng.
+ */
+function thaoTacCho(o: AdminOrderDto): { status: string; label: string; danger?: boolean }[] {
+  if (o.status !== 'RETURN_REQUESTED') return NEXT_STATUS[o.status] ?? []
+  // Đơn cũ chưa có statusBeforeReturn -> COMPLETED, khớp đúng nhánh dự phòng bên backend.
+  const ve = o.statusBeforeReturn ?? 'COMPLETED'
+  return [
+    { status: 'RETURNED', label: 'Duyệt trả hàng', danger: true },
+    { status: ve, label: `Từ chối (về ${STATUS_LABEL[ve] ?? ve})` },
+  ]
 }
 
 export default function AdminOrdersPage() {
@@ -241,7 +258,7 @@ export default function AdminOrdersPage() {
                           Xác nhận đã hoàn tiền
                         </button>
                       )}
-                      {NEXT_STATUS[o.status]?.map((next) => (
+                      {thaoTacCho(o).map((next) => (
                         <button
                           key={next.status}
                           disabled={busyId === o.orderId}

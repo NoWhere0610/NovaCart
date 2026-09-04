@@ -42,8 +42,12 @@ public class AdminOrderService {
         // (OrderService.requestReturn), không qua sơ đồ này.
         ALLOWED_TRANSITIONS.put(Order.Status.COMPLETED, EnumSet.noneOf(Order.Status.class));
         ALLOWED_TRANSITIONS.put(Order.Status.CANCELLED, EnumSet.noneOf(Order.Status.class));
-        // Khách yêu cầu trả hàng -> admin duyệt (RETURNED, hoàn kho) hoặc từ chối (về lại COMPLETED).
-        ALLOWED_TRANSITIONS.put(Order.Status.RETURN_REQUESTED, EnumSet.of(Order.Status.RETURNED, Order.Status.COMPLETED));
+        // Khách yêu cầu trả hàng -> admin duyệt (RETURNED, hoàn kho) hoặc TỪ CHỐI. Từ chối thì trả đơn
+        // về đúng trạng thái nó đang đứng trước khi khách gửi yêu cầu -- có thể là DELIVERED (khách chưa
+        // bấm xác nhận nhận hàng) hoặc COMPLETED. Cả hai đều hợp lệ ở đây, nhưng chọn cái nào thì bị
+        // ràng buộc bởi statusBeforeReturn (xem phần kiểm bên dưới), admin không tự ý đổi được.
+        ALLOWED_TRANSITIONS.put(Order.Status.RETURN_REQUESTED,
+                EnumSet.of(Order.Status.RETURNED, Order.Status.COMPLETED, Order.Status.DELIVERED));
         ALLOWED_TRANSITIONS.put(Order.Status.RETURNED, EnumSet.noneOf(Order.Status.class));
     }
 
@@ -77,6 +81,19 @@ public class AdminOrderService {
         if (!allowedNext.contains(newStatus)) {
             throw ApiException.badRequest(
                     "Không thể chuyển đơn hàng từ trạng thái " + oldStatus + " sang " + newStatus);
+        }
+
+        // TỪ CHỐI yêu cầu trả hàng: đơn phải quay về ĐÚNG chỗ nó đang đứng lúc khách gửi yêu cầu.
+        // Không ràng buộc thì admin từ chối một đơn COMPLETED lại có thể đẩy ngược nó về DELIVERED,
+        // biến đơn đã xong thành đơn "chờ khách xác nhận" -- một trạng thái chưa từng có thật.
+        // Đơn cũ chưa có statusBeforeReturn (null) thì giữ hành vi cũ: chỉ cho về COMPLETED.
+        if (oldStatus == Order.Status.RETURN_REQUESTED && newStatus != Order.Status.RETURNED) {
+            Order.Status phaiVe = order.getStatusBeforeReturn() != null
+                    ? order.getStatusBeforeReturn() : Order.Status.COMPLETED;
+            if (newStatus != phaiVe) {
+                throw ApiException.badRequest("Từ chối yêu cầu trả hàng thì đơn phải quay về trạng thái "
+                        + phaiVe + " (trạng thái trước khi khách gửi yêu cầu), không phải " + newStatus);
+            }
         }
 
         // PENDING -> CONFIRMED là lúc thực sự trừ kho cho đơn online -- kiểm tra lại tồn kho vì
@@ -129,7 +146,10 @@ public class AdminOrderService {
         // vĩnh viễn 1 lượt cho đơn admin tự huỷ (khác lỗi khách hàng tự huỷ, đã sửa ở OrderService).
         if ((newStatus == Order.Status.CANCELLED || newStatus == Order.Status.RETURNED)
                 && order.getVoucherCode() != null && !order.getVoucherCode().isBlank()) {
-            voucherService.revertVoucherUsage(order.getVoucherCode());
+            // Lấy chủ đơn để trả đúng lượt cho người đã dùng. Đơn POS không có chủ (khách vãng lai)
+            // -> null, VoucherService bỏ qua bước xoá dấu.
+            voucherService.revertVoucherUsage(order.getVoucherCode(),
+                    order.getUser() != null ? order.getUser().getUserId() : null);
         }
         // Đơn đã trả tiền thật rồi mới bị huỷ/duyệt trả hàng -- đánh dấu REFUNDED, không để lẫn với
         // UNPAID (chưa ai trả tiền). Đây chỉ là BÚT TOÁN ĐẢO KHOẢN, không có nghĩa tiền đã về tay khách;
@@ -161,7 +181,8 @@ public class AdminOrderService {
         // Admin TỪ CHỐI yêu cầu trả hàng (RETURN_REQUESTED -> COMPLETED): huỷ luôn khoản hoàn đang chờ.
         // Không huỷ thì đơn nằm mãi trong danh sách "chờ chuyển tiền" của admin dù yêu cầu đã bị bác --
         // sớm muộn cũng có người chuyển nhầm. Giữ lại thông tin tài khoản để còn truy vết.
-        if (oldStatus == Order.Status.RETURN_REQUESTED && newStatus == Order.Status.COMPLETED
+        // newStatus != RETURNED nghĩa là TỪ CHỐI (về DELIVERED hoặc COMPLETED tuỳ statusBeforeReturn).
+        if (oldStatus == Order.Status.RETURN_REQUESTED && newStatus != Order.Status.RETURNED
                 && order.getRefundStatus() == Order.RefundStatus.PENDING) {
             order.setRefundStatus(Order.RefundStatus.NONE);
         }
@@ -260,6 +281,7 @@ public class AdminOrderService {
                 .paymentStatus(order.getPaymentStatus())
                 .note(order.getNote())
                 .returnReason(order.getReturnReason())
+                .statusBeforeReturn(order.getStatusBeforeReturn())
                 // Đơn cũ có refund_status NULL trong cơ sở dữ liệu (LegacyDataFixer lấp lúc khởi động,
                 // nhưng vẫn quy null về NONE ở đây để frontend không phải xử lý thêm một trạng thái nữa).
                 .refundStatus(order.getRefundStatus() == null ? Order.RefundStatus.NONE : order.getRefundStatus())

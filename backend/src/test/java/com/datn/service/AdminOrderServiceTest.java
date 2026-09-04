@@ -22,6 +22,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -236,7 +237,8 @@ class AdminOrderServiceTest {
 
         service.updateStatus(1L, Order.Status.CANCELLED);
 
-        verify(voucherService).revertVoucherUsage("SALE50");
+        // Tham số thứ hai là chủ đơn (null với dữ liệu dựng sẵn) -- phần đáng kiểm ở đây là ĐÚNG MÃ được hoàn.
+        verify(voucherService).revertVoucherUsage(eq("SALE50"), any());
     }
 
     @Test
@@ -246,7 +248,7 @@ class AdminOrderServiceTest {
 
         service.updateStatus(1L, Order.Status.CANCELLED);
 
-        verify(voucherService, never()).revertVoucherUsage(any());
+        verify(voucherService, never()).revertVoucherUsage(any(), any());
     }
 
     // ----- Đơn POS không đi qua màn quản lý đơn online -----

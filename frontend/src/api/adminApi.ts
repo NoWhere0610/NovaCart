@@ -183,6 +183,8 @@ export interface AdminOrderDto {
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED'
   note: string | null
   returnReason: string | null
+  /** Trạng thái đơn TRƯỚC khi khách gửi yêu cầu trả hàng -- nút "Từ chối" phải đưa đơn về đúng đây. */
+  statusBeforeReturn: string | null
   /** Xem chú thích cùng tên trong orderApi.ts -- KHÁC paymentStatus ở trên. */
   refundStatus: 'NONE' | 'PENDING' | 'COMPLETED'
   refundBankName: string | null

@@ -159,6 +159,19 @@ public class Order {
     @Column(name = "returned_at")
     private LocalDateTime returnedAt;
 
+    /**
+     * Trạng thái đơn NGAY TRƯỚC khi khách gửi yêu cầu trả hàng (DELIVERED hoặc COMPLETED).
+     *
+     * Để admin từ chối yêu cầu thì trả đơn về đúng chỗ nó đang đứng. Trước đây từ chối luôn đẩy đơn
+     * sang COMPLETED: khách yêu cầu trả hàng khi đơn mới DELIVERED, bị từ chối, thế là đơn tự nhảy sang
+     * "Hoàn thành" -- khách mất luôn bước tự xác nhận đã nhận hàng mà không hề bấm gì.
+     *
+     * NULL với đơn cũ tạo trước khi có cột này -> lúc đó lùi về COMPLETED như hành vi cũ, không đoán bừa.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_before_return", length = 20, columnDefinition = "nvarchar(20)")
+    private Status statusBeforeReturn;
+
     // ----- Hoàn tiền (xem RefundStatus) -----
     // Đơn CŨ tạo trước khi có cột này sẽ để NULL trong cơ sở dữ liệu -- giá trị mặc định bên dưới chỉ
     // áp dụng cho đối tượng mới tạo trong Java, KHÔNG vá được dòng đã có. LegacyDataFixer lấp NULL

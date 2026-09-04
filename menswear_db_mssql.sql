@@ -165,9 +165,34 @@ CREATE TABLE [dbo].[orders](
 	[refund_account_number] [nvarchar](30) NULL,
 	[refund_account_holder] [nvarchar](100) NULL,
 	[refund_completed_at] [datetime2](7) NULL,
+	/* Trạng thái đơn NGAY TRƯỚC khi khách gửi yêu cầu trả hàng. Admin từ chối thì trả đơn về đúng đây,
+	   thay vì luôn đẩy sang COMPLETED (làm đơn mới DELIVERED tự nhảy lên "Hoàn thành"). */
+	[status_before_return] [nvarchar](20) NULL,
 PRIMARY KEY CLUSTERED
 (
 	[order_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[voucher_usages] ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/* Mỗi khách chỉ được dùng mỗi mã giảm giá MỘT lần (xem VoucherUsage.java).
+   vouchers.used_count chỉ là số đếm TỔNG, không biết ai đã dùng -- mã đặt usage_limit = 100 nhằm phục
+   vụ 100 khách thì một người có thể tự dùng hết cả 100 lượt.
+   Ràng buộc UNIQUE bên dưới mới là thứ thực sự chặn: hai lần đặt hàng SONG SONG của cùng một khách đều
+   có thể vượt qua câu lệnh kiểm tra trong Java trước khi ai kịp ghi. */
+CREATE TABLE [dbo].[voucher_usages](
+	[usage_id] [bigint] IDENTITY(1,1) NOT NULL,
+	[voucher_id] [int] NOT NULL,
+	[user_id] [bigint] NOT NULL,
+	[order_code] [nvarchar](50) NULL,   /* chỉ để truy vết, không tham gia ràng buộc nào */
+	[used_at] [datetime2](7) NOT NULL,
+PRIMARY KEY CLUSTERED
+(
+	[usage_id] ASC
 )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
 ) ON [PRIMARY]
 GO
@@ -3758,6 +3783,23 @@ GO
 ALTER TABLE [dbo].[vouchers] ADD  DEFAULT ((1)) FOR [is_active]
 GO
 ALTER TABLE [dbo].[addresses]  WITH CHECK ADD FOREIGN KEY([user_id])
+REFERENCES [dbo].[users] ([user_id])
+ON DELETE CASCADE
+GO
+/* Chặn cùng một khách dùng lại cùng một mã -- xem chú thích ở CREATE TABLE voucher_usages. */
+ALTER TABLE [dbo].[voucher_usages] ADD CONSTRAINT [uq_voucher_usage_user] UNIQUE NONCLUSTERED
+(
+	[voucher_id] ASC,
+	[user_id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[voucher_usages]  WITH CHECK ADD FOREIGN KEY([voucher_id])
+REFERENCES [dbo].[vouchers] ([voucher_id])
+ON DELETE CASCADE
+GO
+/* CASCADE: xoá tài khoản thì dấu đã dùng mã của tài khoản đó mất theo, không để lại dòng trỏ tới
+   user_id đã biến mất. */
+ALTER TABLE [dbo].[voucher_usages]  WITH CHECK ADD FOREIGN KEY([user_id])
 REFERENCES [dbo].[users] ([user_id])
 ON DELETE CASCADE
 GO

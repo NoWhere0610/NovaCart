@@ -1,8 +1,10 @@
 package com.datn.controller;
 
+import com.datn.security.UserPrincipal;
 import com.datn.service.VoucherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -21,8 +23,11 @@ public class VoucherController {
 
     @GetMapping("/preview")
     public ResponseEntity<Map<String, BigDecimal>> preview(
+            @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam String code, @RequestParam BigDecimal subtotal) {
-        BigDecimal discount = voucherService.previewDiscount(code, subtotal);
+        // Truyền userId để bước xem trước cũng bắt được "mã này bạn dùng rồi" -- để tới lúc bấm
+        // "Đặt hàng" mới báo thì khách đã nhìn một tổng tiền không có thật suốt cả màn thanh toán.
+        BigDecimal discount = voucherService.previewDiscount(code, subtotal, principal.getUserId());
         return ResponseEntity.ok(Map.of("discountAmount", discount));
     }
 }
