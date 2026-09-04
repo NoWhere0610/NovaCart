@@ -11,7 +11,12 @@
        node vnpay-ipn-test.js --order 151 --amount 922000 --api http://localhost:8081/api
 
    CẢNH BÁO: kịch bản số 5 GHI THẬT vào cơ sở dữ liệu (đơn chuyển sang PAID). Script in sẵn câu SQL để
-   trả đơn về trạng thái cũ sau khi đo.
+   trả đơn về trạng thái cũ, NHƯNG phải tự chạy câu đó -- script không đụng thẳng vào cơ sở dữ liệu.
+
+   Vì vậy script KIỂM TIỀN ĐỀ trước khi bắn: đơn đã PAID sẵn (thường là do lần chạy trước chưa trả về
+   UNPAID) sẽ khiến mọi kịch bản rơi hết vào nhánh "đã xác nhận rồi" (02) và báo TRƯỢT oan. Phân biệt
+   "chạy ra kết quả sai" với "chưa đủ điều kiện để chạy" là bắt buộc -- một script báo đỏ vì lý do
+   chẳng liên quan thì vài lần là không ai tin nó nữa.
    ============================================================================ */
 const crypto = require('crypto');
 
@@ -27,10 +32,55 @@ function docThamSo() {
     api: lay('api', 'http://localhost:8080/api'),
     tmnCode: lay('tmn', process.env.VNPAY_TMN_CODE || 'BZ1O9225'),
     secret: lay('secret', process.env.VNPAY_HASH_SECRET || 'IMPTLMIXJRJEHUPFGPFJNIYEOUEXBNRD'),
+    user: lay('user', 'admin'),
+    pass: lay('pass', 'admin@123'),
   };
 }
 
-const { orderId, amount, api, tmnCode, secret } = docThamSo();
+const { orderId, amount, api, tmnCode, secret, user, pass } = docThamSo();
+
+/**
+ * Kiểm tiền đề: đơn phải là VNPay, đang PENDING và CHƯA thanh toán.
+ *
+ * Trả về chuỗi lý do nếu không đủ điều kiện, null nếu chạy được. Không đăng nhập được thì trả null --
+ * coi như bỏ qua bước kiểm chứ không chặn, vì đây chỉ là bước hỗ trợ chẩn đoán.
+ */
+async function kiemTienDe() {
+  try {
+    const dn = await fetch(`${api}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail: user, password: pass }),
+    });
+    if (!dn.ok) return null;
+    const token = (await dn.json()).accessToken;
+
+    const r = await fetch(`${api}/admin/orders/${orderId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return null;
+    const don = await r.json();
+
+    if (don.paymentMethod !== 'VNPAY') {
+      return `đơn ${orderId} dùng phương thức ${don.paymentMethod}, không phải VNPAY`;
+    }
+    if (don.paymentStatus === 'PAID') {
+      return `đơn ${orderId} ĐÃ ở trạng thái PAID (nhiều khả năng do lần chạy trước chưa trả về UNPAID).\n`
+        + `      Mọi kịch bản sẽ rơi vào nhánh "đã xác nhận rồi" (02) và báo trượt oan.\n`
+        + `      Chạy câu này rồi thử lại:\n`
+        + `          UPDATE orders SET payment_status='UNPAID' WHERE order_id=${orderId};`;
+    }
+    if (don.status !== 'PENDING') {
+      return `đơn ${orderId} đang ở trạng thái ${don.status}, cần một đơn còn PENDING`;
+    }
+    if (Number(don.totalAmount) !== amount) {
+      return `số tiền không khớp: --amount ${amount} nhưng đơn ${orderId} có tổng ${don.totalAmount}`;
+    }
+    return null;
+  } catch {
+    return null; // không kiểm được thì cứ chạy, đừng chặn
+  }
+}
 
 /**
  * Ký y hệt VNPayService.verifyReturn: bỏ vnp_SecureHash, sắp xếp tên trường, bỏ giá trị rỗng, mã hoá
@@ -89,6 +139,12 @@ async function main() {
     console.error("  SELECT TOP 5 order_id, total_amount FROM orders");
     console.error("  WHERE payment_method='VNPAY' AND payment_status='UNPAID' AND status='PENDING';");
     process.exit(2);
+  }
+
+  const lyDo = await kiemTienDe();
+  if (lyDo) {
+    console.log(`\n  ⊘ BỎ QUA: ${lyDo}\n`);
+    process.exit(0); // mã 0 = "chưa chạy được", KHÁC với mã 1 = "chạy ra kết quả sai"
   }
 
   console.log(`\n  Bắn vào ${api}/vnpay/ipn — đơn ${orderId}, số tiền ${amount.toLocaleString('vi-VN')}đ\n`);
