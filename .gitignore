@@ -5,6 +5,12 @@
 .vscode/
 .idea/
 
+# Bí mật thật của từng máy (mật khẩu ứng dụng Gmail...). Spring Boot tự đọc file ./config/
+# application.properties bên cạnh chỗ chạy và ĐÈ LÊN file trong resources -- không cần cờ gì thêm.
+# Repo này công khai: mật khẩu ứng dụng Gmail cho phép gửi thư VÀ đọc hộp thư qua IMAP dưới danh nghĩa
+# chủ tài khoản, nên nó tuyệt đối không được nằm trong lịch sử git.
+backend/config/
+
 # File hệ điều hành
 Thumbs.db
 .DS_Store
