@@ -29,6 +29,9 @@ public class OrderResponse {
     private String qrCodeUrl;
     private String note;
     private String returnReason;
+    private String returnBankName;
+    private String returnAccountNumber;
+    private String returnAccountHolder;
     private LocalDateTime createdAt;
     // null ở API danh sách (list) để nhẹ payload, chỉ có giá trị ở API xem chi tiết 1 đơn
     private List<OrderItemResponse> items;

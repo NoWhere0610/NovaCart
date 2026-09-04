@@ -12,6 +12,7 @@ import {
 } from "../api/orderApi";
 import { createReviewApi } from "../api/productApi";
 import BackButton from "../components/BackButton";
+import BankSelect from "../components/BankSelect";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useAlertDialog } from "../hooks/useAlertDialog";
 
@@ -177,6 +178,9 @@ export default function OrderDetailPage() {
   const [completing, setCompleting] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnReason, setReturnReason] = useState("");
+  const [returnBankName, setReturnBankName] = useState("");
+  const [returnAccountNumber, setReturnAccountNumber] = useState("");
+  const [returnAccountHolder, setReturnAccountHolder] = useState("");
   const [returnSubmitting, setReturnSubmitting] = useState(false);
   const [returnError, setReturnError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirmDialog();
@@ -226,10 +230,21 @@ export default function OrderDetailPage() {
       setReturnError("Vui lòng nhập lý do trả hàng/hoàn tiền");
       return;
     }
+    if (!returnBankName.trim() || !returnAccountNumber.trim() || !returnAccountHolder.trim()) {
+      setReturnError("Vui lòng nhập đầy đủ thông tin tài khoản ngân hàng nhận hoàn tiền");
+      return;
+    }
     setReturnSubmitting(true);
     setReturnError(null);
     try {
-      setOrder(await requestReturnApi(order.orderId, returnReason.trim()));
+      setOrder(
+        await requestReturnApi(order.orderId, {
+          reason: returnReason.trim(),
+          bankName: returnBankName.trim(),
+          accountNumber: returnAccountNumber.trim(),
+          accountHolder: returnAccountHolder.trim(),
+        })
+      );
       setReturnOpen(false);
     } catch (err: any) {
       setReturnError(err.response?.data?.message ?? "Không thể gửi yêu cầu trả hàng");
@@ -315,6 +330,12 @@ export default function OrderDetailPage() {
                   : "Đơn hàng đã được trả hàng/hoàn tiền."}
               </p>
               {order.returnReason && <p>Lý do: {order.returnReason}</p>}
+              {order.returnBankName && (
+                <p className="mt-1">
+                  Tài khoản nhận hoàn tiền: {order.returnBankName} — {order.returnAccountNumber} (
+                  {order.returnAccountHolder})
+                </p>
+              )}
             </div>
           )}
 
@@ -464,7 +485,26 @@ export default function OrderDetailPage() {
                 placeholder="Ví dụ: sản phẩm không đúng mô tả, bị lỗi/hư hỏng..."
                 className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
               />
-              {returnError && <p className="text-xs text-red-600 mt-1">{returnError}</p>}
+
+              <p className="text-sm font-medium text-stone-700 mt-3 mb-2">
+                Thông tin tài khoản nhận hoàn tiền
+              </p>
+              <div className="space-y-2">
+                <BankSelect value={returnBankName} onChange={setReturnBankName} placeholder="Chọn ngân hàng" />
+                <input
+                  value={returnAccountNumber}
+                  onChange={(e) => setReturnAccountNumber(e.target.value)}
+                  placeholder="Số tài khoản"
+                  className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
+                />
+                <input
+                  value={returnAccountHolder}
+                  onChange={(e) => setReturnAccountHolder(e.target.value)}
+                  placeholder="Chủ tài khoản"
+                  className="w-full border border-stone-300 px-3 py-2 text-sm outline-none focus:border-stone-900"
+                />
+              </div>
+              {returnError && <p className="text-xs text-red-600 mt-2">{returnError}</p>}
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={handleSubmitReturn}

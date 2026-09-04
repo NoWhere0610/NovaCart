@@ -27,6 +27,9 @@ public class AdminOrderResponse {
     private Order.PaymentStatus paymentStatus;
     private String note;
     private String returnReason;
+    private String returnBankName;
+    private String returnAccountNumber;
+    private String returnAccountHolder;
     private LocalDateTime createdAt;
     private List<OrderItemResponse> items;
 }

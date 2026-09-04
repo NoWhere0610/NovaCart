@@ -123,6 +123,17 @@ public class Order {
     @Column(name = "return_reason", length = 500)
     private String returnReason;
 
+    // Thông tin tài khoản ngân hàng khách cung cấp để nhận hoàn tiền, chỉ có giá trị khi
+    // status là RETURN_REQUESTED/RETURNED.
+    @Column(name = "return_bank_name", length = 100)
+    private String returnBankName;
+
+    @Column(name = "return_account_number", length = 50)
+    private String returnAccountNumber;
+
+    @Column(name = "return_account_holder", length = 100)
+    private String returnAccountHolder;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
